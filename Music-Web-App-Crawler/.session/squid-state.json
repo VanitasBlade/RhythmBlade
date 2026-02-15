@@ -1,0 +1,18 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "https://tidal.squid.wtf",
+      "localStorage": [
+        {
+          "name": "tidal-ui.userPreferences",
+          "value": "{\"playbackQuality\":\"HI_RES_LOSSLESS\",\"convertAacToMp3\":false,\"downloadCoversSeperately\":false,\"performanceMode\":\"medium\"}"
+        },
+        {
+          "name": "tidal-ui.region",
+          "value": "auto"
+        }
+      ]
+    }
+  ]
+}
