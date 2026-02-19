@@ -1,0 +1,38 @@
+diff --git a/node_modules/react-native-screens/android/build.gradle b/node_modules/react-native-screens/android/build.gradle
+index cafe2da..7850fac 100644
+--- a/node_modules/react-native-screens/android/build.gradle
++++ b/node_modules/react-native-screens/android/build.gradle
+@@ -112,7 +112,10 @@ android {
+             }
+         }
+     }
+-    if (REACT_NATIVE_MINOR_VERSION >= 71) {
++    // Workaround: some local SDK/Prefab combinations fail resolving ReactAndroid prefab
++    // for rnscreens CMake (CXX1210). Allow opting back in with -PrnscreensEnableCpp=true.
++    def rnscreensEnableCpp = project.hasProperty("rnscreensEnableCpp") && project.property("rnscreensEnableCpp") == "true"
++    if (REACT_NATIVE_MINOR_VERSION >= 71 && rnscreensEnableCpp) {
+         buildFeatures {
+             prefab true
+         }
+@@ -179,7 +182,7 @@ repositories {
+ }
+ 
+ dependencies {
+-    implementation 'com.facebook.react:react-native:+'
++    implementation("com.facebook.react:react-android")
+     implementation 'androidx.appcompat:appcompat:1.4.2'
+     implementation 'androidx.fragment:fragment:1.3.6'
+     implementation 'androidx.coordinatorlayout:coordinatorlayout:1.2.0'
+diff --git a/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreensModule.kt b/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreensModule.kt
+index a3490fc..1492127 100644
+--- a/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreensModule.kt
++++ b/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreensModule.kt
+@@ -25,7 +25,7 @@ class ScreensModule(private val reactContext: ReactApplicationContext)
+             } else {
+                 Log.e("[RNScreens]", "Could not install JSI bindings.")
+             }
+-        } catch (exception: Exception) {
++        } catch (exception: Throwable) {
+             Log.w("[RNScreens]", "Could not load RNScreens module.")
+         }
+     }
