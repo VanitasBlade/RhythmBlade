@@ -37,6 +37,43 @@ class ApiService {
     this.initializeBaseUrl();
   }
 
+  mapDownloadedSong(downloadedSong) {
+    return {
+      id: downloadedSong.id,
+      url: `${this.baseUrl}/api/stream/${downloadedSong.id}`,
+      title: downloadedSong.title,
+      artist: downloadedSong.artist,
+      album: downloadedSong.album || 'Unknown Album',
+      artwork: downloadedSong.artwork || null,
+      duration: downloadedSong.duration || 0,
+      filename: downloadedSong.filename,
+      isLocal: false,
+    };
+  }
+
+  mapDownloadJob(job) {
+    if (!job) {
+      return job;
+    }
+
+    const mappedSong = job.song?.id
+      ? {
+          ...job.song,
+          ...this.mapDownloadedSong(job.song),
+        }
+      : job.song || null;
+
+    return {
+      ...job,
+      progress: Number.isFinite(job.progress) ? job.progress : 0,
+      downloadedBytes: Number.isFinite(job.downloadedBytes)
+        ? job.downloadedBytes
+        : 0,
+      totalBytes: Number.isFinite(job.totalBytes) ? job.totalBytes : null,
+      song: mappedSong,
+    };
+  }
+
   async initializeBaseUrl() {
     const settings = await storageService.getSettings();
     const configuredUrl = settings.serverUrl?.trim();
@@ -147,23 +184,107 @@ class ApiService {
 
       if (response.data.success) {
         const downloadedSong = response.data.song;
-        return {
-          id: downloadedSong.id,
-          url: `${this.baseUrl}/api/stream/${downloadedSong.id}`,
-          title: downloadedSong.title,
-          artist: downloadedSong.artist,
-          album: downloadedSong.album || 'Unknown Album',
-          artwork: downloadedSong.artwork || null,
-          duration: downloadedSong.duration || 0,
-          filename: downloadedSong.filename,
-          isLocal: false,
-        };
+        return this.mapDownloadedSong(downloadedSong);
       }
 
       throw new Error('Download failed');
     } catch (error) {
       if (error.code === 'ECONNABORTED') {
         throw new Error('Download timeout - file might be too large');
+      }
+      throw new Error(error.response?.data?.error || error.message);
+    }
+  }
+
+  async startDownload(song, index = null, downloadSetting = 'Hi-Res') {
+    const isOnline = await checkOnlineStatus();
+    if (!isOnline) {
+      throw new Error('No internet connection');
+    }
+
+    try {
+      const response = await this.requestWithServerFallback(baseUrl =>
+        axios.post(
+          `${baseUrl}/api/downloads`,
+          {song, index, downloadSetting},
+          {timeout: 15000},
+        ),
+      );
+
+      if (response.data.success) {
+        return this.mapDownloadJob(response.data.job);
+      }
+
+      throw new Error('Failed to queue download');
+    } catch (error) {
+      if (error.code === 'ECONNABORTED') {
+        throw new Error('Queue request timed out');
+      }
+      throw new Error(error.response?.data?.error || error.message);
+    }
+  }
+
+  async getDownloadJobs(limit = 60) {
+    try {
+      const response = await this.requestWithServerFallback(baseUrl =>
+        axios.get(`${baseUrl}/api/downloads`, {
+          params: {limit},
+          timeout: 10000,
+        }),
+      );
+
+      if (response.data.success) {
+        return (response.data.jobs || []).map(job => this.mapDownloadJob(job));
+      }
+
+      return [];
+    } catch (error) {
+      if (!error.response) {
+        return [];
+      }
+      throw new Error(error.response?.data?.error || error.message);
+    }
+  }
+
+  async getDownloadJob(jobId) {
+    try {
+      const response = await this.requestWithServerFallback(baseUrl =>
+        axios.get(`${baseUrl}/api/downloads/${jobId}`, {
+          timeout: 10000,
+        }),
+      );
+      if (response.data.success) {
+        return this.mapDownloadJob(response.data.job);
+      }
+      return null;
+    } catch (error) {
+      if (error.response?.status === 404) {
+        return null;
+      }
+      throw new Error(error.response?.data?.error || error.message);
+    }
+  }
+
+  async retryDownload(jobId, fallbackSong = null, downloadSetting = 'Hi-Res') {
+    try {
+      const response = await this.requestWithServerFallback(baseUrl =>
+        axios.post(`${baseUrl}/api/downloads/${jobId}/retry`, null, {
+          timeout: 15000,
+        }),
+      );
+
+      if (response.data.success) {
+        return this.mapDownloadJob(response.data.job);
+      }
+
+      throw new Error('Retry failed');
+    } catch (error) {
+      if (error.code === 'ECONNABORTED') {
+        throw new Error('Retry request timed out');
+      }
+      const status = error.response?.status;
+      if (status === 404 && fallbackSong) {
+        return this.startDownload(fallbackSong, null, downloadSetting);
       }
       throw new Error(error.response?.data?.error || error.message);
     }

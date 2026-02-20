@@ -155,7 +155,6 @@ const LibraryScreen = ({ navigation }) => {
     try {
       const picked = await DocumentPicker.pickSingle({
         type: [DocumentPicker.types.audio],
-        copyTo: 'documentDirectory',
       });
 
       const track = await storageService.importLocalAudioFile(picked);

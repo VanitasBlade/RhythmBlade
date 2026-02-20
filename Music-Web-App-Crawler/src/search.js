@@ -211,6 +211,42 @@ async function parsePlaylistResults(page, maxResults = 60) {
   return results;
 }
 
+async function parseTrackResultsWithRetry(page, attempts = 2) {
+  const buttons = page.locator(SELECTORS.downloadButton);
+
+  const waitForButtons = async (timeoutMs) => {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const count = await buttons.count().catch(() => 0);
+      if (count > 0) {
+        return true;
+      }
+      await page.waitForTimeout(300);
+    }
+    return false;
+  };
+
+  let results = [];
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    await waitForButtons(2000 + (attempt * 1200));
+    results = await parseTrackResults(page);
+    if (results.length > 0) {
+      return results;
+    }
+
+    if (attempt === attempts - 1) {
+      return results;
+    }
+
+    // Track results can occasionally render late; retry after a short settle.
+    await page.waitForTimeout(400 + (attempt * 300));
+    await switchToTypeTab(page, "tracks");
+  }
+
+  return results;
+}
+
 export async function searchSongs(page, query, searchType = "tracks") {
   if (!query || !query.trim()) {
     return [];
@@ -251,5 +287,5 @@ export async function searchSongs(page, query, searchType = "tracks") {
     return parsePlaylistResults(page);
   }
 
-  return parseTrackResults(page);
+  return parseTrackResultsWithRetry(page);
 }

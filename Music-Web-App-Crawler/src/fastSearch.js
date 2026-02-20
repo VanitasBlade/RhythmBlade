@@ -9,7 +9,7 @@ function normalizeText(value) {
   return (value || "").replace(/\s+/g, " ").trim();
 }
 
-function parseCoverImage(cover, size = 160) {
+function parseCoverImage(cover, size = 640) {
   const normalized = normalizeText(cover);
   if (!normalized) {
     return null;
