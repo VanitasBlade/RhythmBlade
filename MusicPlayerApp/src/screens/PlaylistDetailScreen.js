@@ -32,22 +32,9 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     }
   };
 
-  const playSong = async (song, index) => {
+  const playSong = async index => {
     try {
-      await playbackService.reset();
-      
-      const tracks = playlist.songs.map(s => ({
-        id: s.id,
-        url: s.url,
-        title: s.title,
-        artist: s.artist,
-        album: s.album || 'Unknown Album',
-        artwork: s.artwork || null,
-        duration: s.duration || 0,
-      }));
-
-      await playbackService.addTracks(tracks);
-      await playbackService.skipTo(index);
+      await playbackService.playSongs(playlist.songs, {startIndex: index});
       navigation.navigate('NowPlaying');
     } catch (error) {
       console.error('Error playing song:', error);
@@ -58,20 +45,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     if (playlist.songs.length === 0) return;
 
     try {
-      await playbackService.reset();
-      
-      const tracks = playlist.songs.map(s => ({
-        id: s.id,
-        url: s.url,
-        title: s.title,
-        artist: s.artist,
-        album: s.album || 'Unknown Album',
-        artwork: s.artwork || null,
-        duration: s.duration || 0,
-      }));
-
-      await playbackService.addTracks(tracks);
-      await playbackService.play();
+      await playbackService.playSongs(playlist.songs, {startIndex: 0});
       navigation.navigate('NowPlaying');
     } catch (error) {
       console.error('Error playing all:', error);
@@ -105,7 +79,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   const renderSongItem = ({ item, index }) => (
     <TouchableOpacity
       style={styles.songItem}
-      onPress={() => playSong(item, index)}
+      onPress={() => playSong(index)}
       onLongPress={() => removeSong(item)}
     >
       <Text style={styles.songIndex}>{index + 1}</Text>

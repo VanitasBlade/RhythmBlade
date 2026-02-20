@@ -93,20 +93,7 @@ const PlaylistsScreen = ({ navigation }) => {
     }
 
     try {
-      await playbackService.reset();
-      
-      const tracks = playlist.songs.map(s => ({
-        id: s.id,
-        url: s.url,
-        title: s.title,
-        artist: s.artist,
-        album: s.album || 'Unknown Album',
-        artwork: s.artwork || null,
-        duration: s.duration || 0,
-      }));
-
-      await playbackService.addTracks(tracks);
-      await playbackService.play();
+      await playbackService.playSongs(playlist.songs, {startIndex: 0});
       navigation.navigate('NowPlaying');
     } catch (error) {
       console.error('Error playing playlist:', error);

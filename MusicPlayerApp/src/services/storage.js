@@ -358,13 +358,12 @@ class StorageService {
       return [];
     }
 
-    let changed = false;
-    for (const candidate of candidates) {
-      const artwork = await this.hydrateArtworkForSong(candidate, {persist: true});
-      if (artwork) {
-        changed = true;
-      }
-    }
+    const hydrationResults = await Promise.all(
+      candidates.map(candidate =>
+        this.hydrateArtworkForSong(candidate, {persist: true}),
+      ),
+    );
+    const changed = hydrationResults.some(Boolean);
 
     if (!changed) {
       return [];

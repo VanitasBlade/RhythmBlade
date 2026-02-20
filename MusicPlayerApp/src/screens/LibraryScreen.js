@@ -35,13 +35,7 @@ const LibraryScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [sortBy, setSortBy] = useState('recent'); // recent, title, artist
 
-  useFocusEffect(
-    useCallback(() => {
-      loadLibrary();
-    }, [sortBy])
-  );
-
-  const loadLibrary = async () => {
+  const loadLibrary = useCallback(async () => {
     try {
       setLoading(true);
       const library = await storageService.getLocalLibrary();
@@ -63,7 +57,13 @@ const LibraryScreen = ({ navigation }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [sortBy]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadLibrary();
+    }, [loadLibrary])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -71,22 +71,9 @@ const LibraryScreen = ({ navigation }) => {
     setRefreshing(false);
   };
 
-  const playSong = async (song, index) => {
+  const playSong = async index => {
     try {
-      await playbackService.reset();
-      
-      const tracks = songs.map(s => ({
-        id: s.id,
-        url: s.url,
-        title: s.title,
-        artist: s.artist,
-        album: s.album || 'Unknown Album',
-        artwork: s.artwork || null,
-        duration: s.duration || 0,
-      }));
-
-      await playbackService.addTracks(tracks);
-      await playbackService.skipTo(index);
+      await playbackService.playSongs(songs, {startIndex: index});
       navigation.navigate('NowPlaying');
     } catch (error) {
       console.error('Error playing song:', error);
@@ -97,20 +84,7 @@ const LibraryScreen = ({ navigation }) => {
     if (songs.length === 0) return;
 
     try {
-      await playbackService.reset();
-      
-      const tracks = songs.map(s => ({
-        id: s.id,
-        url: s.url,
-        title: s.title,
-        artist: s.artist,
-        album: s.album || 'Unknown Album',
-        artwork: s.artwork || null,
-        duration: s.duration || 0,
-      }));
-
-      await playbackService.addTracks(tracks);
-      await playbackService.play();
+      await playbackService.playSongs(songs, {startIndex: 0});
       navigation.navigate('NowPlaying');
     } catch (error) {
       console.error('Error playing all:', error);
@@ -180,9 +154,7 @@ const LibraryScreen = ({ navigation }) => {
           {
             text: 'Play Now',
             onPress: async () => {
-              await playbackService.reset();
-              await playbackService.addTrack(track);
-              await playbackService.play();
+              await playbackService.playSong(track);
               navigation.navigate('NowPlaying');
             },
           },
@@ -200,7 +172,7 @@ const LibraryScreen = ({ navigation }) => {
   const renderSongItem = ({ item, index }) => (
     <TouchableOpacity
       style={styles.songItem}
-      onPress={() => playSong(item, index)}
+      onPress={() => playSong(index)}
       onLongPress={() => deleteSong(item)}
     >
       <View style={styles.songArtwork}>

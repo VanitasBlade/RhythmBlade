@@ -26,7 +26,7 @@ const HomeScreen = ({ navigation }) => {
       setLoading(true);
       const library = await storageService.getLocalLibrary();
       // Sort by addedAt descending and take first 20
-      const recent = library
+      const recent = [...library]
         .sort((a, b) => b.addedAt - a.addedAt)
         .slice(0, 20);
       setRecentSongs(recent);
@@ -43,22 +43,9 @@ const HomeScreen = ({ navigation }) => {
     setRefreshing(false);
   };
 
-  const playSong = async (song, index) => {
+  const playSong = async index => {
     try {
-      await playbackService.reset();
-      
-      const tracks = recentSongs.map(s => ({
-        id: s.id,
-        url: s.url,
-        title: s.title,
-        artist: s.artist,
-        album: s.album || 'Unknown Album',
-        artwork: s.artwork || null,
-        duration: s.duration || 0,
-      }));
-
-      await playbackService.addTracks(tracks);
-      await playbackService.skipTo(index);
+      await playbackService.playSongs(recentSongs, {startIndex: index});
       navigation.navigate('NowPlaying');
     } catch (error) {
       console.error('Error playing song:', error);
@@ -68,7 +55,7 @@ const HomeScreen = ({ navigation }) => {
   const renderSongItem = ({ item, index }) => (
     <TouchableOpacity
       style={styles.songItem}
-      onPress={() => playSong(item, index)}
+      onPress={() => playSong(index)}
     >
       <View style={styles.songArtwork}>
         {item.artwork ? (

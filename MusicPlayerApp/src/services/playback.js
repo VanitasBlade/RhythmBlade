@@ -51,6 +51,11 @@ function runDetached(task, label) {
     });
 }
 
+function coerceDuration(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+}
+
 class PlaybackService {
   constructor() {
     this.initialized = false;
@@ -87,6 +92,76 @@ class PlaybackService {
     }
 
     return normalized;
+  }
+
+  toQueueTrack(song = {}) {
+    const rawId = String(
+      song.id || song.sourceSongId || song.url || song.localPath || '',
+    ).trim();
+    const localPath = normalizeText(song.localPath);
+    const fallbackUrl = localPath
+      ? localPath.startsWith('file://')
+        ? localPath
+        : `file://${localPath}`
+      : '';
+    const rawUrl = normalizeText(song.url || fallbackUrl);
+    if (!rawUrl) {
+      return null;
+    }
+
+    return this.normalizeTrackForQueue({
+      id: rawId || `track_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      url: rawUrl,
+      title: song.title,
+      artist: song.artist,
+      album: song.album || 'Unknown Album',
+      artwork: song.artwork || null,
+      duration: coerceDuration(song.duration),
+    });
+  }
+
+  buildQueueTracks(songs = []) {
+    if (!Array.isArray(songs) || songs.length === 0) {
+      return [];
+    }
+
+    return songs
+      .map(song => this.toQueueTrack(song))
+      .filter(Boolean);
+  }
+
+  async playSongs(songs = [], options = {}) {
+    const {startIndex = 0} = options;
+    const queueTracks = this.buildQueueTracks(songs);
+    if (queueTracks.length === 0) {
+      return false;
+    }
+
+    const boundedIndex = Math.max(
+      0,
+      Math.min(Number(startIndex) || 0, queueTracks.length - 1),
+    );
+
+    await this.reset();
+    await this.addTracks(queueTracks);
+    if (boundedIndex > 0) {
+      await this.skipTo(boundedIndex);
+    } else {
+      await this.play();
+    }
+    return true;
+  }
+
+  async playSong(song) {
+    const track = this.toQueueTrack(song);
+    if (!track) {
+      return false;
+    }
+
+    await this.reset();
+    await this.addTrack(track);
+    await this.play();
+    return true;
   }
 
   async applyEmbeddedMetadata(metadata = {}) {
@@ -260,7 +335,10 @@ class PlaybackService {
 
   async addTrack(track) {
     try {
-      const normalizedTrack = this.normalizeTrackForQueue(track);
+      const normalizedTrack = this.toQueueTrack(track);
+      if (!normalizedTrack) {
+        return;
+      }
       await TrackPlayer.add(normalizedTrack);
       runDetached(
         () => this.applyArtworkFallbackForActiveTrack(),
@@ -274,10 +352,10 @@ class PlaybackService {
 
   async addTracks(tracks) {
     try {
-      const trackList = Array.isArray(tracks) ? tracks : [];
-      const normalizedTracks = trackList.map(track =>
-        this.normalizeTrackForQueue(track),
-      );
+      const normalizedTracks = this.buildQueueTracks(tracks);
+      if (normalizedTracks.length === 0) {
+        return;
+      }
 
       await TrackPlayer.add(normalizedTracks);
       runDetached(
