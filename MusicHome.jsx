@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
 /* ═══════════════════════════════════════════════════════════════
    DESIGN TOKENS
@@ -124,6 +124,12 @@ const INIT_SOURCES = [
   { path: "/Music/SoundCloud", count: 12,  on: true,  fmt: "MP3"       },
 ];
 
+// FIX: Moved outside component — static, no need to reallocate each render
+const HEADERS = { home: "Home", library: "Library", download: "Downloader", settings: "Settings" };
+const SORT_OPTS = ["Name", "Artist", "Date Added"];
+const QUALITY_OPTS = ["128 kbps", "192 kbps", "256 kbps", "320 kbps", "FLAC"];
+const COLOR_KEYS = Object.keys(ART);
+
 const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
 /* ═══════════════════════════════════════════════════════════════
@@ -182,6 +188,7 @@ const SearchBar = ({ value, onChange, placeholder = "Search..." }) => (
   </div>
 );
 
+// FIX: Replaced internal useState hover with direct style mutation to avoid unnecessary re-renders
 const Btn = ({ children, variant = "primary", style: s = {}, ...props }) => {
   const base = { display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 4, cursor: "pointer", fontFamily: "'Outfit',sans-serif", fontSize: 11, fontWeight: 600, border: "none", transition: "background .12s" };
   const styles = {
@@ -189,18 +196,40 @@ const Btn = ({ children, variant = "primary", style: s = {}, ...props }) => {
     ghost:   { background: C.bgCard, border: `1px solid ${C.border}`, color: C.accentFg },
     dim:     { background: C.bgCard, border: `1px solid ${C.border}`, color: C.textDim },
   };
-  const [hover, setHover] = useState(false);
   return (
-    <button {...props} style={{ ...base, ...styles[variant], ...(hover && variant === "primary" ? { background: C.accentHi } : {}), ...s }}
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+    <button {...props} style={{ ...base, ...styles[variant], ...s }}
+      onMouseEnter={e => { if (variant === "primary") e.currentTarget.style.background = C.accentHi; }}
+      onMouseLeave={e => { if (variant === "primary") e.currentTarget.style.background = C.accent; }}>
       {children}
     </button>
+  );
+};
+
+// FIX: Extracted playlist card into its own component to eliminate fragile querySelector hover hack
+const PlaylistCard = ({ pl, height = 110, fontSize = 32 }) => {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div style={{ flex: 1, cursor: "pointer", minWidth: 0 }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}>
+      <div style={{ height, borderRadius: 6, background: ART[pl.c], display: "flex", alignItems: "center", justifyContent: "center", fontSize, border: `1px solid rgba(255,255,255,.06)`, transition: "filter .15s", marginBottom: 6, filter: hovered ? "brightness(1.2)" : "brightness(1)" }}>{pl.emoji}</div>
+      <div style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 600, fontSize: 11, color: "#bdb5d8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pl.name}</div>
+      <div style={{ fontSize: 10, color: C.textMute, marginTop: 1 }}>{pl.songs} Songs</div>
+    </div>
   );
 };
 
 /* ════════════════════════════════════════════════════════════
    MINI PLAYER
 ════════════════════════════════════════════════════════════ */
+
+// FIX: Extracted player controls to a stable constant to avoid recreating the array each render
+const PLAYER_CONTROLS = (onPrev, onNext) => [
+  { key: "prev", icon: <Ico.Prev />, action: onPrev },
+  null,
+  { key: "next", icon: <Ico.Next />, action: onNext },
+];
+
 const MiniPlayer = ({ track, playing, onToggle, onPrev, onNext }) => {
   const [progress, setProgress] = useState(0);
   const ref = useRef(null);
@@ -214,6 +243,7 @@ const MiniPlayer = ({ track, playing, onToggle, onPrev, onNext }) => {
   useEffect(() => setProgress(0), [track]);
 
   const pct = (progress / track.duration) * 100;
+  const controls = useMemo(() => PLAYER_CONTROLS(onPrev, onNext), [onPrev, onNext]);
 
   return (
     <div style={{ background: C.bgPlayer, borderTop: `1px solid ${C.border}`, position: "relative", padding: "8px 12px 10px", overflow: "hidden" }}>
@@ -229,13 +259,13 @@ const MiniPlayer = ({ track, playing, onToggle, onPrev, onNext }) => {
         </div>
         <div style={{ fontSize: 10, color: C.textMute, fontFamily: "'Outfit',sans-serif", whiteSpace: "nowrap" }}>{fmt(progress)} / {fmt(track.duration)}</div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {[{ icon: <Ico.Prev />, action: onPrev }, null, { icon: <Ico.Next />, action: onNext }].map((item, i) =>
+          {controls.map((item, i) =>
             item === null ? (
-              <button key={i} onClick={onToggle} style={{ width: 30, height: 30, borderRadius: "50%", background: C.accent, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <button key="play" onClick={onToggle} style={{ width: 30, height: 30, borderRadius: "50%", background: C.accent, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 {playing ? <Ico.Pause /> : <Ico.Play />}
               </button>
             ) : (
-              <button key={i} onClick={item.action} style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex", opacity: .8 }}
+              <button key={item.key} onClick={item.action} style={{ background: "none", border: "none", cursor: "pointer", padding: 3, display: "flex", opacity: .8 }}
                 onMouseEnter={e => (e.currentTarget.style.opacity = 1)} onMouseLeave={e => (e.currentTarget.style.opacity = .8)}>
                 {item.icon}
               </button>
@@ -255,23 +285,19 @@ const HomeTab = ({ onTrackClick }) => (
     <section style={{ marginBottom: 20 }}>
       <Label>Continue Listening</Label>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {/* FIX: Use stable title key instead of index */}
         {TRACKS.slice(0, 3).map((t, i) => (
-          <TrackRow key={i} {...t} onClick={() => onTrackClick(i)} />
+          <TrackRow key={t.title} {...t} onClick={() => onTrackClick(i)} />
         ))}
       </div>
     </section>
     <div style={{ height: 1, background: C.borderDim, marginBottom: 18 }} />
     <section>
       <Label>Your Playlists</Label>
+      {/* FIX: Reuse INIT_PLAYLISTS data instead of duplicating inline; use PlaylistCard component */}
       <div style={{ display: "flex", gap: 8 }}>
-        {[{ name: "Favorites", songs: 29, c: "pink", emoji: "🩷" }, { name: "Recently Added", songs: 12, c: "purple", emoji: "🎵" }, { name: "Chill Vibes", songs: 8, c: "blue", emoji: "🌆" }].map((p, i) => (
-          <div key={i} style={{ flex: 1, cursor: "pointer", textAlign: "center" }}
-            onMouseEnter={e => e.currentTarget.querySelector(".cov").style.filter = "brightness(1.2)"}
-            onMouseLeave={e => e.currentTarget.querySelector(".cov").style.filter = "brightness(1)"}>
-            <div className="cov" style={{ height: 108, borderRadius: 6, background: ART[p.c], display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, marginBottom: 6, border: `1px solid rgba(255,255,255,.06)`, transition: "filter .15s" }}>{p.emoji}</div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#bdb5d8", fontFamily: "'Outfit',sans-serif" }}>{p.name}</div>
-            <div style={{ fontSize: 10, color: C.textMute, marginTop: 1 }}>{p.songs} Songs</div>
-          </div>
+        {INIT_PLAYLISTS.slice(0, 3).map(p => (
+          <PlaylistCard key={p.name} pl={p} height={108} fontSize={28} />
         ))}
       </div>
     </section>
@@ -284,12 +310,14 @@ const HomeTab = ({ onTrackClick }) => (
 const LibTracksPanel = () => {
   const [sort, setSort] = useState("Name");
   const [sortOpen, setSortOpen] = useState(false);
-  const opts = ["Name", "Artist", "Date Added"];
-  const sorted = [...TRACKS].sort((a, b) =>
-    sort === "Name" ? a.title.localeCompare(b.title) :
+
+  // FIX: Memoize sorted list to avoid re-sorting on every render
+  const sorted = useMemo(() => [...TRACKS].sort((a, b) =>
+    sort === "Name"   ? a.title.localeCompare(b.title) :
     sort === "Artist" ? a.artist.localeCompare(b.artist) :
     b.added.localeCompare(a.added)
-  );
+  ), [sort]);
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px 6px", flexShrink: 0 }}>
@@ -299,7 +327,8 @@ const LibTracksPanel = () => {
           <Btn variant="dim" onClick={() => setSortOpen(o => !o)}><Ico.Sort /> {sort}</Btn>
           {sortOpen && (
             <div style={{ position: "absolute", right: 0, top: "110%", zIndex: 10, background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 6, overflow: "hidden", minWidth: 110 }}>
-              {opts.map(o => (
+              {/* FIX: Use module-level SORT_OPTS constant */}
+              {SORT_OPTS.map(o => (
                 <button key={o} onClick={() => { setSort(o); setSortOpen(false); }}
                   style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", background: sort === o ? "#211840" : "none", border: "none", cursor: "pointer", fontFamily: "'Outfit',sans-serif", fontSize: 11, color: sort === o ? C.accentFg : C.textDim }}
                   onMouseEnter={e => (e.currentTarget.style.background = "#211840")} onMouseLeave={e => (e.currentTarget.style.background = sort === o ? "#211840" : "transparent")}>{o}</button>
@@ -312,7 +341,8 @@ const LibTracksPanel = () => {
         <span style={{ fontSize: 10, color: C.textDeep, fontFamily: "'Outfit',sans-serif" }}>{sorted.length} tracks</span>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 8px", display: "flex", flexDirection: "column", gap: 4 }}>
-        {sorted.map((t, i) => <TrackRow key={i} {...t} />)}
+        {/* FIX: Use stable title key instead of index */}
+        {sorted.map(t => <TrackRow key={t.title} {...t} />)}
       </div>
     </div>
   );
@@ -323,15 +353,25 @@ const LibPlaylistsPanel = () => {
   const [lists, setLists] = useState(INIT_PLAYLISTS);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
-  const colorKeys = Object.keys(ART);
-  const filtered = lists.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
-  const rows = [];
-  for (let i = 0; i < filtered.length; i += 2) rows.push(filtered.slice(i, i + 2));
+
+  // FIX: Memoize filtered list and grid rows to avoid recalculating on every render
+  const filtered = useMemo(
+    () => lists.filter(p => p.name.toLowerCase().includes(search.toLowerCase())),
+    [lists, search]
+  );
+  const rows = useMemo(() => {
+    const result = [];
+    for (let i = 0; i < filtered.length; i += 2) result.push(filtered.slice(i, i + 2));
+    return result;
+  }, [filtered]);
+
   const create = () => {
     if (!newName.trim()) return;
-    setLists(l => [...l, { name: newName.trim(), songs: 0, c: colorKeys[l.length % colorKeys.length], emoji: "🎵" }]);
+    // FIX: Use module-level COLOR_KEYS constant
+    setLists(l => [...l, { name: newName.trim(), songs: 0, c: COLOR_KEYS[l.length % COLOR_KEYS.length], emoji: "🎵" }]);
     setNewName(""); setCreating(false);
   };
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ padding: "10px 16px 6px", flexShrink: 0, display: "flex", gap: 6 }}>
@@ -351,17 +391,10 @@ const LibPlaylistsPanel = () => {
         <span style={{ fontSize: 10, color: C.textDeep, fontFamily: "'Outfit',sans-serif" }}>{filtered.length} playlists</span>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 8px" }}>
+        {/* FIX: Use PlaylistCard component; use stable name keys instead of indices */}
         {rows.map((row, ri) => (
-          <div key={ri} style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-            {row.map((pl, pi) => (
-              <div key={pi} style={{ flex: 1, cursor: "pointer", minWidth: 0 }}
-                onMouseEnter={e => e.currentTarget.querySelector(".pc").style.filter = "brightness(1.2)"}
-                onMouseLeave={e => e.currentTarget.querySelector(".pc").style.filter = "brightness(1)"}>
-                <div className="pc" style={{ height: 110, borderRadius: 6, background: ART[pl.c], display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, border: `1px solid rgba(255,255,255,.06)`, transition: "filter .15s", marginBottom: 6 }}>{pl.emoji}</div>
-                <div style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 600, fontSize: 11, color: "#bdb5d8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pl.name}</div>
-                <div style={{ fontSize: 10, color: C.textMute, marginTop: 1 }}>{pl.songs} Songs</div>
-              </div>
-            ))}
+          <div key={row[0].name} style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            {row.map(pl => <PlaylistCard key={pl.name} pl={pl} />)}
             {row.length === 1 && <div style={{ flex: 1 }} />}
           </div>
         ))}
@@ -381,8 +414,9 @@ const LibFilesPanel = () => {
         <span style={{ fontSize: 10, color: C.textDeep, fontFamily: "'Outfit',sans-serif" }}>{total} files · {sources.filter(s => s.on).length} active sources</span>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "6px 16px 8px", display: "flex", flexDirection: "column", gap: 6 }}>
+        {/* FIX: Use stable path key instead of index */}
         {sources.map((src, i) => (
-          <div key={i} style={{ background: C.bgCard, border: `1px solid ${src.on ? C.border : C.borderDim}`, borderRadius: 6, overflow: "hidden", display: "flex" }}>
+          <div key={src.path} style={{ background: C.bgCard, border: `1px solid ${src.on ? C.border : C.borderDim}`, borderRadius: 6, overflow: "hidden", display: "flex" }}>
             <div style={{ width: 3, background: src.on ? C.accent : C.border, transition: "background .3s" }} />
             <div style={{ flex: 1, padding: "10px 12px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
@@ -442,10 +476,11 @@ const DlSearchPanel = ({ queue, onAdd }) => {
         </div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 8px", display: "flex", flexDirection: "column", gap: 4 }}>
-        {SEARCH_RESULTS.map((r, i) => {
+        {/* FIX: Use stable title key instead of index */}
+        {SEARCH_RESULTS.map(r => {
           const queued = !!queue.find(q => q.title === r.title);
           return (
-            <TrackRow key={i} {...r}
+            <TrackRow key={r.title} {...r}
               right={
                 <button onClick={() => onAdd(r)} style={{ width: 28, height: 28, borderRadius: 4, background: queued ? C.border : C.accent, border: queued ? `1px solid ${C.textDeep}` : "none", cursor: queued ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "background .15s" }}
                   onMouseEnter={e => { if (!queued) e.currentTarget.style.background = C.accentHi; }}
@@ -469,8 +504,9 @@ const DlQueuePanel = ({ queue }) => (
         <span style={{ color: C.textDeep, fontFamily: "'Outfit',sans-serif", fontSize: 12 }}>Queue is empty</span>
       </div>
     )}
-    {queue.map((item, i) => (
-      <div key={i} style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 6, overflow: "hidden", display: "flex", height: 60 }}>
+    {/* FIX: Use stable title key instead of index */}
+    {queue.map(item => (
+      <div key={item.title} style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 6, overflow: "hidden", display: "flex", height: 60 }}>
         <div style={{ width: 3, background: item.done ? C.textDeep : C.accent, transition: "background .4s" }} />
         <div style={{ width: 52, background: ART[item.c], display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{item.emoji}</div>
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 12px" }}>
@@ -543,15 +579,14 @@ const SettingsRow = ({ icon, label, sub, right, onClick }) => (
 const SettingsTab = ({ avatar, onAvatarChange }) => {
   const [dlPath, setDlPath]         = useState("/Music/Downloads");
   const [editPath, setEditPath]     = useState(false);
-  const [quality, setQuality]       = useState("320 kbps");
-  const [qualOpen, setQualOpen]     = useState(false);
+  const [convertAac, setConvertAac] = useState(false);
   const [notifications, setNotifs]  = useState(true);
   const [autoPlay, setAutoPlay]     = useState(true);
   const [crossfade, setCrossfade]   = useState(false);
   const [normalize, setNormalize]   = useState(true);
   const [darkMode, setDarkMode]     = useState(true);
   const fileRef = useRef(null);
-  const qualities = ["128 kbps", "192 kbps", "256 kbps", "320 kbps", "FLAC"];
+  // FIX: Use module-level QUALITY_OPTS constant
 
   return (
     <div style={{ flex: 1, overflowY: "auto", paddingTop: 10, paddingBottom: 8 }}>
@@ -560,14 +595,12 @@ const SettingsTab = ({ avatar, onAvatarChange }) => {
       <SettingsSection title="Profile">
         <div style={{ padding: "12px 16px 16px", background: C.bgCard, borderTop: `1px solid ${C.borderDim}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            {/* Avatar */}
             <div style={{ position: "relative", flexShrink: 0 }}>
               <div style={{ width: 64, height: 64, borderRadius: "50%", background: ART.purple, border: `2px solid ${C.accent}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 {avatar
                   ? <img src={avatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   : <span style={{ fontSize: 28 }}>👤</span>}
               </div>
-              {/* Upload overlay */}
               <button onClick={() => fileRef.current.click()} style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "rgba(0,0,0,0.55)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: 0, transition: "opacity .15s" }}
                 onMouseEnter={e => (e.currentTarget.style.opacity = 1)} onMouseLeave={e => (e.currentTarget.style.opacity = 0)}>
                 <Ico.Camera />
@@ -575,7 +608,6 @@ const SettingsTab = ({ avatar, onAvatarChange }) => {
               <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }}
                 onChange={e => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onload = ev => onAvatarChange(ev.target.result); r.readAsDataURL(f); } }} />
             </div>
-            {/* Info */}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 700, fontSize: 14, color: C.text }}>Your Profile</div>
               <div style={{ fontSize: 10, color: C.textMute, marginTop: 2 }}>Tap photo to change</div>
@@ -612,31 +644,15 @@ const SettingsTab = ({ avatar, onAvatarChange }) => {
           )}
         </div>
 
-        {/* Quality */}
-        <div style={{ background: C.bgCard, borderTop: `1px solid ${C.borderDim}`, padding: "10px 16px", position: "relative" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 5, background: C.border, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Ico.Quality /></div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 600, fontSize: 12, color: C.text }}>Download Quality</div>
-              <div style={{ fontSize: 10, color: C.textMute, marginTop: 1 }}>Audio bitrate for downloads</div>
-            </div>
-            <button onClick={() => setQualOpen(o => !o)} style={{ padding: "4px 10px", borderRadius: 4, background: C.bg, border: `1px solid ${C.border}`, cursor: "pointer", fontFamily: "'Outfit',sans-serif", fontSize: 11, color: C.accentFg, transition: "border-color .15s" }}
-              onMouseEnter={e => (e.currentTarget.style.borderColor = C.accent)} onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}>
-              {quality}
+        {/* Convert AAC to MP3 */}
+        <SettingsRow icon={<Ico.Quality />} label="Convert AAC to MP3"
+          sub="Auto-convert downloaded AAC files"
+          right={
+            <button onClick={() => setConvertAac(v => !v)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              <Ico.Toggle on={convertAac} />
             </button>
-          </div>
-          {qualOpen && (
-            <div style={{ position: "absolute", right: 16, top: "110%", zIndex: 10, background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 6, overflow: "hidden", minWidth: 120 }}>
-              {qualities.map(q => (
-                <button key={q} onClick={() => { setQuality(q); setQualOpen(false); }}
-                  style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", background: quality === q ? "#211840" : "none", border: "none", cursor: "pointer", fontFamily: "'Outfit',sans-serif", fontSize: 11, color: quality === q ? C.accentFg : C.textDim }}
-                  onMouseEnter={e => (e.currentTarget.style.background = "#211840")} onMouseLeave={e => (e.currentTarget.style.background = quality === q ? "#211840" : "transparent")}>
-                  {q}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+          }
+        />
       </SettingsSection>
 
       {/* ── Playback ── */}
@@ -683,10 +699,14 @@ export default function MusicApp() {
   const [trackIdx, setTrackIdx] = useState(0);
   const [playing, setPlaying]   = useState(false);
   const [avatar, setAvatar]     = useState(null);
+  const [quality, setQuality]   = useState("Hi-Res");
+  const [qualOpen, setQualOpen] = useState(false);
 
-  const playTrack = i => { if (trackIdx === i) setPlaying(p => !p); else { setTrackIdx(i); setPlaying(true); } };
-
-  const HEADERS = { home: "Home", library: "Library", download: "Downloader", settings: "Settings" };
+  // FIX: Wrapped in useCallback so the function reference is stable across renders
+  const playTrack = useCallback(i => {
+    if (trackIdx === i) setPlaying(p => !p);
+    else { setTrackIdx(i); setPlaying(true); }
+  }, [trackIdx]);
 
   return (
     <>
@@ -703,13 +723,39 @@ export default function MusicApp() {
         <div style={{ width: "100%", height: "100%", borderRadius: 9, background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
           {/* Header */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "44px 16px 10px", borderBottom: `1px solid ${C.borderDim}`, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "44px 16px 10px", borderBottom: `1px solid ${C.borderDim}`, flexShrink: 0, position: "relative" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {tab !== "home" && (
                 <button onClick={() => setTab("home")} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex" }}><Ico.Back /></button>
               )}
               <h1 style={{ fontSize: 22, fontWeight: 700, color: "#e8e2f8", fontFamily: "'Outfit',sans-serif", letterSpacing: "-.2px" }}>{HEADERS[tab]}</h1>
             </div>
+
+            {/* Quality picker — only visible on Downloader tab */}
+            {tab === "download" && (
+              <div style={{ position: "relative" }}>
+                <button onClick={() => setQualOpen(o => !o)}
+                  style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 9px", borderRadius: 6, background: "#1e1445", border: `1px solid ${C.border}`, cursor: "pointer", transition: "border-color .15s" }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = C.accentFg)} onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}>
+                  <Ico.Quality />
+                  <span style={{ fontFamily: "'Outfit',sans-serif", fontSize: 11, fontWeight: 600, color: C.accentFg }}>{quality}</span>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke={C.textMute} strokeWidth="2.2" strokeLinecap="square"/></svg>
+                </button>
+                {qualOpen && (
+                  <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 20, background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", minWidth: 130, boxShadow: "0 8px 24px rgba(0,0,0,.5)" }}>
+                    {QUALITY_OPTS.map(q => (
+                      <button key={q} onClick={() => { setQuality(q); setQualOpen(false); }}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", textAlign: "left", padding: "8px 12px", background: quality === q ? "#211840" : "none", border: "none", cursor: "pointer", fontFamily: "'Outfit',sans-serif", fontSize: 11, color: quality === q ? C.accentFg : C.textDim }}
+                        onMouseEnter={e => (e.currentTarget.style.background = "#211840")} onMouseLeave={e => (e.currentTarget.style.background = quality === q ? "#211840" : "transparent")}>
+                        {q}
+                        {quality === q && <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M4 12l6 6L20 6" stroke={C.accentFg} strokeWidth="2.4" strokeLinecap="square"/></svg>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {tab === "home" && (
               <button onClick={() => setTab("settings")} title="Profile" style={{ width: 30, height: 30, borderRadius: "50%", padding: 0, border: `1.5px solid #6d4aad`, overflow: "hidden", background: ART.purple, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, transition: "border-color .15s" }}
                 onMouseEnter={e => (e.currentTarget.style.borderColor = C.accentFg)} onMouseLeave={e => (e.currentTarget.style.borderColor = "#6d4aad")}>
