@@ -15,6 +15,20 @@ import storageService from '../services/storage';
 import playbackService from '../services/playback';
 import { useFocusEffect } from '@react-navigation/native';
 
+const sortLibrarySongs = (library = [], sortBy = 'recent') => {
+  const songs = Array.isArray(library) ? [...library] : [];
+  switch (sortBy) {
+    case 'recent':
+      return songs.sort((a, b) => b.addedAt - a.addedAt);
+    case 'title':
+      return songs.sort((a, b) => a.title.localeCompare(b.title));
+    case 'artist':
+      return songs.sort((a, b) => a.artist.localeCompare(b.artist));
+    default:
+      return songs;
+  }
+};
+
 const LibraryScreen = ({ navigation }) => {
   const [songs, setSongs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,22 +44,20 @@ const LibraryScreen = ({ navigation }) => {
   const loadLibrary = async () => {
     try {
       setLoading(true);
-      let library = await storageService.getLocalLibrary();
-      
-      // Sort based on selected option
-      switch (sortBy) {
-        case 'recent':
-          library = library.sort((a, b) => b.addedAt - a.addedAt);
-          break;
-        case 'title':
-          library = library.sort((a, b) => a.title.localeCompare(b.title));
-          break;
-        case 'artist':
-          library = library.sort((a, b) => a.artist.localeCompare(b.artist));
-          break;
-      }
-      
-      setSongs(library);
+      const library = await storageService.getLocalLibrary();
+      setSongs(sortLibrarySongs(library, sortBy));
+
+      storageService
+        .hydrateArtworkForLibrary(library, 4)
+        .then(updatedLibrary => {
+          if (!updatedLibrary || updatedLibrary.length === 0) {
+            return;
+          }
+          setSongs(sortLibrarySongs(updatedLibrary, sortBy));
+        })
+        .catch(error => {
+          console.error('Error hydrating library artwork:', error);
+        });
     } catch (error) {
       console.error('Error loading library:', error);
     } finally {

@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {PermissionsAndroid, Platform} from 'react-native';
 import RNFS from 'react-native-fs';
+import {extractEmbeddedArtworkDataUri} from './artwork';
 
 const STORAGE_KEYS = {
   LIBRARY: '@music_library',
@@ -71,14 +72,54 @@ function normalizeText(value) {
     .toLowerCase();
 }
 
+function safeDecodeUriComponent(value) {
+  const text = String(value || '');
+  if (!text) {
+    return '';
+  }
+
+  try {
+    return decodeURIComponent(text);
+  } catch (error) {
+    return text;
+  }
+}
+
+function stripUriQueryAndHash(value) {
+  return String(value || '')
+    .split('?')[0]
+    .split('#')[0];
+}
+
 function toPathFromUri(value) {
-  return String(value || '').replace(/^file:\/\//, '');
+  const rawValue = stripUriQueryAndHash(String(value || '').trim());
+  if (!rawValue) {
+    return '';
+  }
+
+  const withoutFilePrefix = rawValue.replace(/^file:\/\//, '');
+  return safeDecodeUriComponent(withoutFilePrefix);
+}
+
+function getFileNameFromUriOrPath(value) {
+  const cleaned = stripUriQueryAndHash(value);
+  if (!cleaned) {
+    return '';
+  }
+
+  return (
+    safeDecodeUriComponent(cleaned)
+      .split('/')
+      .filter(Boolean)
+      .pop() || ''
+  );
 }
 
 class StorageService {
   constructor() {
     this.musicDir = `${RNFS.DocumentDirectoryPath}/Music`;
     this.rhythmBladeDir = this.getPreferredMusicDir();
+    this.artworkHydrationTasks = new Map();
     this.initializeDirectories();
   }
 
@@ -198,6 +239,140 @@ class StorageService {
     return fallback || null;
   }
 
+  getArtworkHydrationKey(song) {
+    if (!song || typeof song !== 'object') {
+      return '';
+    }
+
+    const id = String(song.id || '').trim();
+    if (id) {
+      return `id:${id}`;
+    }
+
+    const localPath = normalizeText(this.resolveSongLocalPath(song));
+    if (localPath) {
+      return `path:${localPath}`;
+    }
+
+    const url = normalizeText(song.url);
+    if (url) {
+      return `url:${url}`;
+    }
+
+    return '';
+  }
+
+  async persistArtworkForSong(song, artwork) {
+    const normalizedArtwork = String(artwork || '').trim();
+    if (!song || !normalizedArtwork) {
+      return false;
+    }
+
+    try {
+      const rawLibrary = await AsyncStorage.getItem(STORAGE_KEYS.LIBRARY);
+      const library = rawLibrary ? JSON.parse(rawLibrary) : [];
+      const existing = this.findMatchingLibrarySong(library, song);
+      if (!existing || existing.artwork === normalizedArtwork) {
+        return false;
+      }
+
+      const nextLibrary = library.map(item =>
+        item === existing || item.id === existing.id
+          ? {...item, artwork: normalizedArtwork}
+          : item,
+      );
+      await AsyncStorage.setItem(STORAGE_KEYS.LIBRARY, JSON.stringify(nextLibrary));
+      return true;
+    } catch (error) {
+      console.error('Error persisting artwork for song:', error);
+      return false;
+    }
+  }
+
+  async hydrateArtworkForSong(song, options = {}) {
+    const {persist = true} = options;
+    const existingArtwork = String(song?.artwork || '').trim();
+    if (existingArtwork) {
+      return existingArtwork;
+    }
+
+    const filePath = this.resolveSongLocalPath(song);
+    if (!filePath || !/\.flac$/i.test(filePath)) {
+      return null;
+    }
+
+    const key = this.getArtworkHydrationKey(song) || `path:${normalizeText(filePath)}`;
+    if (!key) {
+      return null;
+    }
+
+    const inFlight = this.artworkHydrationTasks.get(key);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const task = (async () => {
+      const artwork = await extractEmbeddedArtworkDataUri({
+        ...song,
+        localPath: filePath,
+        url: `file://${filePath}`,
+      });
+      if (!artwork) {
+        return null;
+      }
+
+      if (persist) {
+        await this.persistArtworkForSong(song, artwork);
+      }
+
+      return artwork;
+    })()
+      .catch(error => {
+        console.error('Error hydrating artwork for song:', error);
+        return null;
+      })
+      .finally(() => {
+        this.artworkHydrationTasks.delete(key);
+      });
+
+    this.artworkHydrationTasks.set(key, task);
+    return task;
+  }
+
+  async hydrateArtworkForLibrary(librarySongs = [], maxSongs = 6) {
+    if (!Array.isArray(librarySongs) || librarySongs.length === 0) {
+      return [];
+    }
+
+    const candidates = librarySongs
+      .filter(song => {
+        if (song?.artwork) {
+          return false;
+        }
+        const localPath = this.resolveSongLocalPath(song);
+        return Boolean(localPath && /\.flac$/i.test(localPath));
+      })
+      .slice(0, Math.max(0, maxSongs));
+
+    if (candidates.length === 0) {
+      return [];
+    }
+
+    let changed = false;
+    for (const candidate of candidates) {
+      const artwork = await this.hydrateArtworkForSong(candidate, {persist: true});
+      if (artwork) {
+        changed = true;
+      }
+    }
+
+    if (!changed) {
+      return [];
+    }
+
+    return this.getLocalLibrary();
+  }
+
   async ensureUniquePath(destPath) {
     const normalized = toPathFromUri(destPath);
     if (!normalized) {
@@ -252,6 +427,116 @@ class StorageService {
     }
   }
 
+  async ensureAudioReadPermission(shouldPrompt = false) {
+    if (Platform.OS !== 'android') {
+      return true;
+    }
+
+    const permission =
+      Platform.Version >= 33
+        ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO
+        : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+    if (!permission) {
+      return true;
+    }
+
+    try {
+      const alreadyGranted = await PermissionsAndroid.check(permission);
+      if (alreadyGranted) {
+        return true;
+      }
+    } catch (error) {
+      // Continue to optional request path.
+    }
+
+    if (!shouldPrompt) {
+      return false;
+    }
+
+    try {
+      const granted = await PermissionsAndroid.request(permission);
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  addPathCandidate(list, rawPath) {
+    const candidate = toPathFromUri(rawPath);
+    if (!candidate || candidate.startsWith('content://')) {
+      return;
+    }
+
+    if (!list.includes(candidate)) {
+      list.push(candidate);
+    }
+  }
+
+  async resolveContentUriToFilePath(contentUri, filenameHint = '', shouldPrompt = false) {
+    const sourceUri = String(contentUri || '').trim();
+    if (!sourceUri.startsWith('content://')) {
+      return '';
+    }
+
+    await this.ensureAudioReadPermission(shouldPrompt);
+
+    const candidates = [];
+    const stat = await RNFS.stat(sourceUri).catch(() => null);
+    this.addPathCandidate(candidates, stat?.originalFilepath || '');
+    this.addPathCandidate(candidates, stat?.path || '');
+
+    const externalBase =
+      RNFS.ExternalStorageDirectoryPath ||
+      RNFS.ExternalDirectoryPath ||
+      '/storage/emulated/0';
+
+    const decodedUri = safeDecodeUriComponent(stripUriQueryAndHash(sourceUri));
+    const rawMatch = decodedUri.match(/\/document\/raw:(.+)$/i);
+    if (rawMatch?.[1]) {
+      this.addPathCandidate(candidates, rawMatch[1]);
+    }
+
+    const primaryMatch = decodedUri.match(/\/document\/primary:(.+)$/i);
+    if (primaryMatch?.[1]) {
+      this.addPathCandidate(candidates, `${externalBase}/${primaryMatch[1]}`);
+    }
+
+    const documentId =
+      safeDecodeUriComponent(decodedUri.match(/\/document\/([^/]+)$/i)?.[1] || '');
+    if (documentId.includes(':')) {
+      const suffix = documentId.split(':').slice(1).join(':');
+      if (suffix && !suffix.startsWith('/')) {
+        this.addPathCandidate(candidates, `${externalBase}/${suffix}`);
+      }
+    }
+
+    const resolvedFileName =
+      String(filenameHint || '').trim() ||
+      String(stat?.name || '').trim() ||
+      getFileNameFromUriOrPath(decodedUri);
+
+    if (resolvedFileName && !resolvedFileName.includes(':')) {
+      const sharedDirs = [
+        `${externalBase}/Download`,
+        `${externalBase}/Downloads`,
+        `${externalBase}/Music`,
+        `${externalBase}/Music/RhythmBlade`,
+      ];
+      sharedDirs.forEach(dirPath =>
+        this.addPathCandidate(candidates, `${dirPath}/${resolvedFileName}`),
+      );
+    }
+
+    for (const candidate of candidates) {
+      const exists = await RNFS.exists(candidate).catch(() => false);
+      if (exists) {
+        return candidate;
+      }
+    }
+
+    return '';
+  }
+
   async getWritableMusicDir() {
     const fallbackDir = `${this.musicDir}/RhythmBlade`;
     await this.ensureDirectory(this.musicDir);
@@ -287,7 +572,9 @@ class StorageService {
       const parsedLibrary = library ? JSON.parse(library) : [];
       let changed = false;
 
-      const normalizedLibrary = parsedLibrary.map(song => {
+      const normalizedLibrary = [];
+      for (const song of parsedLibrary) {
+        let nextSong = song;
         const sourceName =
           song?.filename ||
           String(song?.localPath || '')
@@ -302,17 +589,46 @@ class StorageService {
           ? inferred.title || song?.title
           : song?.title;
 
-        if (nextArtist !== song?.artist || nextTitle !== song?.title) {
+        if (nextArtist !== nextSong?.artist || nextTitle !== nextSong?.title) {
           changed = true;
-          return {
-            ...song,
+          nextSong = {
+            ...nextSong,
             artist: nextArtist,
             title: nextTitle,
           };
         }
 
-        return song;
-      });
+        const currentUrl = String(nextSong?.url || '').trim();
+        const currentLocalPath = String(nextSong?.localPath || '').trim();
+        const needsPathResolve =
+          currentUrl.startsWith('content://') ||
+          currentLocalPath.startsWith('content://');
+
+        if (needsPathResolve) {
+          const contentUri = currentUrl.startsWith('content://')
+            ? currentUrl
+            : currentLocalPath;
+          const originalPath = await this.resolveContentUriToFilePath(
+            contentUri,
+            sourceName,
+            false,
+          );
+
+          if (originalPath) {
+            const nextUrl = `file://${originalPath}`;
+            if (nextSong.localPath !== originalPath || currentUrl !== nextUrl) {
+              changed = true;
+              nextSong = {
+                ...nextSong,
+                localPath: originalPath,
+                url: nextUrl,
+              };
+            }
+          }
+        }
+
+        normalizedLibrary.push(nextSong);
+      }
 
       if (changed) {
         await AsyncStorage.setItem(
@@ -555,6 +871,7 @@ class StorageService {
           `${resolvedTitle}${DEFAULT_AUDIO_EXTENSION}`,
       };
       await this.addToLibrary(reusedSong);
+      this.hydrateArtworkForSong(reusedSong, {persist: true}).catch(() => {});
       return reusedSong;
     }
 
@@ -563,6 +880,7 @@ class StorageService {
     if (existingMatch && (await this.songFileExists(existingMatch))) {
       const merged = this.mergeSongRecords(existingMatch, incomingSong);
       await this.addToLibrary(merged);
+      this.hydrateArtworkForSong(merged, {persist: true}).catch(() => {});
       return merged;
     }
 
@@ -579,6 +897,7 @@ class StorageService {
         filename: preferredPath.split('/').pop(),
       };
       await this.addToLibrary(reusedSong);
+      this.hydrateArtworkForSong(reusedSong, {persist: true}).catch(() => {});
       return reusedSong;
     }
 
@@ -610,6 +929,7 @@ class StorageService {
     };
 
     await this.addToLibrary(localSong);
+    this.hydrateArtworkForSong(localSong, {persist: true}).catch(() => {});
     return localSong;
   }
 
@@ -622,9 +942,24 @@ class StorageService {
 
       const usesContentUri =
         sourceUri.startsWith("content://") && !file.fileCopyUri;
-      const sourcePath = usesContentUri ? "" : toPathFromUri(sourceUri);
-      if (!usesContentUri) {
-        const sourceExists = await RNFS.exists(sourcePath);
+      const initialPath = usesContentUri ? "" : toPathFromUri(sourceUri);
+      let resolvedPath = initialPath;
+      let resolvedUrl = usesContentUri ? sourceUri : `file://${initialPath}`;
+
+      if (usesContentUri) {
+        const originalPath = await this.resolveContentUriToFilePath(
+          sourceUri,
+          file?.name || '',
+          true,
+        );
+        if (originalPath) {
+          resolvedPath = originalPath;
+          resolvedUrl = `file://${originalPath}`;
+        }
+      }
+
+      if (resolvedPath) {
+        const sourceExists = await RNFS.exists(resolvedPath);
         if (!sourceExists) {
           throw new Error("Selected audio file is not accessible");
         }
@@ -632,7 +967,7 @@ class StorageService {
 
       const originalName =
         file.name ||
-        sourceUri.split("/").pop() ||
+        getFileNameFromUriOrPath(sourceUri) ||
         `audio_${Date.now()}.flac`;
 
       const inferred = parseMetadataFromFilename(originalName);
@@ -644,8 +979,8 @@ class StorageService {
           "Local Audio",
         artist: inferred.artist || "Unknown Artist",
         album: "",
-        url: usesContentUri ? sourceUri : `file://${sourcePath}`,
-        localPath: usesContentUri ? "" : sourcePath,
+        url: resolvedUrl,
+        localPath: resolvedPath,
         filename: originalName,
         sourceFilename: originalName,
         isLocal: true,
@@ -663,10 +998,12 @@ class StorageService {
       if (canReuseExisting) {
         const merged = this.mergeSongRecords(existing, track);
         await this.addToLibrary(merged);
+        this.hydrateArtworkForSong(merged, {persist: true}).catch(() => {});
         return merged;
       }
 
       await this.addToLibrary(track);
+      this.hydrateArtworkForSong(track, {persist: true}).catch(() => {});
       return track;
     } catch (error) {
       console.error("Error importing local audio file:", error);
