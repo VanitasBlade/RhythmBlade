@@ -15,6 +15,10 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import apiService from '../services/api';
 import storageService from '../services/storage';
+import {
+  MUSIC_HOME_ART_COLORS,
+  MUSIC_HOME_THEME as C,
+} from '../theme/musicHomeTheme';
 
 const DOWNLOAD_OPTIONS = [
   {label: 'Hi-Res', description: '24-bit FLAC (DASH) up to 192 kHz'},
@@ -26,6 +30,19 @@ const DOWNLOAD_OPTIONS = [
 const SEARCH_TYPES = ['Tracks', 'Albums', 'Artists', 'Playlists'];
 const DOWNLOADER_TABS = ['Search', 'Queue'];
 const ACTIVE_QUEUE_STATUSES = new Set(['queued', 'preparing', 'downloading']);
+const ART_FALLBACK_COLORS = Object.values(MUSIC_HOME_ART_COLORS);
+
+const getFallbackArtColor = item => {
+  const key = `${item?.title || ''}|${item?.artist || item?.subtitle || ''}`;
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash << 5) - hash + key.charCodeAt(i);
+    hash |= 0;
+  }
+  return (
+    ART_FALLBACK_COLORS[Math.abs(hash) % ART_FALLBACK_COLORS.length] || C.bgCard
+  );
+};
 
 const normalizeText = value =>
   String(value || '')
@@ -108,6 +125,7 @@ const SearchScreen = () => {
   const [queue, setQueue] = useState([]);
   const [queuingKeys, setQueuingKeys] = useState({});
   const [retryingJobs, setRetryingJobs] = useState({});
+  const [cancelingJobs, setCancelingJobs] = useState({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [downloadSetting, setDownloadSetting] = useState('Hi-Res');
 
@@ -338,6 +356,33 @@ const SearchScreen = () => {
     }
   };
 
+  const cancelQueueItem = async job => {
+    if (!job?.id || cancelingJobs[job.id]) {
+      return;
+    }
+
+    try {
+      setCancelingJobs(prev => ({...prev, [job.id]: true}));
+      await apiService.cancelDownload(job.id);
+      if (mountedRef.current) {
+        setQueue(prev => prev.filter(existing => existing.id !== job.id));
+      }
+    } catch (error) {
+      Alert.alert(
+        'Cancel Failed',
+        error.message || 'Could not cancel this download.',
+      );
+    } finally {
+      if (mountedRef.current) {
+        setCancelingJobs(prev => {
+          const next = {...prev};
+          delete next[job.id];
+          return next;
+        });
+      }
+    }
+  };
+
   const renderSearchResult = ({item, index}) => {
     const key = toTrackKey(item);
     const linkedJob = queueByTrackKey.get(key);
@@ -349,16 +394,15 @@ const SearchScreen = () => {
     const isFailed = linkedJob?.status === 'failed';
     const disabled = !item.downloadable || isQueuing || isActive || isDone;
     const durationText = formatDuration(item.duration);
+    const fallbackColor = getFallbackArtColor(item);
 
     return (
       <View style={styles.resultCard}>
-        <View style={styles.resultLeft}>
+        <View style={[styles.resultArtworkShell, {backgroundColor: fallbackColor}]}>
           {item.artwork ? (
-            <Image source={{uri: item.artwork}} style={styles.artworkImage} />
+            <Image source={{uri: item.artwork}} style={styles.resultArtworkImage} />
           ) : (
-            <View style={styles.artworkPlaceholder}>
-              <Icon name="music-note" size={20} color="#b8aef5" />
-            </View>
+            <Icon name="music-note" size={22} color={C.accentFg} />
           )}
         </View>
 
@@ -376,9 +420,9 @@ const SearchScreen = () => {
           )}
         </View>
 
-        {item.downloadable ? (
-          <View style={styles.resultRight}>
-            <Text style={styles.resultDuration}>{durationText || '--:--'}</Text>
+        <View style={styles.resultRight}>
+          <Text style={styles.resultDuration}>{durationText || '--:--'}</Text>
+          {item.downloadable ? (
             <TouchableOpacity
               style={[
                 styles.downloadButton,
@@ -389,17 +433,17 @@ const SearchScreen = () => {
               onPress={() => queueDownload(item, index)}
               disabled={disabled}>
               {isQueuing || isActive ? (
-                <ActivityIndicator size="small" color="#efe8ff" />
+                <ActivityIndicator size="small" color={C.bg} />
               ) : (
                 <Icon
                   name={isDone ? 'check' : 'download-outline'}
-                  size={18}
-                  color="#efe8ff"
+                  size={16}
+                  color={C.bg}
                 />
               )}
             </TouchableOpacity>
-          </View>
-        ) : null}
+          ) : null}
+        </View>
       </View>
     );
   };
@@ -408,74 +452,84 @@ const SearchScreen = () => {
     const progress = Number.isFinite(item.progress)
       ? Math.max(0, Math.min(100, Math.round(item.progress)))
       : 0;
+    const active = ACTIVE_QUEUE_STATUSES.has(item.status || 'queued');
     const done = item.status === 'done';
     const failed = item.status === 'failed';
     const retrying = Boolean(retryingJobs[item.id]);
+    const canceling = Boolean(cancelingJobs[item.id]);
+    const fallbackColor = getFallbackArtColor(item);
+    const barColor = failed ? '#9b1c1c' : done ? C.textDeep : C.accent;
+    const statusColor = failed ? '#f87171' : done ? C.accentFg : C.accent;
 
     return (
-      <View style={styles.queueCard}>
-        <View
-          style={[
-            styles.queueAccent,
-            done && styles.queueAccentDone,
-            failed && styles.queueAccentFailed,
-          ]}
-        />
-        <View style={styles.queueArtworkWrap}>
-          {item.artwork ? (
-            <Image source={{uri: item.artwork}} style={styles.queueArtwork} />
-          ) : (
-            <View style={styles.queueArtworkFallback}>
-              <Icon name="music-note" size={22} color="#c5baf5" />
-            </View>
-          )}
-        </View>
-        <View style={styles.queueInfo}>
-          <View style={styles.queueHeader}>
-            <Text style={styles.queueTitle} numberOfLines={1}>
-              {item.title}
-            </Text>
-            <View style={styles.queueHeaderRight}>
-              <Text
-                style={[
-                  styles.queueStatus,
-                  done && styles.queueStatusDone,
-                  failed && styles.queueStatusFailed,
-                ]}>
+      <View style={styles.queueCardShell}>
+        <View style={[styles.queueCard, failed && styles.queueCardFailed]}>
+          <View style={[styles.queueAccent, {backgroundColor: barColor}]} />
+          <View style={[styles.queueArtworkWrap, {backgroundColor: fallbackColor}]}>
+            {item.artwork ? (
+              <Image source={{uri: item.artwork}} style={styles.queueArtwork} />
+            ) : (
+              <Icon name="music-note" size={22} color={C.accentFg} />
+            )}
+          </View>
+          <View style={styles.queueInfo}>
+            <View style={styles.queueHeader}>
+              <Text style={styles.queueTitle} numberOfLines={1}>
+                {item.title}
+              </Text>
+              <Text style={[styles.queueStatus, {color: statusColor}]}>
                 {getQueueStatusLabel(item)}
               </Text>
-              {failed ? (
-                <TouchableOpacity
-                  style={[
-                    styles.retryCircleButton,
-                    retrying && styles.retryCircleButtonBusy,
-                  ]}
-                  onPress={() => retryQueueItem(item)}
-                  disabled={retrying}>
-                  {retrying ? (
-                    <ActivityIndicator size="small" color="#efe8ff" />
-                  ) : (
-                    <Icon name="refresh" size={14} color="#efe8ff" />
-                  )}
-                </TouchableOpacity>
-              ) : null}
             </View>
+            <View style={styles.queueProgressTrack}>
+              <View
+                style={[
+                  styles.queueProgressFill,
+                  {width: `${progress}%`, backgroundColor: barColor},
+                ]}
+              />
+            </View>
+            <Text style={styles.queueMeta} numberOfLines={1}>
+              {getQueueSubtitle(item)}
+            </Text>
           </View>
-          <View style={styles.queueProgressTrack}>
-            <View
-              style={[
-                styles.queueProgressFill,
-                {
-                  width: `${progress}%`,
-                },
-                done && styles.queueProgressDone,
-                failed && styles.queueProgressFailed,
-              ]}
-            />
+          <View style={styles.queueActionWrap}>
+            {failed ? (
+              <TouchableOpacity
+                style={[
+                  styles.retrySquareButton,
+                  retrying && styles.retrySquareButtonBusy,
+                ]}
+                onPress={() => retryQueueItem(item)}
+                disabled={retrying}>
+                {retrying ? (
+                  <ActivityIndicator size="small" color={C.accentFg} />
+                ) : (
+                  <Icon name="refresh" size={15} color={C.accentFg} />
+                )}
+              </TouchableOpacity>
+            ) : active ? (
+              <TouchableOpacity
+                style={[
+                  styles.cancelSquareButton,
+                  canceling && styles.cancelSquareButtonBusy,
+                ]}
+                onPress={() => cancelQueueItem(item)}
+                disabled={canceling}>
+                {canceling ? (
+                  <ActivityIndicator size="small" color={C.textDim} />
+                ) : (
+                  <Icon name="close" size={15} color={C.textDim} />
+                )}
+              </TouchableOpacity>
+            ) : done ? (
+              <View style={styles.queueDoneState}>
+                <Icon name="check-all" size={18} color={C.accentFg} />
+              </View>
+            ) : (
+              <View style={styles.queueActionSpacer} />
+            )}
           </View>
-          <Text style={styles.queueMeta} numberOfLines={1}>
-            {getQueueSubtitle(item)}
-          </Text>
         </View>
       </View>
     );
@@ -488,7 +542,7 @@ const SearchScreen = () => {
 
     return (
       <View style={styles.emptyContainer}>
-        <Icon name="cloud-search-outline" size={62} color="#6f61a8" />
+        <Icon name="magnify" size={22} color={C.textDeep} style={styles.emptyIcon} />
         <Text style={styles.emptyTitle}>
           {query
             ? `No ${activeSearchType.toLowerCase()} found`
@@ -503,7 +557,12 @@ const SearchScreen = () => {
 
   const renderQueueEmpty = () => (
     <View style={styles.emptyContainer}>
-      <Icon name="download-outline" size={62} color="#6f61a8" />
+      <Icon
+        name="download-outline"
+        size={22}
+        color={C.textDeep}
+        style={styles.emptyIcon}
+      />
       <Text style={styles.emptyTitle}>Queue is empty</Text>
       <Text style={styles.emptySubtitle}>
         Start downloads from the Search tab.
@@ -518,9 +577,9 @@ const SearchScreen = () => {
         <TouchableOpacity
           style={styles.settingsButton}
           onPress={() => setSettingsOpen(true)}>
-          <Icon name="cog-outline" size={17} color="#efe8ff" />
+          <Icon name="music-note-eighth" size={14} color={C.textDim} />
           <Text style={styles.settingsValue}>{currentOption.label}</Text>
-          <Icon name="chevron-down" size={18} color="#b9aae8" />
+          <Icon name="chevron-down" size={15} color={C.textMute} />
         </TouchableOpacity>
       </View>
 
@@ -557,62 +616,60 @@ const SearchScreen = () => {
 
       {activeDownloaderTab === 'Search' ? (
         <View style={styles.searchPanel}>
-          <View style={styles.searchRow}>
+          <View style={styles.searchTop}>
             <View style={styles.searchInputWrap}>
+              <Icon name="magnify" size={16} color={C.textMute} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search for tracks, albums, artists..."
-                placeholderTextColor="#6f61a8"
+                placeholder="Search songs, albums, artists..."
+                placeholderTextColor={C.textMute}
                 value={query}
                 onChangeText={setQuery}
                 onSubmitEditing={searchSongs}
                 returnKeyType="search"
               />
+              <TouchableOpacity
+                style={[
+                  styles.searchActionButton,
+                  (!query.trim() || loading) && styles.searchActionButtonDisabled,
+                ]}
+                onPress={searchSongs}
+                disabled={!query.trim() || loading}>
+                {loading ? (
+                  <ActivityIndicator size="small" color={C.accentFg} />
+                ) : (
+                  <Icon name="arrow-right" size={14} color={C.accentFg} />
+                )}
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={[
-                styles.searchButton,
-                (!query.trim() || loading) && styles.searchButtonDisabled,
-              ]}
-              onPress={searchSongs}
-              disabled={!query.trim() || loading}>
-              {loading ? (
-                <ActivityIndicator size="small" color="#efe8ff" />
-              ) : (
-                <>
-                  <Icon name="magnify" size={20} color="#efe8ff" />
-                  <Text style={styles.searchButtonText}>Search</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
 
-          <View style={styles.searchTypeRow}>
-            {SEARCH_TYPES.map((tab, index) => {
-              const active = tab === activeSearchType;
-              return (
-                <TouchableOpacity
-                  key={tab}
-                  style={[
-                    styles.searchTypeButton,
-                    index < SEARCH_TYPES.length - 1 &&
-                      styles.searchTypeButtonGap,
-                    active && styles.searchTypeButtonActive,
-                  ]}
-                  onPress={() => {
-                    setActiveSearchType(tab);
-                    setResults([]);
-                  }}>
-                  <Text
+            <View style={styles.searchTypeRow}>
+              {SEARCH_TYPES.map((tab, index) => {
+                const active = tab === activeSearchType;
+                return (
+                  <TouchableOpacity
+                    key={tab}
                     style={[
-                      styles.searchTypeText,
-                      active && styles.searchTypeTextActive,
-                    ]}>
-                    {tab}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+                      styles.searchTypeButton,
+                      index < SEARCH_TYPES.length - 1 &&
+                        styles.searchTypeButtonGap,
+                      active && styles.searchTypeButtonActive,
+                    ]}
+                    onPress={() => {
+                      setActiveSearchType(tab);
+                      setResults([]);
+                    }}>
+                    <Text
+                      style={[
+                        styles.searchTypeText,
+                        active && styles.searchTypeTextActive,
+                      ]}>
+                      {tab}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
 
           <FlatList
@@ -645,7 +702,7 @@ const SearchScreen = () => {
           style={styles.modalBackdrop}
           onPress={() => setSettingsOpen(false)}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Streaming & Downloads</Text>
+            <Text style={styles.modalTitle}>Download quality</Text>
             {DOWNLOAD_OPTIONS.map(option => {
               const selected = option.label === downloadSetting;
               return (
@@ -666,7 +723,7 @@ const SearchScreen = () => {
                     </Text>
                   </View>
                   {selected ? (
-                    <Icon name="check" size={18} color="#efe8ff" />
+                    <Icon name="check" size={13} color={C.accentFg} />
                   ) : null}
                 </TouchableOpacity>
               );
@@ -681,7 +738,7 @@ const SearchScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f0822',
+    backgroundColor: C.bg,
   },
   topBar: {
     paddingTop: 54,
@@ -691,66 +748,72 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#261a45',
-    backgroundColor: '#100928',
+    borderBottomColor: C.borderDim,
+    backgroundColor: C.bg,
   },
   brand: {
-    fontSize: 30,
-    color: '#f0eaff',
+    fontSize: 40,
+    color: '#e8e2f8',
     fontWeight: '800',
+    letterSpacing: -0.3,
   },
   settingsButton: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#443470',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#1b1038',
+    borderColor: C.border,
+    borderRadius: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#1e1445',
   },
   settingsValue: {
-    color: '#d7ccff',
-    fontWeight: '700',
+    color: C.accentFg,
+    fontWeight: '600',
     fontSize: 13,
     marginHorizontal: 6,
   },
   downloaderTabsRow: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: '#261a45',
+    borderBottomColor: C.borderDim,
     paddingHorizontal: 16,
-    backgroundColor: '#100928',
+    backgroundColor: C.bg,
   },
   downloaderTabButton: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 12,
+    justifyContent: 'center',
+    paddingVertical: 11,
+    position: 'relative',
   },
   downloaderTabLabelWrap: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   downloaderTabText: {
-    color: '#8172b8',
-    fontSize: 17,
-    fontWeight: '600',
+    color: C.textMute,
+    fontSize: 18,
+    fontWeight: '500',
   },
   downloaderTabTextActive: {
-    color: '#efe8ff',
+    color: C.text,
+    fontWeight: '700',
   },
   downloaderTabUnderline: {
-    marginTop: 10,
+    position: 'absolute',
+    bottom: -1,
+    left: '20%',
+    right: '20%',
     height: 2,
-    alignSelf: 'stretch',
-    backgroundColor: '#8f5dff',
+    backgroundColor: C.accent,
   },
   queueBadge: {
     marginLeft: 6,
     minWidth: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: '#8f5dff',
+    backgroundColor: C.accent,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
@@ -763,338 +826,332 @@ const styles = StyleSheet.create({
   searchPanel: {
     flex: 1,
   },
-  searchRow: {
-    flexDirection: 'row',
+  searchTop: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 10,
+    paddingBottom: 8,
   },
   searchInputWrap: {
-    flex: 1,
-    borderRadius: 14,
+    minHeight: 42,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#3b2a62',
-    backgroundColor: '#191033',
-    paddingHorizontal: 12,
-    justifyContent: 'center',
-    minHeight: 48,
-    marginRight: 10,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   searchInput: {
-    color: '#efe8ff',
-    fontSize: 16,
+    flex: 1,
+    color: C.text,
+    fontSize: 14,
+    paddingVertical: 0,
+    paddingHorizontal: 8,
   },
-  searchButton: {
-    minWidth: 98,
-    borderRadius: 12,
-    backgroundColor: '#8f5dff',
+  searchActionButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: '#1e1445',
     justifyContent: 'center',
     alignItems: 'center',
-    flexDirection: 'row',
-    paddingHorizontal: 10,
   },
-  searchButtonDisabled: {
-    opacity: 0.65,
-  },
-  searchButtonText: {
-    color: '#efe8ff',
-    fontSize: 15,
-    fontWeight: '700',
-    marginLeft: 4,
+  searchActionButtonDisabled: {
+    opacity: 0.6,
   },
   searchTypeRow: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#261a45',
+    marginTop: 8,
   },
   searchTypeButton: {
     flex: 1,
-    borderRadius: 8,
+    borderRadius: 7,
     borderWidth: 1,
-    borderColor: '#322456',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    backgroundColor: '#171030',
+    borderColor: C.border,
+    paddingVertical: 8,
+    backgroundColor: C.bgCard,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   searchTypeButtonGap: {
-    marginRight: 8,
+    marginRight: 6,
   },
   searchTypeButtonActive: {
-    borderColor: '#8f5dff',
-    backgroundColor: '#2d1b54',
+    borderColor: C.accent,
+    backgroundColor: C.accent,
   },
   searchTypeText: {
-    color: '#9f93c8',
+    color: C.textMute,
     fontSize: 13,
     fontWeight: '600',
   },
   searchTypeTextActive: {
-    color: '#f0eaff',
+    color: '#fff',
+    fontWeight: '600',
   },
   searchListContent: {
-    padding: 16,
-    paddingBottom: 110,
+    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingBottom: 180,
   },
   resultCard: {
     flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 14,
+    alignItems: 'stretch',
+    minHeight: 64,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#2a1f49',
-    backgroundColor: '#16102f',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    marginBottom: 10,
-    minHeight: 74,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+    overflow: 'hidden',
+    marginBottom: 8,
   },
-  resultLeft: {
-    marginRight: 10,
-  },
-  artworkImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 8,
-  },
-  artworkPlaceholder: {
-    width: 56,
-    height: 56,
-    borderRadius: 8,
+  resultArtworkShell: {
+    width: 64,
+    height: 64,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#291a4d',
+  },
+  resultArtworkImage: {
+    width: 64,
+    height: 64,
   },
   resultInfo: {
     flex: 1,
-    marginRight: 8,
+    minWidth: 0,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
   },
   resultTitle: {
-    color: '#f0eaff',
-    fontSize: 17,
+    color: C.text,
+    fontSize: 14,
     fontWeight: '700',
   },
   resultArtist: {
-    color: '#c9bbf3',
-    fontSize: 14,
+    color: C.textMute,
+    fontSize: 12,
     marginTop: 2,
   },
   resultMeta: {
-    color: '#8f82b6',
-    fontSize: 12,
+    color: C.textDeep,
+    fontSize: 11,
     marginTop: 2,
   },
   resultRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    minWidth: 84,
+    paddingRight: 10,
   },
   resultDuration: {
-    color: '#8f82b6',
-    fontSize: 12,
-    marginRight: 10,
-    minWidth: 34,
+    color: C.textDeep,
+    fontSize: 11,
+    marginRight: 8,
+    minWidth: 40,
     textAlign: 'right',
   },
   downloadButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
+    width: 30,
+    height: 30,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#3f2e69',
+    borderColor: C.accent,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#29184b',
+    backgroundColor: C.accent,
   },
   downloadButtonBusy: {
-    opacity: 0.75,
+    opacity: 0.7,
   },
   downloadButtonDone: {
-    backgroundColor: '#3a2a64',
-    borderColor: '#5f49a0',
+    backgroundColor: C.border,
+    borderColor: C.textDeep,
   },
   downloadButtonRetry: {
-    borderColor: '#ad5f72',
+    borderColor: '#7b3146',
+    backgroundColor: '#2a1430',
   },
   queueListContent: {
-    padding: 16,
-    paddingBottom: 110,
+    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 180,
+  },
+  queueCardShell: {
+    marginBottom: 8,
   },
   queueCard: {
+    minHeight: 64,
     flexDirection: 'row',
-    borderRadius: 14,
+    alignItems: 'stretch',
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#2a1f49',
-    backgroundColor: '#16102f',
-    marginBottom: 10,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
     overflow: 'hidden',
+  },
+  queueCardFailed: {
+    borderColor: '#4a1a1a',
   },
   queueAccent: {
     width: 4,
-    backgroundColor: '#8f5dff',
-  },
-  queueAccentDone: {
-    backgroundColor: '#6f5cad',
-  },
-  queueAccentFailed: {
-    backgroundColor: '#d8667b',
   },
   queueArtworkWrap: {
-    width: 58,
+    width: 64,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#251843',
   },
   queueArtwork: {
-    width: 58,
-    height: 58,
-  },
-  queueArtworkFallback: {
-    width: 58,
-    height: 58,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 64,
+    height: 64,
   },
   queueInfo: {
     flex: 1,
-    paddingVertical: 10,
+    justifyContent: 'center',
     paddingHorizontal: 10,
   },
   queueHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 5,
   },
   queueTitle: {
     flex: 1,
-    color: '#f0eaff',
-    fontSize: 16,
+    color: C.text,
+    fontSize: 14,
     fontWeight: '700',
-    marginRight: 8,
-  },
-  queueHeaderRight: {
-    marginLeft: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
+    marginRight: 6,
   },
   queueStatus: {
-    color: '#8f5dff',
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '700',
   },
-  queueStatusDone: {
-    color: '#bca8ff',
-  },
-  queueStatusFailed: {
-    color: '#ef7c93',
-  },
-  retryCircleButton: {
-    marginLeft: 8,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#ad5f72',
-    backgroundColor: '#3b1630',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  retryCircleButtonBusy: {
-    opacity: 0.8,
-  },
   queueProgressTrack: {
-    height: 4,
-    borderRadius: 3,
-    backgroundColor: '#2b2146',
+    height: 3,
+    borderRadius: 1,
+    backgroundColor: C.border,
     overflow: 'hidden',
   },
   queueProgressFill: {
     height: '100%',
-    backgroundColor: '#8f5dff',
-  },
-  queueProgressDone: {
-    backgroundColor: '#9a83e2',
-  },
-  queueProgressFailed: {
-    backgroundColor: '#d8667b',
+    borderRadius: 1,
   },
   queueMeta: {
-    color: '#9f93c8',
-    fontSize: 12,
-    marginTop: 7,
+    color: C.textDeep,
+    fontSize: 11,
+    marginTop: 4,
+  },
+  queueActionWrap: {
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingRight: 10,
+  },
+  queueActionSpacer: {
+    width: 30,
+  },
+  retrySquareButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: '#1e0d3a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  retrySquareButtonBusy: {
+    opacity: 0.8,
+  },
+  cancelSquareButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: C.borderDim,
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelSquareButtonBusy: {
+    opacity: 0.75,
+  },
+  queueDoneState: {
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyContainer: {
     paddingTop: 90,
-    alignItems: 'center',
     paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  emptyIcon: {
+    marginBottom: 8,
   },
   emptyTitle: {
-    marginTop: 14,
-    color: '#f0eaff',
-    fontSize: 19,
+    color: C.textDeep,
+    fontSize: 20,
     fontWeight: '700',
   },
   emptySubtitle: {
     marginTop: 8,
-    color: '#9b8ec5',
-    fontSize: 14,
+    color: C.textMute,
+    fontSize: 13,
     textAlign: 'center',
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(7, 3, 16, 0.72)',
+    backgroundColor: 'rgba(8, 5, 18, 0.45)',
     justifyContent: 'flex-start',
-    paddingTop: 120,
-    paddingHorizontal: 18,
+    alignItems: 'flex-end',
+    paddingTop: 94,
+    paddingHorizontal: 16,
   },
   modalCard: {
-    borderRadius: 16,
+    minWidth: 170,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#4b3a7a',
-    backgroundColor: '#150d2f',
-    padding: 12,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+    paddingVertical: 6,
+    paddingHorizontal: 0,
   },
   modalTitle: {
-    color: '#f0eaff',
-    fontSize: 16,
+    color: C.textDim,
+    fontSize: 10,
     fontWeight: '700',
-    marginBottom: 10,
     textTransform: 'uppercase',
-    letterSpacing: 0.7,
+    letterSpacing: 0.6,
+    paddingHorizontal: 12,
+    paddingBottom: 5,
   },
   optionRow: {
-    borderWidth: 1,
-    borderColor: '#35265e',
-    borderRadius: 12,
-    backgroundColor: '#150d2f',
-    paddingVertical: 10,
+    backgroundColor: C.bgCard,
+    paddingVertical: 8,
     paddingHorizontal: 12,
-    marginBottom: 8,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   optionRowSelected: {
-    borderColor: '#8f5dff',
-    backgroundColor: '#281a4b',
+    backgroundColor: '#211840',
   },
   optionTextWrap: {
     flex: 1,
-    paddingRight: 10,
+    paddingRight: 8,
   },
   optionTitle: {
-    color: '#efe8ff',
-    fontSize: 17,
-    fontWeight: '700',
+    color: C.text,
+    fontSize: 11,
+    fontWeight: '600',
   },
   optionSubtitle: {
-    color: '#9f93c8',
-    fontSize: 13,
-    marginTop: 2,
+    color: C.textMute,
+    fontSize: 10,
+    marginTop: 1,
   },
 });
 

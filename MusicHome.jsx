@@ -76,6 +76,8 @@ const Ico = {
   Bell:   () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" stroke={C.textDim} strokeWidth="2" strokeLinecap="square"/></svg>,
   Equalizer: () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 20V14M4 10V4M12 20V12M12 8V4M20 20V16M20 12V4M1 14h6M9 8h6M17 16h6" stroke={C.textDim} strokeWidth="2" strokeLinecap="square"/></svg>,
   ChevRight: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke={C.textMute} strokeWidth="2" strokeLinecap="square"/></svg>,
+  Cancel: () => <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke={C.textDim} strokeWidth="2.5" strokeLinecap="square"/></svg>,
+  Retry:  () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M1 4v6h6" stroke={C.accentFg} strokeWidth="2.2" strokeLinecap="square" strokeLinejoin="miter"/><path d="M3.51 15a9 9 0 1 0 .49-4.95" stroke={C.accentFg} strokeWidth="2.2" strokeLinecap="square"/></svg>,
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -106,6 +108,7 @@ const INIT_QUEUE = [
   { title: "Neon Pulse",       artist: "SynthWave",   c: "purple", emoji: "🌌", progress: 12,  size: 3.8,  done: false },
   { title: "Acoustic Morning", artist: "Folk Studio", c: "pink",   emoji: "🎸", progress: 78,  size: 5.1,  done: false },
   { title: "Jazz Nights",      artist: "Blue Note",   c: "teal",   emoji: "🎷", progress: 100, size: 6.2,  done: true  },
+  { title: "Neon Nights",      artist: "SynthWave",   c: "blue",   emoji: "🌃", progress: 47,  size: 5.2,  done: false, status: "failed" },
 ];
 
 const INIT_PLAYLISTS = [
@@ -476,7 +479,6 @@ const DlSearchPanel = ({ queue, onAdd }) => {
         </div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 8px", display: "flex", flexDirection: "column", gap: 4 }}>
-        {/* FIX: Use stable title key instead of index */}
         {SEARCH_RESULTS.map(r => {
           const queued = !!queue.find(q => q.title === r.title);
           return (
@@ -496,7 +498,8 @@ const DlSearchPanel = ({ queue, onAdd }) => {
   );
 };
 
-const DlQueuePanel = ({ queue }) => (
+// status: "downloading" | "done" | "removing" | "failed"
+const DlQueuePanel = ({ queue, onCancel, onRetry }) => (
   <div style={{ flex: 1, overflowY: "auto", padding: "10px 16px 8px", display: "flex", flexDirection: "column", gap: 6 }}>
     {queue.length === 0 && (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, paddingTop: 60 }}>
@@ -504,45 +507,147 @@ const DlQueuePanel = ({ queue }) => (
         <span style={{ color: C.textDeep, fontFamily: "'Outfit',sans-serif", fontSize: 12 }}>Queue is empty</span>
       </div>
     )}
-    {/* FIX: Use stable title key instead of index */}
-    {queue.map(item => (
-      <div key={item.title} style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 6, overflow: "hidden", display: "flex", height: 60 }}>
-        <div style={{ width: 3, background: item.done ? C.textDeep : C.accent, transition: "background .4s" }} />
-        <div style={{ width: 52, background: ART[item.c], display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{item.emoji}</div>
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 12px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
-            <div style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 600, fontSize: 12, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 130 }}>{item.title}</div>
-            <span style={{ fontSize: 10, fontFamily: "'Outfit',sans-serif", color: item.done ? C.accentFg : C.accent, flexShrink: 0, marginLeft: 4 }}>{item.done ? "✓ Done" : `${item.progress}%`}</span>
-          </div>
-          <div style={{ height: 2, background: C.border }}>
-            <div style={{ width: `${item.progress}%`, height: "100%", background: item.done ? C.textDeep : C.accent, transition: "width .35s linear" }} />
-          </div>
-          <div style={{ fontSize: 9, color: C.textDeep, marginTop: 4, fontFamily: "'Outfit',sans-serif" }}>
-            {item.done ? `${item.size} MB` : `${(item.size * item.progress / 100).toFixed(1)} MB / ${item.size} MB`}
+    {queue.map(item => {
+      const isRemoving = item.status === "removing";
+      const isDone     = item.status === "done" || isRemoving;
+      const isFailed   = item.status === "failed";
+
+      // Accent bar colour
+      const barColor = isFailed ? "#9b1c1c" : isDone ? C.textDeep : C.accent;
+
+      return (
+        /* Fade-out wrapper — animates height + opacity to zero when status = "removing" */
+        <div key={item.title} style={{
+          maxHeight: isRemoving ? 0 : 70,
+          opacity: isRemoving ? 0 : 1,
+          overflow: "hidden",
+          transition: "max-height 0.4s ease, opacity 0.35s ease",
+          marginBottom: isRemoving ? -6 : 0, // collapse the gap too
+        }}>
+          <div style={{ background: C.bgCard, border: `1px solid ${isFailed ? "#4a1a1a" : C.border}`, borderRadius: 6, overflow: "hidden", display: "flex", height: 60 }}>
+
+            {/* Status accent stripe */}
+            <div style={{ width: 3, flexShrink: 0, background: barColor, transition: "background .4s" }} />
+
+            {/* Art */}
+            <div style={{ width: 52, flexShrink: 0, background: ART[item.c], display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{item.emoji}</div>
+
+            {/* Info + progress */}
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 10px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                <div style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 600, fontSize: 12, color: isFailed ? "#f87171" : C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 120 }}>{item.title}</div>
+                <span style={{ fontSize: 10, fontFamily: "'Outfit',sans-serif", flexShrink: 0, marginLeft: 4,
+                  color: isFailed ? "#f87171" : isDone ? C.accentFg : C.accent }}>
+                  {isFailed ? "✕ Failed" : isDone ? "✓ Done" : `${item.progress}%`}
+                </span>
+              </div>
+              <div style={{ height: 2, background: C.border, borderRadius: 1 }}>
+                <div style={{ width: `${item.progress}%`, height: "100%", background: barColor, transition: "width .35s linear", borderRadius: 1 }} />
+              </div>
+              <div style={{ fontSize: 9, color: C.textDeep, marginTop: 4, fontFamily: "'Outfit',sans-serif" }}>
+                {isFailed ? "Tap retry to try again" : isDone ? `${item.size} MB` : `${(item.size * item.progress / 100).toFixed(1)} / ${item.size} MB`}
+              </div>
+            </div>
+
+            {/* Action button — cancel (×) while downloading, retry (↺) if failed, nothing if done */}
+            <div style={{ display: "flex", alignItems: "center", paddingRight: 10, flexShrink: 0 }}>
+              {isFailed ? (
+                <button onClick={() => onRetry(item.title)}
+                  title="Retry"
+                  style={{ width: 26, height: 26, borderRadius: 5, background: "#1e0d3a", border: `1px solid ${C.border}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "border-color .15s" }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = C.accentFg)}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}>
+                  <Ico.Retry />
+                </button>
+              ) : !isDone ? (
+                <button onClick={() => onCancel(item.title)}
+                  title="Cancel"
+                  style={{ width: 26, height: 26, borderRadius: 5, background: "none", border: `1px solid ${C.borderDim}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "border-color .15s, background .15s" }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = "#6b1a1a"; e.currentTarget.style.background = "#1e0808"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = C.borderDim; e.currentTarget.style.background = "none"; }}>
+                  <Ico.Cancel />
+                </button>
+              ) : (
+                /* Spacer so layout doesn't shift when done */
+                <div style={{ width: 26 }} />
+              )}
+            </div>
+
           </div>
         </div>
-      </div>
-    ))}
+      );
+    })}
   </div>
 );
 
 const DownloaderTab = () => {
-  const [sub, setSub] = useState("search");
-  const [queue, setQueue] = useState(INIT_QUEUE);
+  const [sub, setSub]     = useState("search");
+  // Normalise INIT_QUEUE items to use a `status` field
+  const [queue, setQueue] = useState(() =>
+    INIT_QUEUE.map(item => ({ ...item, status: item.status ?? (item.done ? "done" : "downloading") }))
+  );
+  const timers = useRef({});
+
+  // Schedule the fade-out + removal for a completed item
+  const scheduleRemoval = useCallback(title => {
+    if (timers.current[title]) return; // already scheduled
+    timers.current[title] = setTimeout(() => {
+      // Trigger fade-out
+      setQueue(q => q.map(x => x.title === title ? { ...x, status: "removing" } : x));
+      // Remove from state after the CSS transition finishes
+      setTimeout(() => {
+        setQueue(q => q.filter(x => x.title !== title));
+        delete timers.current[title];
+      }, 420);
+    }, 2500);
+  }, []);
+
+  // Progress tick — only advances "downloading" items
   useEffect(() => {
-    const id = setInterval(() => setQueue(q => q.map(item => item.done || item.progress >= 100 ? { ...item, progress: 100, done: true } : { ...item, progress: item.progress + 1 })), 400);
+    const id = setInterval(() => {
+      setQueue(q => q.map(item => {
+        if (item.status !== "downloading") return item;
+        if (item.progress >= 100) {
+          scheduleRemoval(item.title);
+          return { ...item, progress: 100, status: "done" };
+        }
+        return { ...item, progress: item.progress + 1 };
+      }));
+    }, 400);
     return () => clearInterval(id);
+  }, [scheduleRemoval]);
+
+  // Schedule removal for any items that are already "done" on first mount
+  useEffect(() => {
+    queue.forEach(item => { if (item.status === "done") scheduleRemoval(item.title); });
+    return () => { Object.values(timers.current).forEach(clearTimeout); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const cancelItem = useCallback(title => {
+    clearTimeout(timers.current[title]);
+    delete timers.current[title];
+    setQueue(q => q.filter(x => x.title !== title));
   }, []);
-  const addToQueue = useCallback((track) => {
-    setQueue(q => q.find(x => x.title === track.title) ? q : [...q, { ...track, progress: 0, done: false }]);
-    setSub("queue");
+
+  const retryItem = useCallback(title => {
+    clearTimeout(timers.current[title]);
+    delete timers.current[title];
+    setQueue(q => q.map(x => x.title === title
+      ? { ...x, progress: 0, status: "downloading", done: false }
+      : x
+    ));
   }, []);
-  const active = queue.filter(q => !q.done).length;
+
+  const active = queue.filter(q => q.status === "downloading").length;
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <SubTabs tabs={[{ id: "search", label: "Search" }, { id: "queue", label: "Queue", badge: active }]} active={sub} onChange={setSub} />
-      {sub === "search" && <DlSearchPanel queue={queue} onAdd={addToQueue} />}
-      {sub === "queue"  && <DlQueuePanel queue={queue} />}
+      {sub === "search" && <DlSearchPanel queue={queue} onAdd={item => {
+        setQueue(q => q.find(x => x.title === item.title) ? q : [...q, { ...item, progress: 0, status: "downloading", done: false }]);
+        setSub("queue");
+      }} />}
+      {sub === "queue" && <DlQueuePanel queue={queue} onCancel={cancelItem} onRetry={retryItem} />}
     </div>
   );
 };

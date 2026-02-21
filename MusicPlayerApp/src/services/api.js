@@ -290,6 +290,30 @@ class ApiService {
     }
   }
 
+  async cancelDownload(jobId) {
+    try {
+      const response = await this.requestWithServerFallback(baseUrl =>
+        axios.post(`${baseUrl}/api/downloads/${jobId}/cancel`, null, {
+          timeout: 12000,
+        }),
+      );
+
+      if (response.data?.success) {
+        return true;
+      }
+
+      throw new Error('Cancel failed');
+    } catch (error) {
+      if (error.code === 'ECONNABORTED') {
+        throw new Error('Cancel request timed out');
+      }
+      if (error.response?.status === 404) {
+        return true;
+      }
+      throw new Error(error.response?.data?.error || error.message);
+    }
+  }
+
   getStreamUrl(songId) {
     return `${this.baseUrl}/api/stream/${songId}`;
   }

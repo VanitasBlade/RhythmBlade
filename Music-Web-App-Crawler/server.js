@@ -749,6 +749,16 @@ function startDownloadJob(payload) {
   return downloadJobs.get(job.id);
 }
 
+function cancelDownloadJob(jobId) {
+  const existing = downloadJobs.get(jobId);
+  if (!existing) {
+    throw new Error("Download job not found");
+  }
+
+  downloadJobs.delete(jobId);
+  return existing;
+}
+
 function retryDownloadJob(jobId) {
   const existing = downloadJobs.get(jobId);
   if (!existing) {
@@ -896,6 +906,22 @@ app.get("/api/downloads", (req, res) => {
     success: true,
     jobs,
   });
+});
+
+app.post("/api/downloads/:id/cancel", (req, res) => {
+  try {
+    const { id } = req.params;
+    const canceled = cancelDownloadJob(id);
+    return res.status(202).json({
+      success: true,
+      job: toPublicDownloadJob(canceled),
+    });
+  } catch (error) {
+    if ((error.message || "").includes("not found")) {
+      return res.status(404).json({ success: false, error: error.message });
+    }
+    return res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 app.post("/api/downloads/:id/retry", (req, res) => {
