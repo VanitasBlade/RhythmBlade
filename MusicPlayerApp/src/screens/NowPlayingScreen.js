@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, {useState} from 'react';
 import {
   View,
   Text,
@@ -17,10 +17,11 @@ import {
   RepeatMode,
 } from 'react-native-track-player';
 import playbackService from '../services/playback';
+import {MUSIC_HOME_THEME as C} from '../theme/musicHomeTheme';
 
-const { width } = Dimensions.get('window');
+const {width} = Dimensions.get('window');
 
-const NowPlayingScreen = ({ navigation }) => {
+const NowPlayingScreen = ({navigation}) => {
   const playbackState = usePlaybackState();
   const progress = useProgress();
   const track = useActiveTrack();
@@ -45,7 +46,7 @@ const NowPlayingScreen = ({ navigation }) => {
     await playbackService.skipToPrevious();
   };
 
-  const onSeek = async (value) => {
+  const onSeek = async value => {
     await playbackService.seekTo(value);
   };
 
@@ -80,10 +81,10 @@ const NowPlayingScreen = ({ navigation }) => {
   };
 
   const getRepeatColor = () => {
-    return repeatMode !== RepeatMode.Off ? '#1DB954' : '#666';
+    return repeatMode !== RepeatMode.Off ? C.accentFg : C.textDeep;
   };
 
-  const formatTime = (seconds) => {
+  const formatTime = seconds => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
@@ -94,11 +95,11 @@ const NowPlayingScreen = ({ navigation }) => {
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Icon name="chevron-down" size={32} color="#fff" />
+            <Icon name="chevron-down" size={32} color={C.text} />
           </TouchableOpacity>
         </View>
         <View style={styles.emptyContainer}>
-          <Icon name="music-off" size={80} color="#666" />
+          <Icon name="music-off" size={80} color={C.textMute} />
           <Text style={styles.emptyText}>No track playing</Text>
         </View>
       </View>
@@ -109,20 +110,20 @@ const NowPlayingScreen = ({ navigation }) => {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Icon name="chevron-down" size={32} color="#fff" />
+          <Icon name="chevron-down" size={32} color={C.text} />
         </TouchableOpacity>
         <Text style={styles.headerText}>Now Playing</Text>
         <TouchableOpacity>
-          <Icon name="dots-vertical" size={28} color="#fff" />
+          <Icon name="dots-vertical" size={28} color={C.text} />
         </TouchableOpacity>
       </View>
 
       <View style={styles.artworkContainer}>
         {track.artwork ? (
-          <Image source={{ uri: track.artwork }} style={styles.artwork} />
+          <Image source={{uri: track.artwork}} style={styles.artwork} />
         ) : (
           <View style={styles.placeholderArtwork}>
-            <Icon name="music-note" size={120} color="#666" />
+            <Icon name="music-note" size={120} color={C.textMute} />
           </View>
         )}
       </View>
@@ -148,9 +149,9 @@ const NowPlayingScreen = ({ navigation }) => {
           minimumValue={0}
           maximumValue={progress.duration || 1}
           onSlidingComplete={onSeek}
-          minimumTrackTintColor="#1DB954"
-          maximumTrackTintColor="#666"
-          thumbTintColor="#1DB954"
+          minimumTrackTintColor={C.accentFg}
+          maximumTrackTintColor={C.textDeep}
+          thumbTintColor={C.accentFg}
         />
         <View style={styles.timeContainer}>
           <Text style={styles.timeText}>{formatTime(progress.position)}</Text>
@@ -171,7 +172,7 @@ const NowPlayingScreen = ({ navigation }) => {
           <Icon
             name={isPlaying ? 'pause-circle' : 'play-circle'}
             size={80}
-            color="#1DB954"
+            color={C.accentFg}
           />
         </TouchableOpacity>
 
@@ -183,7 +184,7 @@ const NowPlayingScreen = ({ navigation }) => {
           <Icon
             name="shuffle-variant"
             size={28}
-            color={isShuffling ? '#1DB954' : '#666'}
+            color={isShuffling ? C.accentFg : C.textDeep}
           />
         </TouchableOpacity>
       </View>
@@ -203,7 +204,7 @@ const NowPlayingScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: C.bg,
   },
   header: {
     flexDirection: 'row',
@@ -216,7 +217,7 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
+    color: C.text,
   },
   artworkContainer: {
     alignItems: 'center',
@@ -231,7 +232,7 @@ const styles = StyleSheet.create({
     width: width - 80,
     height: width - 80,
     borderRadius: 12,
-    backgroundColor: '#2a2a2a',
+    backgroundColor: C.bgCard,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -242,19 +243,19 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#fff',
+    color: C.text,
     textAlign: 'center',
     marginBottom: 8,
   },
   artist: {
     fontSize: 18,
-    color: '#999',
+    color: C.textDim,
     textAlign: 'center',
     marginBottom: 4,
   },
   album: {
     fontSize: 14,
-    color: '#666',
+    color: C.textMute,
     textAlign: 'center',
   },
   progressContainer: {
@@ -272,7 +273,7 @@ const styles = StyleSheet.create({
   },
   timeText: {
     fontSize: 12,
-    color: '#999',
+    color: C.textDim,
   },
   controls: {
     flexDirection: 'row',
@@ -297,7 +298,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 18,
-    color: '#999',
+    color: C.textDim,
     marginTop: 20,
   },
 });

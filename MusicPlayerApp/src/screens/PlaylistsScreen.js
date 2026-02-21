@@ -1,94 +1,111 @@
-import React, { useState, useCallback } from 'react';
+import React, {useCallback, useMemo, useState} from 'react';
 import {
-  View,
-  Text,
   FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  TextInput,
-  Modal,
   Image,
+  Modal,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import storageService from '../services/storage';
-import playbackService from '../services/playback';
-import { useFocusEffect } from '@react-navigation/native';
+import {useFocusEffect} from '@react-navigation/native';
 
-const PlaylistsScreen = ({ navigation }) => {
+import playbackService from '../services/playback';
+import storageService from '../services/storage';
+import {MUSIC_HOME_THEME as C} from '../theme/musicHomeTheme';
+
+const PlaylistsScreen = ({navigation}) => {
   const [playlists, setPlaylists] = useState([]);
+  const [search, setSearch] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [newPlaylistDesc, setNewPlaylistDesc] = useState('');
 
-  useFocusEffect(
-    useCallback(() => {
-      loadPlaylists();
-    }, [])
-  );
-
-  const loadPlaylists = async () => {
+  const loadPlaylists = useCallback(async () => {
     try {
       const data = await storageService.getPlaylists();
       setPlaylists(data);
     } catch (error) {
       console.error('Error loading playlists:', error);
     }
-  };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadPlaylists();
+    }, [loadPlaylists]),
+  );
+
+  const filteredPlaylists = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) {
+      return playlists;
+    }
+
+    return playlists.filter(playlist => {
+      const name = String(playlist.name || '').toLowerCase();
+      const desc = String(playlist.description || '').toLowerCase();
+      return name.includes(query) || desc.includes(query);
+    });
+  }, [playlists, search]);
 
   const createPlaylist = async () => {
-    if (!newPlaylistName.trim()) {
+    const name = newPlaylistName.trim();
+    if (!name) {
       Alert.alert('Error', 'Please enter a playlist name');
       return;
     }
 
     try {
-      await storageService.createPlaylist(
-        newPlaylistName.trim(),
-        newPlaylistDesc.trim()
-      );
+      await storageService.createPlaylist(name, newPlaylistDesc.trim());
       setModalVisible(false);
       setNewPlaylistName('');
       setNewPlaylistDesc('');
       await loadPlaylists();
-      Alert.alert('Success', 'Playlist created successfully');
     } catch (error) {
-      console.error('Error creating playlist:', error);
-      Alert.alert('Error', 'Failed to create playlist');
+      Alert.alert(
+        'Create Playlist Failed',
+        error.message || 'Could not create playlist',
+      );
     }
   };
 
-  const deletePlaylist = (playlist) => {
-    Alert.alert(
-      'Delete Playlist',
-      `Are you sure you want to delete "${playlist.name}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await storageService.deletePlaylist(playlist.id);
-              await loadPlaylists();
-              Alert.alert('Success', 'Playlist deleted successfully');
-            } catch (error) {
-              console.error('Error deleting playlist:', error);
-              Alert.alert('Error', 'Failed to delete playlist');
-            }
-          },
+  const deletePlaylist = playlist => {
+    if (storageService.isFavoritesPlaylist(playlist)) {
+      Alert.alert(
+        'Protected Playlist',
+        'favorites is a default playlist and cannot be deleted.',
+      );
+      return;
+    }
+
+    Alert.alert('Delete Playlist', `Delete "${playlist.name}"?`, [
+      {text: 'Cancel', style: 'cancel'},
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await storageService.deletePlaylist(playlist.id);
+            await loadPlaylists();
+          } catch (error) {
+            Alert.alert('Error', error.message || 'Failed to delete playlist');
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  const openPlaylist = (playlist) => {
-    navigation.navigate('PlaylistDetail', { playlist });
+  const openPlaylist = playlist => {
+    navigation.navigate('PlaylistDetail', {playlist});
   };
 
-  const playPlaylist = async (playlist) => {
+  const playPlaylist = async playlist => {
     if (playlist.songs.length === 0) {
-      Alert.alert('Empty Playlist', 'This playlist has no songs');
+      Alert.alert('Empty Playlist', 'This playlist has no songs yet.');
       return;
     }
 
@@ -100,139 +117,175 @@ const PlaylistsScreen = ({ navigation }) => {
     }
   };
 
-  const renderPlaylistItem = ({ item }) => {
-    const artworks = item.songs
-      .filter(s => s.artwork)
-      .slice(0, 4)
-      .map(s => s.artwork);
-
-    return (
-      <TouchableOpacity
-        style={styles.playlistItem}
-        onPress={() => openPlaylist(item)}
-        onLongPress={() => deletePlaylist(item)}
-      >
-        <View style={styles.playlistArtwork}>
-          {artworks.length > 0 ? (
-            <View style={styles.artworkGrid}>
-              {artworks.map((artwork, index) => (
-                <Image
-                  key={index}
-                  source={{ uri: artwork }}
-                  style={styles.gridImage}
-                />
-              ))}
-              {artworks.length < 4 &&
-                Array(4 - artworks.length)
-                  .fill(0)
-                  .map((_, index) => (
-                    <View key={`empty-${index}`} style={styles.gridImageEmpty}>
-                      <Icon name="music-note" size={20} color="#666" />
-                    </View>
-                  ))}
-            </View>
-          ) : (
-            <View style={styles.placeholderArtwork}>
-              <Icon name="playlist-music" size={40} color="#666" />
-            </View>
-          )}
-        </View>
-
-        <View style={styles.playlistInfo}>
-          <Text style={styles.playlistName} numberOfLines={1}>
-            {item.name}
+  const renderHeader = () => (
+    <View>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerTitle}>Playlists</Text>
+          <Text style={styles.headerSubtitle}>
+            {playlists.length} collections
           </Text>
-          <Text style={styles.playlistCount} numberOfLines={1}>
-            {item.songs.length} {item.songs.length === 1 ? 'song' : 'songs'}
-          </Text>
-          {item.description && (
-            <Text style={styles.playlistDesc} numberOfLines={2}>
-              {item.description}
-            </Text>
-          )}
         </View>
 
         <TouchableOpacity
-          style={styles.playButton}
-          onPress={() => playPlaylist(item)}
-        >
-          <Icon name="play-circle" size={40} color="#1DB954" />
+          style={styles.createButton}
+          onPress={() => setModalVisible(true)}>
+          <Icon name="plus" size={20} color="#fff" />
         </TouchableOpacity>
-      </TouchableOpacity>
+      </View>
+
+      <View style={styles.searchWrap}>
+        <Icon name="magnify" size={18} color={C.textMute} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search playlists"
+          placeholderTextColor={C.textMute}
+          value={search}
+          onChangeText={setSearch}
+        />
+      </View>
+    </View>
+  );
+
+  const renderPlaylistItem = ({item}) => {
+    const artworks = item.songs
+      .filter(song => song.artwork)
+      .slice(0, 4)
+      .map(song => song.artwork);
+    const isFavorites = storageService.isFavoritesPlaylist(item);
+
+    return (
+      <View style={styles.playlistCard}>
+        <TouchableOpacity
+          style={styles.playlistMain}
+          onPress={() => openPlaylist(item)}
+          onLongPress={() => deletePlaylist(item)}>
+          <View style={styles.playlistArtwork}>
+            {artworks.length > 0 ? (
+              <View style={styles.artworkGrid}>
+                {artworks.map((artwork, index) => (
+                  <Image
+                    key={`${item.id}-${index}`}
+                    source={{uri: artwork}}
+                    style={styles.gridImage}
+                  />
+                ))}
+                {artworks.length < 4
+                  ? Array.from({length: 4 - artworks.length}).map(
+                      (_, index) => (
+                        <View
+                          key={`empty-${item.id}-${index}`}
+                          style={styles.gridImageEmpty}>
+                          <Icon
+                            name="music-note"
+                            size={16}
+                            color={C.textMute}
+                          />
+                        </View>
+                      ),
+                    )
+                  : null}
+              </View>
+            ) : (
+              <View style={styles.placeholderArtwork}>
+                <Icon
+                  name={isFavorites ? 'heart' : 'playlist-music'}
+                  size={30}
+                  color={isFavorites ? '#f7a8cf' : C.textMute}
+                />
+              </View>
+            )}
+          </View>
+
+          <View style={styles.playlistMeta}>
+            <View style={styles.nameRow}>
+              <Text style={styles.playlistName} numberOfLines={1}>
+                {item.name}
+              </Text>
+              {isFavorites ? (
+                <View style={styles.favoriteBadge}>
+                  <Text style={styles.favoriteBadgeText}>Default</Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={styles.playlistCount}>
+              {item.songs.length} {item.songs.length === 1 ? 'song' : 'songs'}
+            </Text>
+            {!!item.description && (
+              <Text style={styles.playlistDesc} numberOfLines={2}>
+                {item.description}
+              </Text>
+            )}
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.playIconButton}
+          onPress={() => playPlaylist(item)}>
+          <Icon name="play-circle" size={36} color={C.accentFg} />
+        </TouchableOpacity>
+      </View>
     );
   };
 
-  const renderHeader = () => (
-    <View style={styles.header}>
-      <Text style={styles.headerTitle}>Playlists</Text>
-      <TouchableOpacity
-        style={styles.createButton}
-        onPress={() => setModalVisible(true)}
-      >
-        <Icon name="plus" size={24} color="#fff" />
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Icon name="playlist-music-outline" size={80} color="#666" />
-      <Text style={styles.emptyText}>No playlists yet</Text>
-      <Text style={styles.emptySubtext}>
-        Create a playlist to organize your music
-      </Text>
-      <TouchableOpacity
-        style={styles.createPlaylistButton}
-        onPress={() => setModalVisible(true)}
-      >
-        <Icon name="plus" size={20} color="#fff" />
-        <Text style={styles.createPlaylistButtonText}>Create Playlist</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  const renderEmpty = () => {
+    const hasSearch = search.trim().length > 0;
+    return (
+      <View style={styles.emptyContainer}>
+        <Icon
+          name={hasSearch ? 'playlist-search' : 'playlist-music-outline'}
+          size={64}
+          color={C.textMute}
+        />
+        <Text style={styles.emptyTitle}>
+          {hasSearch ? 'No matching playlists' : 'No playlists yet'}
+        </Text>
+        <Text style={styles.emptySubtitle}>
+          {hasSearch
+            ? 'Try another search term.'
+            : 'Create playlists to organize your music.'}
+        </Text>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
-      {renderHeader()}
-
-      {playlists.length === 0 ? (
-        renderEmpty()
-      ) : (
-        <FlatList
-          data={playlists}
-          renderItem={renderPlaylistItem}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.listContent}
-        />
-      )}
+      <FlatList
+        data={filteredPlaylists}
+        renderItem={renderPlaylistItem}
+        keyExtractor={item => item.id}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={renderHeader}
+        ListEmptyComponent={renderEmpty}
+      />
 
       <Modal
         visible={modalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setModalVisible(false)}
-      >
+        animationType="fade"
+        transparent
+        onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Create Playlist</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Icon name="close" size={24} color="#fff" />
+                <Icon name="close" size={22} color={C.textDim} />
               </TouchableOpacity>
             </View>
 
             <TextInput
-              style={styles.input}
-              placeholder="Playlist Name"
-              placeholderTextColor="#666"
+              style={styles.modalInput}
+              placeholder="Playlist name"
+              placeholderTextColor={C.textMute}
               value={newPlaylistName}
               onChangeText={setNewPlaylistName}
             />
 
             <TextInput
-              style={[styles.input, styles.textArea]}
+              style={[styles.modalInput, styles.modalTextArea]}
               placeholder="Description (optional)"
-              placeholderTextColor="#666"
+              placeholderTextColor={C.textMute}
               value={newPlaylistDesc}
               onChangeText={setNewPlaylistDesc}
               multiline
@@ -241,8 +294,7 @@ const PlaylistsScreen = ({ navigation }) => {
 
             <TouchableOpacity
               style={styles.createModalButton}
-              onPress={createPlaylist}
-            >
+              onPress={createPlaylist}>
               <Text style={styles.createModalButtonText}>Create</Text>
             </TouchableOpacity>
           </View>
@@ -255,173 +307,215 @@ const PlaylistsScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: C.bg,
+  },
+  listContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 128,
   },
   header: {
+    paddingTop: 54,
+    paddingBottom: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
-    backgroundColor: '#1a1a1a',
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontSize: 30,
+    color: '#f0eaff',
+    fontWeight: '800',
+  },
+  headerSubtitle: {
+    marginTop: 4,
+    color: C.textDim,
+    fontSize: 12,
   },
   createButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1DB954',
-    justifyContent: 'center',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.accent,
   },
-  listContent: {
-    padding: 15,
-    paddingBottom: 100,
-  },
-  playlistItem: {
+  searchWrap: {
+    minHeight: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 8,
-    padding: 12,
+    marginBottom: 12,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    color: C.text,
+    fontSize: 14,
+  },
+  playlistCard: {
     marginBottom: 10,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  playlistMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 86,
   },
   playlistArtwork: {
-    marginRight: 12,
+    marginLeft: 8,
+    marginRight: 10,
   },
   artworkGrid: {
-    width: 80,
-    height: 80,
+    width: 68,
+    height: 68,
     flexDirection: 'row',
     flexWrap: 'wrap',
     borderRadius: 6,
     overflow: 'hidden',
   },
   gridImage: {
-    width: 40,
-    height: 40,
+    width: 34,
+    height: 34,
   },
   gridImageEmpty: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#2a2a2a',
-    justifyContent: 'center',
+    width: 34,
+    height: 34,
+    backgroundColor: '#2a1b49',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   placeholderArtwork: {
-    width: 80,
-    height: 80,
+    width: 68,
+    height: 68,
     borderRadius: 6,
-    backgroundColor: '#2a2a2a',
-    justifyContent: 'center',
+    backgroundColor: '#2a1b49',
     alignItems: 'center',
-  },
-  playlistInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  playlistName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  playlistCount: {
-    fontSize: 14,
-    color: '#999',
-    marginBottom: 4,
-  },
-  playlistDesc: {
-    fontSize: 12,
-    color: '#666',
-  },
-  playButton: {
-    padding: 4,
-  },
-  emptyContainer: {
-    flex: 1,
     justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
   },
-  emptyText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#fff',
-    marginTop: 20,
-    marginBottom: 10,
+  playlistMeta: {
+    flex: 1,
+    paddingRight: 8,
   },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#999',
-    textAlign: 'center',
-    marginBottom: 30,
-  },
-  createPlaylistButton: {
+  nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1DB954',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
-    gap: 8,
   },
-  createPlaylistButtonText: {
-    color: '#fff',
+  playlistName: {
+    flexShrink: 1,
+    color: C.text,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  favoriteBadge: {
+    marginLeft: 8,
+    borderWidth: 1,
+    borderColor: '#704f9e',
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    backgroundColor: '#2d1b54',
+  },
+  favoriteBadgeText: {
+    color: '#d4c5ff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  playlistCount: {
+    marginTop: 3,
+    color: C.textDim,
+    fontSize: 12,
+  },
+  playlistDesc: {
+    marginTop: 3,
+    color: C.textMute,
+    fontSize: 11,
+  },
+  playIconButton: {
+    width: 48,
+    minHeight: 86,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    paddingTop: 86,
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  emptyTitle: {
+    marginTop: 12,
+    color: '#f0eaff',
+    fontSize: 19,
+    fontWeight: '700',
+  },
+  emptySubtitle: {
+    marginTop: 8,
+    color: C.textDim,
+    fontSize: 13,
+    textAlign: 'center',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    justifyContent: 'center',
+    backgroundColor: 'rgba(8, 5, 18, 0.78)',
     alignItems: 'center',
-    padding: 20,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
-  modalContent: {
+  modalCard: {
     width: '100%',
-    backgroundColor: '#1a1a1a',
     borderRadius: 12,
-    padding: 20,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+    padding: 16,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
   },
   modalTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+    color: C.text,
+    fontSize: 20,
+    fontWeight: '700',
   },
-  input: {
-    backgroundColor: '#2a2a2a',
+  modalInput: {
+    borderWidth: 1,
+    borderColor: C.border,
     borderRadius: 8,
-    padding: 15,
-    fontSize: 16,
-    color: '#fff',
-    marginBottom: 15,
+    backgroundColor: C.bg,
+    color: C.text,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+    fontSize: 14,
   },
-  textArea: {
-    height: 80,
+  modalTextArea: {
+    minHeight: 90,
     textAlignVertical: 'top',
   },
   createModalButton: {
-    backgroundColor: '#1DB954',
+    marginTop: 2,
     borderRadius: 8,
-    padding: 15,
+    backgroundColor: C.accent,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 11,
   },
   createModalButtonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
 

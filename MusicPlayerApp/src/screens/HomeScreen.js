@@ -1,142 +1,283 @@
-import React, { useState, useEffect } from 'react';
+import React, {useCallback, useMemo, useState} from 'react';
 import {
-  View,
-  Text,
   FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  RefreshControl,
   Image,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import storageService from '../services/storage';
-import playbackService from '../services/playback';
+import {useFocusEffect} from '@react-navigation/native';
 
-const HomeScreen = ({ navigation }) => {
+import playbackService from '../services/playback';
+import storageService from '../services/storage';
+import {
+  MUSIC_HOME_ART_COLORS,
+  MUSIC_HOME_THEME as C,
+  PLAYLIST_EMOJIS,
+} from '../theme/musicHomeTheme';
+
+const ART_KEYS = Object.keys(MUSIC_HOME_ART_COLORS);
+
+const getPlaylistColor = index => {
+  const key = ART_KEYS[index % ART_KEYS.length];
+  return MUSIC_HOME_ART_COLORS[key] || MUSIC_HOME_ART_COLORS.purple;
+};
+
+const HomeScreen = ({navigation}) => {
   const [recentSongs, setRecentSongs] = useState([]);
+  const [playlists, setPlaylists] = useState([]);
+  const [favoriteIds, setFavoriteIds] = useState(new Set());
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadRecentSongs();
-  }, []);
-
-  const loadRecentSongs = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const library = await storageService.getLocalLibrary();
-      // Sort by addedAt descending and take first 20
+      const [library, playlistData] = await Promise.all([
+        storageService.getLocalLibrary(),
+        storageService.getPlaylists(),
+      ]);
+
       const recent = [...library]
-        .sort((a, b) => b.addedAt - a.addedAt)
-        .slice(0, 20);
+        .sort((a, b) => (Number(b.addedAt) || 0) - (Number(a.addedAt) || 0))
+        .slice(0, 30);
+
+      const favorites =
+        playlistData.find(playlist =>
+          storageService.isFavoritesPlaylist(playlist),
+        ) || null;
+
       setRecentSongs(recent);
+      setPlaylists(playlistData);
+      setFavoriteIds(new Set((favorites?.songs || []).map(song => song.id)));
     } catch (error) {
-      console.error('Error loading recent songs:', error);
+      console.error('Error loading home data:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData]),
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadRecentSongs();
+    await loadData();
     setRefreshing(false);
   };
 
+  const filteredSongs = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) {
+      return recentSongs;
+    }
+
+    return recentSongs.filter(song => {
+      const title = String(song.title || '').toLowerCase();
+      const artist = String(song.artist || '').toLowerCase();
+      return title.includes(query) || artist.includes(query);
+    });
+  }, [recentSongs, search]);
+
   const playSong = async index => {
     try {
-      await playbackService.playSongs(recentSongs, {startIndex: index});
+      await playbackService.playSongs(filteredSongs, {startIndex: index});
       navigation.navigate('NowPlaying');
     } catch (error) {
       console.error('Error playing song:', error);
     }
   };
 
-  const renderSongItem = ({ item, index }) => (
-    <TouchableOpacity
-      style={styles.songItem}
-      onPress={() => playSong(index)}
-    >
-      <View style={styles.songArtwork}>
-        {item.artwork ? (
-          <Image source={{ uri: item.artwork }} style={styles.artworkImage} />
-        ) : (
-          <View style={styles.placeholderArtwork}>
-            <Icon name="music-note" size={24} color="#666" />
-          </View>
-        )}
-      </View>
-      
-      <View style={styles.songInfo}>
-        <Text style={styles.songTitle} numberOfLines={1}>
-          {item.title}
-        </Text>
-        <Text style={styles.songArtist} numberOfLines={1}>
-          {item.artist}
-        </Text>
-      </View>
+  const toggleFavorite = async song => {
+    try {
+      const result = await storageService.toggleSongInFavorites(song);
+      setPlaylists(result.playlists);
+      setFavoriteIds(new Set(result.playlist.songs.map(item => item.id)));
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+    }
+  };
 
-      <TouchableOpacity
-        style={styles.menuButton}
-        onPress={() => {/* Show options menu */}}
-      >
-        <Icon name="dots-vertical" size={24} color="#fff" />
-      </TouchableOpacity>
-    </TouchableOpacity>
-  );
+  const openPlaylist = playlist => {
+    navigation.navigate('PlaylistDetail', {playlist});
+  };
 
-  const renderHeader = () => (
-    <View style={styles.header}>
-      <Text style={styles.headerTitle}>Music Player</Text>
-      <View style={styles.headerButtons}>
+  const renderTopContent = () => (
+    <View>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerTitle}>Home</Text>
+          <Text style={styles.headerSubtitle}>Your library at a glance</Text>
+        </View>
+
         <TouchableOpacity
-          style={styles.headerButton}
-          onPress={() => navigation.navigate('Search')}
-        >
-          <Icon name="cloud-download" size={24} color="#1DB954" />
+          style={styles.headerAction}
+          onPress={() => navigation.navigate('Search')}>
+          <Icon name="download-outline" size={19} color={C.accentFg} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.searchWrap}>
+        <Icon name="magnify" size={18} color={C.textMute} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search your recent tracks"
+          placeholderTextColor={C.textMute}
+          value={search}
+          onChangeText={setSearch}
+        />
+      </View>
+
+      <View style={styles.quickActionsRow}>
+        <TouchableOpacity
+          style={[styles.quickActionCard, styles.quickActionGap]}
+          onPress={() => navigation.navigate('Library')}>
+          <Icon name="music-box-multiple" size={20} color={C.accentFg} />
+          <Text style={styles.quickActionLabel}>Library</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.quickActionCard}
+          onPress={() => navigation.navigate('Search')}>
+          <Icon name="cloud-download-outline" size={20} color={C.accentFg} />
+          <Text style={styles.quickActionLabel}>Downloader</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.sectionRow}>
+        <Text style={styles.sectionTitle}>Playlists</Text>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Library', {libraryTab: 'playlists'})}>
+          <Text style={styles.sectionAction}>View all</Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.playlistsRow}>
+        {playlists.map((playlist, index) => {
+          const color = getPlaylistColor(index);
+          const emoji = PLAYLIST_EMOJIS[index % PLAYLIST_EMOJIS.length];
+          return (
+            <TouchableOpacity
+              key={playlist.id}
+              style={styles.playlistCard}
+              onPress={() => openPlaylist(playlist)}>
+              <View style={[styles.playlistArt, {backgroundColor: color}]}>
+                <Text style={styles.playlistEmoji}>{emoji}</Text>
+              </View>
+              <Text style={styles.playlistName} numberOfLines={1}>
+                {playlist.name}
+              </Text>
+              <Text style={styles.playlistCount} numberOfLines={1}>
+                {playlist.songs.length} songs
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      <View style={styles.sectionRow}>
+        <Text style={styles.sectionTitle}>Recent Tracks</Text>
+        <TouchableOpacity onPress={onRefresh}>
+          <Text style={styles.sectionAction}>Refresh</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Icon name="music-off" size={80} color="#666" />
-      <Text style={styles.emptyText}>No songs in your library</Text>
-      <Text style={styles.emptySubtext}>
-        Download songs from the Search tab
-      </Text>
-      <TouchableOpacity
-        style={styles.downloadButton}
-        onPress={() => navigation.navigate('Search')}
-      >
-        <Icon name="cloud-download" size={20} color="#fff" />
-        <Text style={styles.downloadButtonText}>Download Songs</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  const renderSongItem = ({item, index}) => {
+    const isFavorite = favoriteIds.has(item.id);
+
+    return (
+      <View style={styles.songCard}>
+        <TouchableOpacity
+          style={styles.songMain}
+          onPress={() => playSong(index)}
+          activeOpacity={0.85}>
+          {item.artwork ? (
+            <Image source={{uri: item.artwork}} style={styles.songArtwork} />
+          ) : (
+            <View style={styles.songArtworkFallback}>
+              <Icon name="music-note" size={20} color={C.accentFg} />
+            </View>
+          )}
+
+          <View style={styles.songMeta}>
+            <Text style={styles.songTitle} numberOfLines={1}>
+              {item.title}
+            </Text>
+            <Text style={styles.songArtist} numberOfLines={1}>
+              {item.artist}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.favoriteButton}
+          onPress={() => toggleFavorite(item)}>
+          <Icon
+            name={isFavorite ? 'heart' : 'heart-outline'}
+            size={18}
+            color={isFavorite ? '#f7a8cf' : C.textMute}
+          />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderEmpty = () => {
+    if (loading) {
+      return null;
+    }
+
+    const hasSearch = search.trim().length > 0;
+    return (
+      <View style={styles.emptyContainer}>
+        <Icon
+          name={hasSearch ? 'music-note-search' : 'music-off'}
+          size={58}
+          color={C.textMute}
+        />
+        <Text style={styles.emptyTitle}>
+          {hasSearch ? 'No matching tracks' : 'No songs in your library'}
+        </Text>
+        <Text style={styles.emptySubtitle}>
+          {hasSearch
+            ? 'Try searching for another title or artist.'
+            : 'Download songs from the Downloader tab.'}
+        </Text>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
-      {renderHeader()}
-      
-      {recentSongs.length === 0 && !loading ? (
-        renderEmpty()
-      ) : (
-        <FlatList
-          data={recentSongs}
-          renderItem={renderSongItem}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#1DB954"
-            />
-          }
-        />
-      )}
+      <FlatList
+        data={filteredSongs}
+        renderItem={renderSongItem}
+        keyExtractor={item => item.id}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={renderTopContent}
+        ListEmptyComponent={renderEmpty}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={C.accentFg}
+          />
+        }
+      />
     </View>
   );
 };
@@ -144,106 +285,196 @@ const HomeScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
-    backgroundColor: '#1a1a1a',
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    gap: 15,
-  },
-  headerButton: {
-    padding: 8,
+    backgroundColor: C.bg,
   },
   listContent: {
-    padding: 15,
-    paddingBottom: 100,
+    paddingHorizontal: 16,
+    paddingBottom: 128,
   },
-  songItem: {
+  header: {
+    paddingTop: 54,
+    paddingBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerTitle: {
+    fontSize: 30,
+    color: '#f0eaff',
+    fontWeight: '800',
+  },
+  headerSubtitle: {
+    marginTop: 4,
+    color: C.textDim,
+    fontSize: 12,
+  },
+  headerAction: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.bgCard,
+  },
+  searchWrap: {
+    marginTop: 8,
+    marginBottom: 10,
+    minHeight: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    color: C.text,
+    fontSize: 14,
+  },
+  quickActionsRow: {
+    flexDirection: 'row',
+    marginBottom: 10,
+  },
+  quickActionCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+    borderRadius: 8,
     paddingVertical: 10,
     paddingHorizontal: 10,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  songArtwork: {
-    marginRight: 12,
-  },
-  artworkImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 6,
-  },
-  placeholderArtwork: {
-    width: 50,
-    height: 50,
-    borderRadius: 6,
-    backgroundColor: '#2a2a2a',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  songInfo: {
-    flex: 1,
-  },
-  songTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  songArtist: {
-    fontSize: 14,
-    color: '#999',
-  },
-  menuButton: {
-    padding: 8,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  emptyText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#fff',
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#999',
-    textAlign: 'center',
-    marginBottom: 30,
-  },
-  downloadButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1DB954',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
-    gap: 8,
+    justifyContent: 'center',
   },
-  downloadButtonText: {
-    color: '#fff',
-    fontSize: 16,
+  quickActionGap: {
+    marginRight: 8,
+  },
+  quickActionLabel: {
+    marginLeft: 8,
+    color: C.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  sectionRow: {
+    marginTop: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionTitle: {
+    color: C.textDim,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  sectionAction: {
+    color: C.accentFg,
+    fontSize: 12,
     fontWeight: '600',
+  },
+  playlistsRow: {
+    paddingBottom: 4,
+    paddingRight: 2,
+  },
+  playlistCard: {
+    width: 102,
+    marginRight: 10,
+  },
+  playlistArt: {
+    height: 94,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playlistEmoji: {
+    fontSize: 30,
+  },
+  playlistName: {
+    marginTop: 6,
+    color: '#bdb5d8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  playlistCount: {
+    marginTop: 2,
+    color: C.textMute,
+    fontSize: 10,
+  },
+  songCard: {
+    marginBottom: 9,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: C.bgCard,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  songMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 60,
+  },
+  songArtwork: {
+    width: 60,
+    height: 60,
+  },
+  songArtworkFallback: {
+    width: 60,
+    height: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2a1b49',
+  },
+  songMeta: {
+    flex: 1,
+    minHeight: 60,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  songTitle: {
+    color: C.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  songArtist: {
+    marginTop: 3,
+    color: C.textMute,
+    fontSize: 11,
+  },
+  favoriteButton: {
+    width: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 60,
+  },
+  emptyContainer: {
+    paddingTop: 64,
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  emptyTitle: {
+    marginTop: 12,
+    color: '#f0eaff',
+    fontSize: 19,
+    fontWeight: '700',
+  },
+  emptySubtitle: {
+    marginTop: 8,
+    color: C.textDim,
+    fontSize: 13,
+    textAlign: 'center',
   },
 });
 

@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+﻿import AsyncStorage from '@react-native-async-storage/async-storage';
 import {PermissionsAndroid, Platform} from 'react-native';
 import RNFS from 'react-native-fs';
 import {extractEmbeddedArtworkDataUri} from './artwork';
@@ -11,6 +11,46 @@ const STORAGE_KEYS = {
 };
 
 const DEFAULT_AUDIO_EXTENSION = '.flac';
+const FAVORITES_PLAYLIST_ID = 'favorites';
+const FAVORITES_PLAYLIST_NAME = 'favorites';
+const FAVORITES_PLAYLIST_DESCRIPTION = 'Your favorite tracks';
+const DEFAULT_FILE_SOURCES = [
+  {
+    id: 'source_music_downloads',
+    path: '/Music/Downloads',
+    count: 142,
+    on: true,
+    fmt: ['MP3', 'FLAC'],
+  },
+  {
+    id: 'source_music_itunes',
+    path: '/Music/iTunes',
+    count: 89,
+    on: true,
+    fmt: ['MP3', 'AAC'],
+  },
+  {
+    id: 'source_sdcard_music',
+    path: '/SD Card/Music',
+    count: 34,
+    on: false,
+    fmt: ['MP3'],
+  },
+  {
+    id: 'source_music_soundcloud',
+    path: '/Music/SoundCloud',
+    count: 12,
+    on: true,
+    fmt: ['MP3'],
+  },
+];
+
+function cloneDefaultFileSources() {
+  return DEFAULT_FILE_SOURCES.map(source => ({
+    ...source,
+    fmt: [...source.fmt],
+  }));
+}
 
 function sanitizeFileSegment(value) {
   return String(value || '')
@@ -70,6 +110,57 @@ function normalizeText(value) {
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
+}
+
+function normalizePlaylistName(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeFileSourcePath(value) {
+  const compact = String(value || '')
+    .replace(/\\/g, '/')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!compact) {
+    return '';
+  }
+  if (compact.startsWith('/')) {
+    return compact;
+  }
+  if (/^[a-z]:\//i.test(compact)) {
+    return `/${compact}`;
+  }
+  return `/${compact.replace(/^\/+/, '')}`;
+}
+
+function normalizeFileSourceFormats(value) {
+  const list = Array.isArray(value)
+    ? value
+    : String(value || '')
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean);
+  const normalized = list
+    .map(format => String(format || '').replace(/^\./, '').toUpperCase())
+    .filter(Boolean);
+  return Array.from(new Set(normalized));
+}
+
+function normalizeFileSource(source = {}, fallbackIndex = 0) {
+  const normalizedPath = normalizeFileSourcePath(source.path);
+  const path = normalizedPath || `/Imported/Source_${fallbackIndex + 1}`;
+  const formats = normalizeFileSourceFormats(source.fmt || source.formats);
+  return {
+    id:
+      String(source.id || '').trim() ||
+      `source_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    path,
+    count: Math.max(0, Number(source.count) || 0),
+    on: source.on !== false,
+    fmt: formats.length > 0 ? formats : ['MP3'],
+  };
 }
 
 function safeDecodeUriComponent(value) {
@@ -680,65 +771,241 @@ class StorageService {
       const library = await this.getLocalLibrary();
       const filtered = library.filter(s => s.id !== songId);
       await AsyncStorage.setItem(STORAGE_KEYS.LIBRARY, JSON.stringify(filtered));
-      console.log('âœ… Song removed from library');
+      console.log('Ã¢Å“â€¦ Song removed from library');
       return filtered;
     } catch (error) {
-      console.error('âŒ Error removing from library:', error);
+      console.error('Ã¢ÂÅ’ Error removing from library:', error);
       return [];
     }
+  }
+
+  normalizePlaylistEntry(playlist = {}) {
+    const now = Date.now();
+    return {
+      ...playlist,
+      id: String(playlist.id || `playlist_${now}`),
+      name: normalizePlaylistName(playlist.name) || 'Untitled Playlist',
+      description: String(playlist.description || '').trim(),
+      songs: Array.isArray(playlist.songs) ? playlist.songs : [],
+      createdAt: Number(playlist.createdAt) || now,
+      updatedAt:
+        Number(playlist.updatedAt) || Number(playlist.createdAt) || now,
+    };
+  }
+
+  isFavoritesPlaylist(playlist) {
+    if (!playlist || typeof playlist !== 'object') {
+      return false;
+    }
+    const id = String(playlist.id || '').trim().toLowerCase();
+    const name = normalizeText(playlist.name);
+    return id === FAVORITES_PLAYLIST_ID || name === normalizeText(FAVORITES_PLAYLIST_NAME);
+  }
+
+  buildFavoritesPlaylist(existing = null) {
+    const now = Date.now();
+    const normalizedExisting = existing
+      ? this.normalizePlaylistEntry(existing)
+      : null;
+    return {
+      id: normalizedExisting?.id || FAVORITES_PLAYLIST_ID,
+      name: FAVORITES_PLAYLIST_NAME,
+      description:
+        normalizedExisting?.description || FAVORITES_PLAYLIST_DESCRIPTION,
+      songs: Array.isArray(normalizedExisting?.songs)
+        ? normalizedExisting.songs
+        : [],
+      createdAt: normalizedExisting?.createdAt || now,
+      updatedAt: normalizedExisting?.updatedAt || now,
+      isSystem: true,
+    };
+  }
+
+  sortPlaylists(playlists = []) {
+    return [...playlists].sort((a, b) => {
+      const aFav = this.isFavoritesPlaylist(a);
+      const bFav = this.isFavoritesPlaylist(b);
+      if (aFav && !bFav) {
+        return -1;
+      }
+      if (!aFav && bFav) {
+        return 1;
+      }
+      return (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0);
+    });
+  }
+
+  ensureDefaultPlaylists(playlists = []) {
+    const normalized = Array.isArray(playlists)
+      ? playlists
+          .filter(Boolean)
+          .map(playlist => this.normalizePlaylistEntry(playlist))
+      : [];
+    let changed = normalized.length !== (Array.isArray(playlists) ? playlists.length : 0);
+
+    const favoriteIndex = normalized.findIndex(playlist =>
+      this.isFavoritesPlaylist(playlist),
+    );
+    if (favoriteIndex === -1) {
+      normalized.unshift(this.buildFavoritesPlaylist());
+      changed = true;
+    } else {
+      const existingFavorite = normalized[favoriteIndex];
+      const normalizedFavorite = this.buildFavoritesPlaylist(existingFavorite);
+      const sameFavorite =
+        existingFavorite.id === normalizedFavorite.id &&
+        existingFavorite.name === normalizedFavorite.name &&
+        existingFavorite.description === normalizedFavorite.description &&
+        Array.isArray(existingFavorite.songs) &&
+        existingFavorite.songs.length === normalizedFavorite.songs.length &&
+        existingFavorite.isSystem === normalizedFavorite.isSystem;
+      if (!sameFavorite) {
+        changed = true;
+      }
+      normalized[favoriteIndex] = normalizedFavorite;
+    }
+
+    return {
+      playlists: this.sortPlaylists(normalized),
+      changed,
+    };
+  }
+
+  async savePlaylists(playlists = []) {
+    await AsyncStorage.setItem(STORAGE_KEYS.PLAYLISTS, JSON.stringify(playlists));
+    return playlists;
   }
 
   // Playlist Management
   async getPlaylists() {
     try {
-      const playlists = await AsyncStorage.getItem(STORAGE_KEYS.PLAYLISTS);
-      return playlists ? JSON.parse(playlists) : [];
+      const rawPlaylists = await AsyncStorage.getItem(STORAGE_KEYS.PLAYLISTS);
+      const parsedPlaylists = rawPlaylists ? JSON.parse(rawPlaylists) : [];
+      const {playlists, changed} = this.ensureDefaultPlaylists(parsedPlaylists);
+
+      if (changed || !rawPlaylists) {
+        await this.savePlaylists(playlists);
+      }
+
+      return playlists;
     } catch (error) {
-      console.error('âŒ Error getting playlists:', error);
-      return [];
+      console.error('Error getting playlists:', error);
+      const fallback = [this.buildFavoritesPlaylist()];
+      await this.savePlaylists(fallback);
+      return fallback;
     }
   }
 
   async createPlaylist(name, description = '') {
     try {
+      const cleanName = normalizePlaylistName(name);
+      if (!cleanName) {
+        throw new Error('Playlist name is required');
+      }
+
       const playlists = await this.getPlaylists();
-      const newPlaylist = {
-        id: Date.now().toString(),
-        name,
+      const hasDuplicate = playlists.some(
+        playlist => normalizeText(playlist.name) === normalizeText(cleanName),
+      );
+      if (hasDuplicate) {
+        throw new Error('Playlist name already exists');
+      }
+
+      const now = Date.now();
+      const newPlaylist = this.normalizePlaylistEntry({
+        id: `${now}_${Math.random().toString(36).slice(2, 7)}`,
+        name: cleanName,
         description,
         songs: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      
-      playlists.push(newPlaylist);
-      await AsyncStorage.setItem(STORAGE_KEYS.PLAYLISTS, JSON.stringify(playlists));
-      console.log('âœ… Playlist created:', name);
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const nextPlaylists = this.sortPlaylists([...playlists, newPlaylist]);
+      await this.savePlaylists(nextPlaylists);
+      console.log('Playlist created:', cleanName);
       return newPlaylist;
     } catch (error) {
-      console.error('âŒ Error creating playlist:', error);
-      return null;
+      console.error('Error creating playlist:', error);
+      throw error;
     }
   }
 
   async deletePlaylist(playlistId) {
     try {
       const playlists = await this.getPlaylists();
+      const target = playlists.find(p => p.id === playlistId);
+      if (!target) {
+        return playlists;
+      }
+      if (this.isFavoritesPlaylist(target)) {
+        throw new Error('favorites playlist cannot be deleted');
+      }
+
       const filtered = playlists.filter(p => p.id !== playlistId);
-      await AsyncStorage.setItem(STORAGE_KEYS.PLAYLISTS, JSON.stringify(filtered));
-      console.log('âœ… Playlist deleted');
-      return filtered;
+      const {playlists: nextPlaylists} = this.ensureDefaultPlaylists(filtered);
+      await this.savePlaylists(nextPlaylists);
+      console.log('Playlist deleted');
+      return nextPlaylists;
     } catch (error) {
-      console.error('âŒ Error deleting playlist:', error);
-      return [];
+      console.error('Error deleting playlist:', error);
+      throw error;
     }
+  }
+
+  async getFavoritesPlaylist() {
+    const playlists = await this.getPlaylists();
+    return playlists.find(playlist => this.isFavoritesPlaylist(playlist)) || null;
+  }
+
+  async isSongInFavorites(songId) {
+    const favorites = await this.getFavoritesPlaylist();
+    if (!favorites || !songId) {
+      return false;
+    }
+    return favorites.songs.some(song => song.id === songId);
+  }
+
+  async toggleSongInFavorites(song) {
+    if (!song?.id) {
+      throw new Error('Invalid song');
+    }
+
+    const playlists = await this.getPlaylists();
+    const favoriteIndex = playlists.findIndex(playlist =>
+      this.isFavoritesPlaylist(playlist),
+    );
+    if (favoriteIndex === -1) {
+      throw new Error('favorites playlist is unavailable');
+    }
+
+    const favorites = playlists[favoriteIndex];
+    const songExists = favorites.songs.some(item => item.id === song.id);
+    const nextSongs = songExists
+      ? favorites.songs.filter(item => item.id !== song.id)
+      : [...favorites.songs, song];
+    const nextFavorites = {
+      ...favorites,
+      songs: nextSongs,
+      updatedAt: Date.now(),
+    };
+    const nextPlaylists = [...playlists];
+    nextPlaylists[favoriteIndex] = nextFavorites;
+    const orderedPlaylists = this.sortPlaylists(nextPlaylists);
+    await this.savePlaylists(orderedPlaylists);
+
+    return {
+      added: !songExists,
+      playlist: nextFavorites,
+      playlists: orderedPlaylists,
+    };
   }
 
   async addSongToPlaylist(playlistId, song) {
     try {
       const playlists = await this.getPlaylists();
       const playlist = playlists.find(p => p.id === playlistId);
-      
+
       if (!playlist) {
         throw new Error('Playlist not found');
       }
@@ -747,14 +1014,16 @@ class StorageService {
       if (!exists) {
         playlist.songs.push(song);
         playlist.updatedAt = Date.now();
-        await AsyncStorage.setItem(STORAGE_KEYS.PLAYLISTS, JSON.stringify(playlists));
-        console.log('âœ… Song added to playlist:', playlist.name);
+        const nextPlaylists = this.sortPlaylists(playlists);
+        await this.savePlaylists(nextPlaylists);
+        console.log('Song added to playlist:', playlist.name);
+        return nextPlaylists;
       }
-      
+
       return playlists;
     } catch (error) {
-      console.error('âŒ Error adding song to playlist:', error);
-      return [];
+      console.error('Error adding song to playlist:', error);
+      throw error;
     }
   }
 
@@ -762,19 +1031,20 @@ class StorageService {
     try {
       const playlists = await this.getPlaylists();
       const playlist = playlists.find(p => p.id === playlistId);
-      
+
       if (!playlist) {
         throw new Error('Playlist not found');
       }
 
       playlist.songs = playlist.songs.filter(s => s.id !== songId);
       playlist.updatedAt = Date.now();
-      await AsyncStorage.setItem(STORAGE_KEYS.PLAYLISTS, JSON.stringify(playlists));
-      console.log('âœ… Song removed from playlist');
-      return playlists;
+      const nextPlaylists = this.sortPlaylists(playlists);
+      await this.savePlaylists(nextPlaylists);
+      console.log('Song removed from playlist');
+      return nextPlaylists;
     } catch (error) {
-      console.error('âŒ Error removing song from playlist:', error);
-      return [];
+      console.error('Error removing song from playlist:', error);
+      throw error;
     }
   }
 
@@ -800,7 +1070,7 @@ class StorageService {
 
       return Object.values(albumMap);
     } catch (error) {
-      console.error('âŒ Error getting albums:', error);
+      console.error('Ã¢ÂÅ’ Error getting albums:', error);
       return [];
     }
   }
@@ -826,10 +1096,10 @@ class StorageService {
       };
 
       await this.addToLibrary(updatedSong);
-      console.log('âœ… Song saved locally:', filename);
+      console.log('Ã¢Å“â€¦ Song saved locally:', filename);
       return updatedSong;
     } catch (error) {
-      console.error('âŒ Error saving song locally:', error);
+      console.error('Ã¢ÂÅ’ Error saving song locally:', error);
       return null;
     }
   }
@@ -1016,45 +1286,151 @@ class StorageService {
         const exists = await RNFS.exists(song.localPath);
         if (exists) {
           await RNFS.unlink(song.localPath);
-          console.log('âœ… Song file deleted');
+          console.log('Ã¢Å“â€¦ Song file deleted');
         }
       }
       await this.removeFromLibrary(song.id);
     } catch (error) {
-      console.error('âŒ Error deleting song file:', error);
+      console.error('Ã¢ÂÅ’ Error deleting song file:', error);
     }
   }
 
   // Settings
+  getDefaultSettings() {
+    return {
+      serverUrl: '',
+      autoDownload: false,
+      theme: 'dark',
+      downloadSetting: 'Hi-Res',
+      fileSources: cloneDefaultFileSources(),
+    };
+  }
+
+  normalizeFileSources(fileSources = []) {
+    if (!Array.isArray(fileSources) || fileSources.length === 0) {
+      return cloneDefaultFileSources();
+    }
+
+    const deduped = [];
+    const seenPath = new Set();
+    fileSources.forEach((source, index) => {
+      const normalized = normalizeFileSource(source, index);
+      const key = normalizeText(normalized.path);
+      if (!key || seenPath.has(key)) {
+        return;
+      }
+      seenPath.add(key);
+      deduped.push(normalized);
+    });
+
+    if (deduped.length === 0) {
+      return cloneDefaultFileSources();
+    }
+
+    return deduped;
+  }
+
   async getSettings() {
     try {
       const settings = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);
-      return settings ? JSON.parse(settings) : {
-        serverUrl: '',
-        autoDownload: false,
-        theme: 'dark',
-        downloadSetting: 'Hi-Res',
+      if (!settings) {
+        return this.getDefaultSettings();
+      }
+      const parsed = JSON.parse(settings);
+      return {
+        ...this.getDefaultSettings(),
+        ...(parsed || {}),
+        fileSources: this.normalizeFileSources(parsed?.fileSources),
       };
     } catch (error) {
-      console.error('âŒ Error getting settings:', error);
-      return {
-        serverUrl: '',
-        autoDownload: false,
-        theme: 'dark',
-        downloadSetting: 'Hi-Res',
-      };
+      console.error('Error getting settings:', error);
+      return this.getDefaultSettings();
     }
   }
 
   async saveSettings(settings) {
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
-      console.log('âœ… Settings saved');
+      const normalized = {
+        ...this.getDefaultSettings(),
+        ...(settings || {}),
+      };
+      normalized.fileSources = this.normalizeFileSources(
+        normalized.fileSources,
+      );
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.SETTINGS,
+        JSON.stringify(normalized),
+      );
+      console.log('Settings saved');
     } catch (error) {
-      console.error('âŒ Error saving settings:', error);
+      console.error('Error saving settings:', error);
     }
   }
 
+  async getFileSources() {
+    const settings = await this.getSettings();
+    const normalized = this.normalizeFileSources(settings.fileSources);
+    if (
+      !Array.isArray(settings.fileSources) ||
+      settings.fileSources.length === 0
+    ) {
+      await this.saveSettings({
+        ...settings,
+        fileSources: normalized,
+      });
+    }
+    return normalized;
+  }
+
+  async saveFileSources(fileSources = []) {
+    const settings = await this.getSettings();
+    const normalized = this.normalizeFileSources(fileSources);
+    await this.saveSettings({
+      ...settings,
+      fileSources: normalized,
+    });
+    return normalized;
+  }
+
+  async toggleFileSource(sourceId) {
+    const targetId = String(sourceId || '').trim();
+    const sources = await this.getFileSources();
+    if (!targetId) {
+      return sources;
+    }
+
+    const nextSources = sources.map(source =>
+      source.id === targetId ? {...source, on: !source.on} : source,
+    );
+    return this.saveFileSources(nextSources);
+  }
+
+  async addFileSource(path, options = {}) {
+    const sourcePath = normalizeFileSourcePath(path);
+    if (!sourcePath) {
+      throw new Error('Source path is required');
+    }
+
+    const sources = await this.getFileSources();
+    const exists = sources.some(
+      source => normalizeText(source.path) === normalizeText(sourcePath),
+    );
+    if (exists) {
+      return sources;
+    }
+
+    const source = normalizeFileSource(
+      {
+        id: `source_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        path: sourcePath,
+        count: Number(options.count) || 0,
+        on: options.on !== false,
+        fmt: options.fmt || options.formats || ['MP3'],
+      },
+      sources.length,
+    );
+    return this.saveFileSources([...sources, source]);
+  }
   // Clear all data
   async clearAll() {
     try {
@@ -1063,13 +1439,17 @@ class StorageService {
         STORAGE_KEYS.PLAYLISTS,
         STORAGE_KEYS.ALBUMS,
       ]);
-      console.log('âœ… All data cleared');
+      console.log('Ã¢Å“â€¦ All data cleared');
     } catch (error) {
-      console.error('âŒ Error clearing data:', error);
+      console.error('Ã¢ÂÅ’ Error clearing data:', error);
     }
   }
 }
 
 export default new StorageService();
+
+
+
+
 
 
