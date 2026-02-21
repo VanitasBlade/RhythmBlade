@@ -77,24 +77,6 @@ const normalizeFormats = source => {
     .filter(Boolean);
 };
 
-const inferFormat = filename => {
-  const match = String(filename || '').match(/\.([a-z0-9]{2,5})$/i);
-  return match ? match[1].toUpperCase() : 'MP3';
-};
-
-const getSourceDir = value => {
-  const normalized = String(value || '').replace(/\\/g, '/').trim();
-  if (!normalized) {
-    return '';
-  }
-  const compact = normalized.replace(/^file:\/\//, '').split('?')[0];
-  const parts = compact.split('/').filter(Boolean);
-  if (parts.length <= 1) {
-    return compact.startsWith('/') ? compact : `/${compact}`;
-  }
-  return `/${parts.slice(0, -1).join('/')}`;
-};
-
 const LibraryScreen = ({navigation, route}) => {
   const [songs, setSongs] = useState([]);
   const [playlists, setPlaylists] = useState([]);
@@ -314,33 +296,42 @@ const LibraryScreen = ({navigation, route}) => {
 
   const addFileSource = async () => {
     try {
-      const picked = await DocumentPicker.pickSingle({type: [DocumentPicker.types.audio]});
-      const sourceUri = String(picked?.fileCopyUri || picked?.uri || '');
-      let sourcePath = getSourceDir(sourceUri);
-      if (sourceUri.startsWith('content://')) {
-        const resolvedPath = await storageService.resolveContentUriToFilePath(
-          sourceUri,
-          picked?.name || '',
-          true,
+      if (typeof DocumentPicker.pickDirectory !== 'function') {
+        Alert.alert(
+          'Not Supported',
+          'Folder selection is not supported on this device.',
         );
-        sourcePath = getSourceDir(resolvedPath) || sourcePath;
-      }
-      if (!sourcePath) {
-        sourcePath = `/Imported/${String(picked?.name || 'New Source').replace(/\.[^/.]+$/, '')}`;
+        return;
       }
 
-      const nextSources = await storageService.addFileSource(sourcePath, {
-        fmt: [inferFormat(picked?.name)],
-        count: 1,
-        on: true,
+      const pickedDirectory = await DocumentPicker.pickDirectory();
+      const sourceUri =
+        typeof pickedDirectory === 'string'
+          ? pickedDirectory
+          : pickedDirectory?.uri;
+
+      if (!sourceUri) {
+        throw new Error('No folder selected');
+      }
+
+      const result = await storageService.importFolderAsFileSource(sourceUri, {
+        recursive: true,
       });
-      setSources(nextSources);
+      setSources(result.fileSources);
 
-      await storageService.importLocalAudioFile(picked);
       await loadLibrary();
+      Alert.alert(
+        'Folder Imported',
+        `${result.fileCount} audio file${
+          result.fileCount === 1 ? '' : 's'
+        } scanned from ${result.sourcePath}.`,
+      );
     } catch (error) {
       if (!DocumentPicker.isCancel(error)) {
-        Alert.alert('File Source Error', error.message || 'Unable to add file source.');
+        Alert.alert(
+          'File Source Error',
+          error.message || 'Unable to add file source.',
+        );
       }
     }
   };

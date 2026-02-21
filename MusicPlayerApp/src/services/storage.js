@@ -14,42 +14,36 @@ const DEFAULT_AUDIO_EXTENSION = '.flac';
 const FAVORITES_PLAYLIST_ID = 'favorites';
 const FAVORITES_PLAYLIST_NAME = 'favorites';
 const FAVORITES_PLAYLIST_DESCRIPTION = 'Your favorite tracks';
-const DEFAULT_FILE_SOURCES = [
-  {
-    id: 'source_music_downloads',
-    path: '/Music/Downloads',
-    count: 142,
-    on: true,
-    fmt: ['MP3', 'FLAC'],
-  },
-  {
-    id: 'source_music_itunes',
-    path: '/Music/iTunes',
-    count: 89,
-    on: true,
-    fmt: ['MP3', 'AAC'],
-  },
-  {
-    id: 'source_sdcard_music',
-    path: '/SD Card/Music',
-    count: 34,
-    on: false,
-    fmt: ['MP3'],
-  },
-  {
-    id: 'source_music_soundcloud',
-    path: '/Music/SoundCloud',
-    count: 12,
-    on: true,
-    fmt: ['MP3'],
-  },
+const LEGACY_PLACEHOLDER_FILE_SOURCE_PATHS = [
+  '/music/downloads',
+  '/music/itunes',
+  '/sd card/music',
+  '/music/soundcloud',
 ];
+const SUPPORTED_AUDIO_EXTENSIONS = new Set([
+  'mp3',
+  'flac',
+  'aac',
+  'm4a',
+  'wav',
+  'ogg',
+  'opus',
+  'aiff',
+  'wma',
+]);
 
-function cloneDefaultFileSources() {
-  return DEFAULT_FILE_SOURCES.map(source => ({
-    ...source,
-    fmt: [...source.fmt],
-  }));
+function cloneDefaultFileSources(defaultPath = '') {
+  const normalizedPath =
+    normalizeFileSourcePath(defaultPath) || '/storage/emulated/0/Music/RhythmBlade';
+  return [
+    {
+      id: 'source_default_music',
+      path: normalizedPath,
+      count: 0,
+      on: true,
+      fmt: ['MP3', 'FLAC'],
+    },
+  ];
 }
 
 function sanitizeFileSegment(value) {
@@ -161,6 +155,18 @@ function normalizeFileSource(source = {}, fallbackIndex = 0) {
     on: source.on !== false,
     fmt: formats.length > 0 ? formats : ['MP3'],
   };
+}
+
+function getFileExtensionFromPath(pathValue) {
+  const match = String(pathValue || '')
+    .trim()
+    .match(/\.([a-z0-9]{2,5})$/i);
+  return match?.[1]?.toLowerCase() || '';
+}
+
+function isSupportedAudioFilename(pathValue) {
+  const ext = getFileExtensionFromPath(pathValue);
+  return SUPPORTED_AUDIO_EXTENSIONS.has(ext);
 }
 
 function safeDecodeUriComponent(value) {
@@ -560,6 +566,218 @@ class StorageService {
     if (!list.includes(candidate)) {
       list.push(candidate);
     }
+  }
+
+  getExternalStorageBasePath() {
+    return (
+      RNFS.ExternalStorageDirectoryPath ||
+      RNFS.ExternalDirectoryPath ||
+      '/storage/emulated/0'
+    );
+  }
+
+  addStorageSuffixCandidate(candidates, suffix) {
+    const cleanSuffix = String(suffix || '')
+      .replace(/^\/+/, '')
+      .trim();
+    if (!cleanSuffix) {
+      return;
+    }
+    if (cleanSuffix.toLowerCase().startsWith('storage/')) {
+      this.addPathCandidate(candidates, `/${cleanSuffix}`);
+      return;
+    }
+    this.addPathCandidate(
+      candidates,
+      `${this.getExternalStorageBasePath()}/${cleanSuffix}`,
+    );
+  }
+
+  extractStorageSuffixesFromUri(decodedUri = '') {
+    const suffixes = [];
+    const addSuffix = value => {
+      const clean = String(value || '')
+        .replace(/^\/+/, '')
+        .trim();
+      if (!clean || suffixes.includes(clean)) {
+        return;
+      }
+      suffixes.push(clean);
+    };
+
+    const rawMatch = decodedUri.match(/\/(?:tree|document)\/raw:(.+)$/i);
+    if (rawMatch?.[1]) {
+      this.addPathCandidate(suffixes, rawMatch[1]);
+    }
+
+    const primaryMatch = decodedUri.match(/\/(?:tree|document)\/primary:(.+)$/i);
+    if (primaryMatch?.[1]) {
+      addSuffix(primaryMatch[1]);
+    }
+
+    const treeId = safeDecodeUriComponent(
+      decodedUri.match(/\/tree\/([^/]+)$/i)?.[1] || '',
+    );
+    if (treeId.includes(':')) {
+      addSuffix(treeId.split(':').slice(1).join(':'));
+    }
+
+    const documentId = safeDecodeUriComponent(
+      decodedUri.match(/\/document\/([^/]+)$/i)?.[1] || '',
+    );
+    if (documentId.includes(':')) {
+      addSuffix(documentId.split(':').slice(1).join(':'));
+    }
+
+    return suffixes;
+  }
+
+  async resolveDirectoryUriToFilePath(directoryUri, shouldPrompt = false) {
+    const sourceUri = String(directoryUri || '').trim();
+    if (!sourceUri) {
+      return '';
+    }
+
+    if (!sourceUri.startsWith('content://')) {
+      return normalizeFileSourcePath(toPathFromUri(sourceUri) || sourceUri);
+    }
+
+    await this.ensureAudioReadPermission(shouldPrompt);
+
+    const candidates = [];
+    const stat = await RNFS.stat(sourceUri).catch(() => null);
+    this.addPathCandidate(candidates, stat?.originalFilepath || '');
+    this.addPathCandidate(candidates, stat?.path || '');
+
+    const decodedUri = safeDecodeUriComponent(stripUriQueryAndHash(sourceUri));
+    const suffixes = this.extractStorageSuffixesFromUri(decodedUri);
+    suffixes.forEach(suffix => this.addStorageSuffixCandidate(candidates, suffix));
+
+    for (const candidate of candidates) {
+      const exists = await RNFS.exists(candidate).catch(() => false);
+      if (!exists) {
+        continue;
+      }
+      const stats = await RNFS.stat(candidate).catch(() => null);
+      if (!stats) {
+        continue;
+      }
+      const isDir = stats.isDirectory?.() || stats.type === 1;
+      if (isDir) {
+        return normalizeFileSourcePath(candidate);
+      }
+    }
+
+    if (suffixes.length > 0) {
+      const fallbackCandidates = [];
+      suffixes.forEach(suffix =>
+        this.addStorageSuffixCandidate(fallbackCandidates, suffix),
+      );
+      if (fallbackCandidates[0]) {
+        return normalizeFileSourcePath(fallbackCandidates[0]);
+      }
+    }
+
+    return '';
+  }
+
+  async readAudioFilesFromDirectory(directoryPath, recursive = true) {
+    const rootPath = normalizeFileSourcePath(directoryPath);
+    if (!rootPath) {
+      return [];
+    }
+
+    const exists = await RNFS.exists(rootPath).catch(() => false);
+    if (!exists) {
+      return [];
+    }
+
+    const queue = [rootPath];
+    const filePaths = [];
+    const visited = new Set();
+
+    while (queue.length > 0) {
+      const currentPath = queue.pop();
+      if (!currentPath || visited.has(currentPath)) {
+        continue;
+      }
+      visited.add(currentPath);
+
+      const items = await RNFS.readDir(currentPath).catch(() => []);
+      for (const item of items) {
+        if (!item) {
+          continue;
+        }
+        if (item.isFile?.()) {
+          if (isSupportedAudioFilename(item.name || item.path)) {
+            filePaths.push(item.path);
+          }
+          continue;
+        }
+        if (recursive && item.isDirectory?.()) {
+          queue.push(item.path);
+        }
+      }
+    }
+
+    return filePaths;
+  }
+
+  async importLocalAudioPath(filePath) {
+    const normalizedPath = toPathFromUri(filePath);
+    if (!normalizedPath) {
+      throw new Error('Invalid local audio path');
+    }
+
+    const filename = normalizedPath.split('/').filter(Boolean).pop() || '';
+    return this.importLocalAudioFile({
+      uri: `file://${normalizedPath}`,
+      name: filename,
+    });
+  }
+
+  async importFolderAsFileSource(folderUriOrPath, options = {}) {
+    const sourcePath = await this.resolveDirectoryUriToFilePath(
+      folderUriOrPath,
+      true,
+    );
+    if (!sourcePath) {
+      throw new Error('Unable to resolve selected folder');
+    }
+
+    const audioFiles = await this.readAudioFilesFromDirectory(
+      sourcePath,
+      options.recursive !== false,
+    );
+    const formats = new Set();
+    let importedCount = 0;
+
+    for (const filePath of audioFiles) {
+      const ext = getFileExtensionFromPath(filePath);
+      if (ext) {
+        formats.add(ext.toUpperCase());
+      }
+      try {
+        await this.importLocalAudioPath(filePath);
+        importedCount += 1;
+      } catch (error) {
+        // Continue importing other files.
+      }
+    }
+
+    const nextSources = await this.addFileSource(sourcePath, {
+      on: true,
+      count: audioFiles.length,
+      fmt: Array.from(formats),
+    });
+
+    return {
+      sourcePath,
+      fileCount: audioFiles.length,
+      importedCount,
+      formats: Array.from(formats),
+      fileSources: nextSources,
+    };
   }
 
   async resolveContentUriToFilePath(contentUri, filenameHint = '', shouldPrompt = false) {
@@ -1296,19 +1514,26 @@ class StorageService {
   }
 
   // Settings
+  buildDefaultFileSources() {
+    return cloneDefaultFileSources(this.getPreferredMusicDir());
+  }
+
   getDefaultSettings() {
     return {
       serverUrl: '',
       autoDownload: false,
       theme: 'dark',
       downloadSetting: 'Hi-Res',
-      fileSources: cloneDefaultFileSources(),
+      fileSources: this.buildDefaultFileSources(),
     };
   }
 
   normalizeFileSources(fileSources = []) {
+    const defaults = this.buildDefaultFileSources();
+    const defaultPathKey = normalizeText(defaults[0]?.path || '');
+
     if (!Array.isArray(fileSources) || fileSources.length === 0) {
-      return cloneDefaultFileSources();
+      return defaults;
     }
 
     const deduped = [];
@@ -1316,7 +1541,10 @@ class StorageService {
     fileSources.forEach((source, index) => {
       const normalized = normalizeFileSource(source, index);
       const key = normalizeText(normalized.path);
-      if (!key || seenPath.has(key)) {
+      const isLegacyPlaceholder =
+        LEGACY_PLACEHOLDER_FILE_SOURCE_PATHS.includes(key) &&
+        key !== defaultPathKey;
+      if (!key || seenPath.has(key) || isLegacyPlaceholder) {
         return;
       }
       seenPath.add(key);
@@ -1324,7 +1552,14 @@ class StorageService {
     });
 
     if (deduped.length === 0) {
-      return cloneDefaultFileSources();
+      return defaults;
+    }
+
+    const hasDefault = deduped.some(
+      source => normalizeText(source.path) === defaultPathKey,
+    );
+    if (!hasDefault && defaults[0]) {
+      deduped.unshift(defaults[0]);
     }
 
     return deduped;
@@ -1370,10 +1605,9 @@ class StorageService {
   async getFileSources() {
     const settings = await this.getSettings();
     const normalized = this.normalizeFileSources(settings.fileSources);
-    if (
-      !Array.isArray(settings.fileSources) ||
-      settings.fileSources.length === 0
-    ) {
+    const currentSerialized = JSON.stringify(settings.fileSources || []);
+    const normalizedSerialized = JSON.stringify(normalized);
+    if (currentSerialized !== normalizedSerialized) {
       await this.saveSettings({
         ...settings,
         fileSources: normalized,
@@ -1412,11 +1646,29 @@ class StorageService {
     }
 
     const sources = await this.getFileSources();
-    const exists = sources.some(
+    const existingIndex = sources.findIndex(
       source => normalizeText(source.path) === normalizeText(sourcePath),
     );
-    if (exists) {
-      return sources;
+    if (existingIndex >= 0) {
+      const existing = sources[existingIndex];
+      const mergedFormats = Array.from(
+        new Set([
+          ...normalizeFileSourceFormats(existing.fmt),
+          ...normalizeFileSourceFormats(options.fmt || options.formats),
+        ]),
+      );
+      const nextCount =
+        Number.isFinite(Number(options.count)) && Number(options.count) >= 0
+          ? Number(options.count)
+          : Number(existing.count) || 0;
+      const nextSources = [...sources];
+      nextSources[existingIndex] = {
+        ...existing,
+        on: options.on === undefined ? existing.on : options.on !== false,
+        count: nextCount,
+        fmt: mergedFormats.length > 0 ? mergedFormats : existing.fmt,
+      };
+      return this.saveFileSources(nextSources);
     }
 
     const source = normalizeFileSource(
