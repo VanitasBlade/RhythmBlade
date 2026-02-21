@@ -121,8 +121,10 @@ const HomeScreen = ({navigation}) => {
 
         <TouchableOpacity
           style={styles.headerAction}
-          onPress={() => navigation.navigate('Search')}>
-          <Icon name="download-outline" size={19} color={C.accentFg} />
+          onPress={() => navigation.navigate('Settings')}>
+          <View style={styles.profilePlaceholder}>
+            <Text style={styles.profileInitial}>U</Text>
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -292,16 +294,17 @@ const styles = StyleSheet.create({
     paddingBottom: 128,
   },
   header: {
-    paddingTop: 54,
+    paddingTop: 40,
     paddingBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   headerTitle: {
-    fontSize: 30,
-    color: '#f0eaff',
+    fontSize: 40,
+    color: '#e8e2f8',
     fontWeight: '800',
+    letterSpacing: -0.3,
   },
   headerSubtitle: {
     marginTop: 4,
@@ -317,6 +320,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.bgCard,
+  },
+  profilePlaceholder: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3b1f6e',
+    borderWidth: 1,
+    borderColor: C.accent,
+  },
+  profileInitial: {
+    color: '#f0eaff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   searchWrap: {
     marginTop: 8,

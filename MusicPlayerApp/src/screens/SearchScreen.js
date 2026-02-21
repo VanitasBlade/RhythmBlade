@@ -616,63 +616,67 @@ const SearchScreen = () => {
 
       {activeDownloaderTab === 'Search' ? (
         <View style={styles.searchPanel}>
-          <View style={styles.searchTop}>
-            <View style={styles.searchInputWrap}>
-              <Icon name="magnify" size={16} color={C.textMute} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search songs, albums, artists..."
-                placeholderTextColor={C.textMute}
-                value={query}
-                onChangeText={setQuery}
-                onSubmitEditing={searchSongs}
-                returnKeyType="search"
-              />
-              <TouchableOpacity
-                style={[
-                  styles.searchActionButton,
-                  (!query.trim() || loading) && styles.searchActionButtonDisabled,
-                ]}
-                onPress={searchSongs}
-                disabled={!query.trim() || loading}>
-                {loading ? (
-                  <ActivityIndicator size="small" color={C.accentFg} />
-                ) : (
-                  <Icon name="arrow-right" size={14} color={C.accentFg} />
-                )}
-              </TouchableOpacity>
-            </View>
+          <View style={styles.searchControlsSection}>
+            <View style={styles.searchTop}>
+              <View style={styles.searchInputWrap}>
+                <Icon name="magnify" size={16} color={C.textMute} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search songs, albums, artists..."
+                  placeholderTextColor={C.textMute}
+                  value={query}
+                  onChangeText={setQuery}
+                  onSubmitEditing={searchSongs}
+                  returnKeyType="search"
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.searchActionButton,
+                    (!query.trim() || loading) && styles.searchActionButtonDisabled,
+                  ]}
+                  onPress={searchSongs}
+                  disabled={!query.trim() || loading}>
+                  {loading ? (
+                    <ActivityIndicator size="small" color={C.accentFg} />
+                  ) : (
+                    <Icon name="arrow-right" size={14} color={C.accentFg} />
+                  )}
+                </TouchableOpacity>
+              </View>
 
-            <View style={styles.searchTypeRow}>
-              {SEARCH_TYPES.map((tab, index) => {
-                const active = tab === activeSearchType;
-                return (
-                  <TouchableOpacity
-                    key={tab}
-                    style={[
-                      styles.searchTypeButton,
-                      index < SEARCH_TYPES.length - 1 &&
-                        styles.searchTypeButtonGap,
-                      active && styles.searchTypeButtonActive,
-                    ]}
-                    onPress={() => {
-                      setActiveSearchType(tab);
-                      setResults([]);
-                    }}>
-                    <Text
+              <View style={styles.searchTypeRow}>
+                {SEARCH_TYPES.map((tab, index) => {
+                  const active = tab === activeSearchType;
+                  return (
+                    <TouchableOpacity
+                      key={tab}
                       style={[
-                        styles.searchTypeText,
-                        active && styles.searchTypeTextActive,
-                      ]}>
-                      {tab}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+                        styles.searchTypeButton,
+                        index < SEARCH_TYPES.length - 1 &&
+                          styles.searchTypeButtonGap,
+                        active && styles.searchTypeButtonActive,
+                      ]}
+                      onPress={() => {
+                        setActiveSearchType(tab);
+                        setResults([]);
+                      }}>
+                      <Text
+                        style={[
+                          styles.searchTypeText,
+                          active && styles.searchTypeTextActive,
+                        ]}>
+                        {tab}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
+            <View style={styles.searchControlsDivider} />
           </View>
 
           <FlatList
+            style={styles.searchResultsList}
             data={results}
             renderItem={renderSearchResult}
             keyExtractor={(item, index) =>
@@ -741,9 +745,9 @@ const styles = StyleSheet.create({
     backgroundColor: C.bg,
   },
   topBar: {
-    paddingTop: 54,
+    paddingTop: 40,
     paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingBottom: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -826,10 +830,18 @@ const styles = StyleSheet.create({
   searchPanel: {
     flex: 1,
   },
+  searchControlsSection: {
+    paddingBottom: 10,
+  },
   searchTop: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 8,
+    paddingBottom: 10,
+  },
+  searchControlsDivider: {
+    marginHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: C.borderDim,
   },
   searchInputWrap: {
     minHeight: 42,
@@ -863,7 +875,7 @@ const styles = StyleSheet.create({
   },
   searchTypeRow: {
     flexDirection: 'row',
-    marginTop: 8,
+    marginTop: 12,
   },
   searchTypeButton: {
     flex: 1,
@@ -891,9 +903,13 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
   },
+  searchResultsList: {
+    flex: 1,
+  },
   searchListContent: {
     flexGrow: 1,
     paddingHorizontal: 16,
+    paddingTop: 18,
     paddingBottom: 180,
   },
   resultCard: {

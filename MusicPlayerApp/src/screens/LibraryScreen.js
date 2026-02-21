@@ -604,7 +604,7 @@ const LibraryScreen = ({navigation, route}) => {
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: C.bg},
   header: {
-    paddingTop: 54,
+    paddingTop: 40,
     paddingHorizontal: 16,
     paddingBottom: 12,
     flexDirection: 'row',
