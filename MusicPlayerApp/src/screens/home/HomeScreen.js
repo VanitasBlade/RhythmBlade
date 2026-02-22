@@ -89,9 +89,14 @@ const HomeScreen = ({navigation}) => {
   }, [recentSongs, search]);
 
   const playSong = async index => {
+    const nextTrack = filteredSongs[index];
+    if (!nextTrack) {
+      return;
+    }
+
     try {
       await playbackService.playSongs(filteredSongs, {startIndex: index});
-      navigation.navigate('NowPlaying');
+      navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
     } catch (error) {
       console.error('Error playing song:', error);
     }

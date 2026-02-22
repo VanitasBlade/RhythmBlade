@@ -57,7 +57,9 @@ const MiniPlayer = () => {
       <TouchableOpacity
         style={styles.trackRow}
         activeOpacity={0.9}
-        onPress={() => navigation.navigate('NowPlaying')}>
+        onPress={() =>
+          navigation.navigate('NowPlaying', {optimisticTrack: track})
+        }>
         {track.artwork ? (
           <Image source={{uri: track.artwork}} style={styles.artwork} />
         ) : (

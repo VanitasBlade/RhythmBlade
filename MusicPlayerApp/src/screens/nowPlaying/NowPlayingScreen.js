@@ -13,10 +13,12 @@ import playbackService from '../../services/playback/PlaybackService';
 import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
 import styles from './nowPlaying.styles';
 
-const NowPlayingScreen = ({navigation}) => {
+const NowPlayingScreen = ({navigation, route}) => {
   const playbackState = usePlaybackState();
   const progress = useProgress();
   const track = useActiveTrack();
+  const optimisticTrack = route?.params?.optimisticTrack || null;
+  const displayTrack = track || optimisticTrack;
   const [repeatMode, setRepeatMode] = useState(RepeatMode.Off);
   const [isShuffling, setIsShuffling] = useState(false);
 
@@ -82,7 +84,7 @@ const NowPlayingScreen = ({navigation}) => {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-  if (!track) {
+  if (!displayTrack) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
@@ -111,8 +113,8 @@ const NowPlayingScreen = ({navigation}) => {
       </View>
 
       <View style={styles.artworkContainer}>
-        {track.artwork ? (
-          <Image source={{uri: track.artwork}} style={styles.artwork} />
+        {displayTrack.artwork ? (
+          <Image source={{uri: displayTrack.artwork}} style={styles.artwork} />
         ) : (
           <View style={styles.placeholderArtwork}>
             <Icon name="music-note" size={120} color={C.textMute} />
@@ -122,14 +124,14 @@ const NowPlayingScreen = ({navigation}) => {
 
       <View style={styles.trackInfo}>
         <Text style={styles.title} numberOfLines={2}>
-          {track.title}
+          {displayTrack.title}
         </Text>
         <Text style={styles.artist} numberOfLines={1}>
-          {track.artist}
+          {displayTrack.artist}
         </Text>
-        {track.album && (
+        {displayTrack.album && (
           <Text style={styles.album} numberOfLines={1}>
-            {track.album}
+            {displayTrack.album}
           </Text>
         )}
       </View>
@@ -139,7 +141,10 @@ const NowPlayingScreen = ({navigation}) => {
           style={styles.slider}
           value={progress.position}
           minimumValue={0}
-          maximumValue={progress.duration || 1}
+          maximumValue={Math.max(
+            progress.duration || displayTrack.duration || 0,
+            1,
+          )}
           onSlidingComplete={onSeek}
           minimumTrackTintColor={C.accentFg}
           maximumTrackTintColor={C.textDeep}
@@ -147,7 +152,9 @@ const NowPlayingScreen = ({navigation}) => {
         />
         <View style={styles.timeContainer}>
           <Text style={styles.timeText}>{formatTime(progress.position)}</Text>
-          <Text style={styles.timeText}>{formatTime(progress.duration)}</Text>
+          <Text style={styles.timeText}>
+            {formatTime(progress.duration || displayTrack.duration || 0)}
+          </Text>
         </View>
       </View>
 

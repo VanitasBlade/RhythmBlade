@@ -109,9 +109,11 @@ const PlaylistsScreen = ({navigation}) => {
       return;
     }
 
+    const nextTrack = playlist.songs[0];
+
     try {
       await playbackService.playSongs(playlist.songs, {startIndex: 0});
-      navigation.navigate('NowPlaying');
+      navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
     } catch (error) {
       console.error('Error playing playlist:', error);
     }

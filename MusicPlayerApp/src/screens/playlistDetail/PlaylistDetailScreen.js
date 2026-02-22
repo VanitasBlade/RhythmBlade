@@ -35,9 +35,14 @@ const PlaylistDetailScreen = ({route, navigation}) => {
   }, [loadPlaylist]);
 
   const playSong = async index => {
+    const nextTrack = playlist.songs[index];
+    if (!nextTrack) {
+      return;
+    }
+
     try {
       await playbackService.playSongs(playlist.songs, {startIndex: index});
-      navigation.navigate('NowPlaying');
+      navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
     } catch (error) {
       console.error('Error playing song:', error);
     }
@@ -48,9 +53,11 @@ const PlaylistDetailScreen = ({route, navigation}) => {
       return;
     }
 
+    const nextTrack = playlist.songs[0];
+
     try {
       await playbackService.playSongs(playlist.songs, {startIndex: 0});
-      navigation.navigate('NowPlaying');
+      navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
     } catch (error) {
       console.error('Error playing all songs:', error);
     }

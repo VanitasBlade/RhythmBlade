@@ -133,9 +133,14 @@ const LibraryScreen = ({navigation, route}) => {
   }, [normalizedSources]);
 
   const playSong = async index => {
+    const nextTrack = sortedSongs[index];
+    if (!nextTrack) {
+      return;
+    }
+
     try {
       await playbackService.playSongs(sortedSongs, {startIndex: index});
-      navigation.navigate('NowPlaying');
+      navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
     } catch (error) {
       console.error('Error playing song:', error);
     }
@@ -145,9 +150,12 @@ const LibraryScreen = ({navigation, route}) => {
     if (!sortedSongs.length) {
       return;
     }
+
+    const nextTrack = sortedSongs[0];
+
     try {
       await playbackService.playSongs(sortedSongs, {startIndex: 0});
-      navigation.navigate('NowPlaying');
+      navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
     } catch (error) {
       console.error('Error playing all songs:', error);
     }
@@ -165,9 +173,12 @@ const LibraryScreen = ({navigation, route}) => {
         shuffled[index],
       ];
     }
+
+    const nextTrack = shuffled[0];
+
     try {
       await playbackService.playSongs(shuffled, {startIndex: 0});
-      navigation.navigate('NowPlaying');
+      navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
     } catch (error) {
       console.error('Error shuffling songs:', error);
     }
