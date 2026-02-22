@@ -42,6 +42,7 @@ const SearchScreen = () => {
   const mountedRef = useRef(true);
   const pollInFlightRef = useRef(false);
   const persistedJobsRef = useRef(new Set());
+  const dismissedDoneJobsRef = useRef(new Set());
 
   const currentOption = useMemo(
     () =>
@@ -94,7 +95,18 @@ const SearchScreen = () => {
     try {
       const jobs = await apiService.getDownloadJobs(100);
       if (mountedRef.current) {
-        setQueue(jobs);
+        jobs.forEach(job => {
+          if (job.status !== 'done') {
+            dismissedDoneJobsRef.current.delete(job.id);
+          }
+        });
+        const filtered = jobs.filter(
+          job =>
+            !(
+              job.status === 'done' && dismissedDoneJobsRef.current.has(job.id)
+            ),
+        );
+        setQueue(filtered);
       }
     } catch (error) {
       // Queue polling is best-effort.
@@ -320,6 +332,16 @@ const SearchScreen = () => {
     [cancelingJobs],
   );
 
+  const dismissDoneQueueItem = useCallback(jobId => {
+    if (!jobId) {
+      return;
+    }
+    dismissedDoneJobsRef.current.add(jobId);
+    if (mountedRef.current) {
+      setQueue(prev => prev.filter(existing => existing.id !== jobId));
+    }
+  }, []);
+
   const renderSearchResult = useCallback(
     ({item, index}) => {
       const key = toTrackKey(item);
@@ -345,9 +367,16 @@ const SearchScreen = () => {
         canceling={Boolean(cancelingJobs[item.id])}
         onRetry={retryQueueItem}
         onCancel={cancelQueueItem}
+        onDoneAnimationComplete={dismissDoneQueueItem}
       />
     ),
-    [cancelQueueItem, cancelingJobs, retryQueueItem, retryingJobs],
+    [
+      cancelQueueItem,
+      cancelingJobs,
+      dismissDoneQueueItem,
+      retryQueueItem,
+      retryingJobs,
+    ],
   );
 
   const renderSearchEmpty = useCallback(() => {

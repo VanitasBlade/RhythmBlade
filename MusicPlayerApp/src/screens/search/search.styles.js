@@ -262,6 +262,7 @@ const styles = StyleSheet.create({
     minHeight: 64,
     flexDirection: 'row',
     alignItems: 'stretch',
+    position: 'relative',
     borderRadius: 8,
     borderWidth: 1,
     borderColor: C.border,
@@ -360,6 +361,36 @@ const styles = StyleSheet.create({
     height: 30,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  queueDoneOutlineOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 8,
+    overflow: 'hidden',
+    zIndex: 6,
+  },
+  queueDoneOutlineLine: {
+    position: 'absolute',
+    backgroundColor: '#22c55e',
+  },
+  queueDoneOutlineTop: {
+    left: 0,
+    top: 0,
+    height: 2,
+  },
+  queueDoneOutlineRight: {
+    right: 0,
+    top: 0,
+    width: 2,
+  },
+  queueDoneOutlineBottom: {
+    right: 0,
+    bottom: 0,
+    height: 2,
+  },
+  queueDoneOutlineLeft: {
+    left: 0,
+    bottom: 0,
+    width: 2,
   },
   emptyContainer: {
     paddingTop: 90,
