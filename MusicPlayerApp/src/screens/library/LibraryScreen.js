@@ -29,7 +29,12 @@ import {
   SUB_TABS,
   TRACK_ICONS,
 } from './library.constants';
-import {formatDuration, normalizeFormats, sortSongs} from './library.utils';
+import {
+  compactFolderPath,
+  formatDuration,
+  normalizeFormats,
+  sortSongs,
+} from './library.utils';
 
 const LibraryScreen = ({navigation, route}) => {
   const [songs, setSongs] = useState([]);
@@ -119,7 +124,12 @@ const LibraryScreen = ({navigation, route}) => {
   }, [filteredPlaylists]);
 
   const normalizedSources = useMemo(
-    () => sources.map(source => ({...source, fmt: normalizeFormats(source)})),
+    () =>
+      sources.map(source => ({
+        ...source,
+        fmt: normalizeFormats(source),
+        displayPath: compactFolderPath(source.path, 2),
+      })),
     [sources],
   );
 
@@ -583,7 +593,7 @@ const LibraryScreen = ({navigation, route}) => {
                           !source.on && styles.sourcePathDisabled,
                         ]}
                         numberOfLines={1}>
-                        {source.path}
+                        {source.displayPath || source.path}
                       </Text>
                     </View>
                     <TouchableOpacity

@@ -29,3 +29,23 @@ export const normalizeFormats = source => {
     .map(item => item.trim())
     .filter(Boolean);
 };
+
+export const compactFolderPath = (value, levels = 2) => {
+  const clean = String(value || '')
+    .replace(/\\/g, '/')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!clean) {
+    return '';
+  }
+
+  const segments = clean.split('/').filter(Boolean);
+  const depth = Math.max(1, Number(levels) || 2);
+
+  if (segments.length <= depth) {
+    return `/${segments.join('/')}`;
+  }
+
+  return `../${segments.slice(-depth).join('/')}`;
+};
