@@ -8,7 +8,7 @@ import {
   usePlaybackState,
   useProgress,
 } from 'react-native-track-player';
-import playbackService from '../services/playback';
+import playbackService from '../services/playback/PlaybackService';
 import {MUSIC_HOME_THEME as C} from '../theme/musicHomeTheme';
 
 const formatTime = value => {
@@ -86,11 +86,7 @@ const MiniPlayer = () => {
         </TouchableOpacity>
 
         <TouchableOpacity onPress={togglePlayback} style={styles.playBtn}>
-          <Icon
-            name={isPlaying ? 'pause' : 'play'}
-            size={20}
-            color={C.bg}
-          />
+          <Icon name={isPlaying ? 'pause' : 'play'} size={20} color={C.bg} />
         </TouchableOpacity>
 
         <TouchableOpacity onPress={skipToNext} style={styles.iconBtn}>

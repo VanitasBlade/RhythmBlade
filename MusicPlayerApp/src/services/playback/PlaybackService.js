@@ -1,6 +1,6 @@
 import TrackPlayer, {Capability, Event} from 'react-native-track-player';
-import {extractEmbeddedArtworkDataUri} from './artwork';
-import storageService from './storage';
+import {extractEmbeddedArtworkDataUri} from '../artwork/ArtworkService';
+import storageService from '../storage/StorageService';
 
 const PLACEHOLDER_VALUES = new Set([
   'unknown',
@@ -110,7 +110,9 @@ class PlaybackService {
     }
 
     return this.normalizeTrackForQueue({
-      id: rawId || `track_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id:
+        rawId ||
+        `track_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       url: rawUrl,
       title: song.title,
       artist: song.artist,
@@ -125,9 +127,7 @@ class PlaybackService {
       return [];
     }
 
-    return songs
-      .map(song => this.toQueueTrack(song))
-      .filter(Boolean);
+    return songs.map(song => this.toQueueTrack(song)).filter(Boolean);
   }
 
   async playSongs(songs = [], options = {}) {

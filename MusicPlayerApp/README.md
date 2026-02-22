@@ -1,79 +1,109 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# MusicPlayerApp
 
-# Getting Started
+This README documents the current explicit-file structure (no `index.js` entry files inside `src/screens` or `src/services`).
 
->**Note**: Make sure you have completed the [React Native - Environment Setup](https://reactnative.dev/docs/environment-setup) instructions till "Creating a new application" step, before proceeding.
+## Project Structure
 
-## Step 1: Start the Metro Server
-
-First, you will need to start **Metro**, the JavaScript _bundler_ that ships _with_ React Native.
-
-To start Metro, run the following command from the _root_ of your React Native project:
-
-```bash
-# using npm
-npm start
-
-# OR using Yarn
-yarn start
+```text
+MusicPlayerApp/
+  App.js
+  index.js
+  src/
+    components/
+      MiniPlayer.js
+    screens/
+      home/
+        HomeScreen.js
+        home.styles.js
+      library/
+        LibraryScreen.js
+        library.styles.js
+        library.constants.js
+        library.utils.js
+      nowPlaying/
+        NowPlayingScreen.js
+        nowPlaying.styles.js
+      playlistDetail/
+        PlaylistDetailScreen.js
+        playlistDetail.styles.js
+      playlists/
+        PlaylistsScreen.js
+        playlists.styles.js
+      search/
+        SearchScreen.js
+        search.styles.js
+        search.constants.js
+        search.utils.js
+        components/
+          SearchResultCard.js
+          QueueItemCard.js
+      settings/
+        SettingsScreen.js
+        settings.styles.js
+    services/
+      api/
+        ApiService.js
+      artwork/
+        ArtworkService.js
+      network/
+        NetworkService.js
+      playback/
+        PlaybackService.js
+      storage/
+        StorageService.js
+        storage.constants.js
+        storage.helpers.js
+        modules/
+          artwork.methods.js
+          filesystem.methods.js
+          library.methods.js
+          playlist.methods.js
+          settings.methods.js
+    theme/
+      musicHomeTheme.js
 ```
 
-## Step 2: Start your Application
+## Folder Responsibilities
 
-Let Metro Bundler run in its _own_ terminal. Open a _new_ terminal from the _root_ of your React Native project. Run the following command to start your _Android_ or _iOS_ app:
+### `App.js`
+- App bootstrap and navigation setup.
+- Imports screen files directly (no screen barrel).
 
-### For Android
+### `src/screens/`
+- Feature-first screen organization.
+- Each screen folder contains:
+  - `*Screen.js` (screen component)
+  - `*.styles.js` (screen-local styles)
+  - optional `*.constants.js` and `*.utils.js`
 
-```bash
-# using npm
-npm run android
+### `src/services/`
+- Domain-first service organization.
+- Explicit entry files:
+  - `ApiService.js`
+  - `ArtworkService.js`
+  - `NetworkService.js`
+  - `PlaybackService.js`
+  - `StorageService.js`
+- Storage is intentionally modularized under `storage/modules/*`.
 
-# OR using Yarn
-yarn android
-```
+### `src/components/`
+- Reusable shared UI components.
 
-### For iOS
+### `src/theme/`
+- App theme tokens and color palette.
 
-```bash
-# using npm
-npm run ios
+## Screen Routing Map
 
-# OR using Yarn
-yarn ios
-```
+- `home/HomeScreen.js` -> Home tab
+- `library/LibraryScreen.js` -> Library tab
+- `search/SearchScreen.js` -> Downloader tab
+- `settings/SettingsScreen.js` -> Settings tab
+- `nowPlaying/NowPlayingScreen.js` -> Stack modal screen
+- `playlistDetail/PlaylistDetailScreen.js` -> Stack detail screen
 
-If everything is set up _correctly_, you should see your new app running in your _Android Emulator_ or _iOS Simulator_ shortly provided you have set up your emulator/simulator correctly.
+## Conventions
 
-This is one way to run your app — you can also run it directly from within Android Studio and Xcode respectively.
-
-## Step 3: Modifying your App
-
-Now that you have successfully run the app, let's modify it.
-
-1. Open `App.tsx` in your text editor of choice and edit some lines.
-2. For **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Developer Menu** (<kbd>Ctrl</kbd> + <kbd>M</kbd> (on Window and Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (on macOS)) to see your changes!
-
-   For **iOS**: Hit <kbd>Cmd ⌘</kbd> + <kbd>R</kbd> in your iOS Simulator to reload the app and see your changes!
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [Introduction to React Native](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you can't get this to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+1. Do not add `index.js` entry files under `src/screens` or `src/services`.
+2. Use explicit filenames for discoverability (`HomeScreen.js`, `ApiService.js`).
+3. Keep styles/constants/utils next to their owning feature.
+4. Put shared UI in `src/components` and shared domain logic in `src/services`.

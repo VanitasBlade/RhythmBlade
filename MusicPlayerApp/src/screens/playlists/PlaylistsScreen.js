@@ -3,7 +3,6 @@ import {
   FlatList,
   Image,
   Modal,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -13,9 +12,10 @@ import {
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useFocusEffect} from '@react-navigation/native';
 
-import playbackService from '../services/playback';
-import storageService from '../services/storage';
-import {MUSIC_HOME_THEME as C} from '../theme/musicHomeTheme';
+import playbackService from '../../services/playback/PlaybackService';
+import storageService from '../../services/storage/StorageService';
+import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
+import styles from './playlists.styles';
 
 const PlaylistsScreen = ({navigation}) => {
   const [playlists, setPlaylists] = useState([]);
@@ -262,15 +262,15 @@ const PlaylistsScreen = ({navigation}) => {
 
       <Modal
         visible={modalVisible}
-        animationType="fade"
         transparent
+        animationType="fade"
         onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Create Playlist</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Icon name="close" size={22} color={C.textDim} />
+                <Icon name="close" size={20} color={C.textDim} />
               </TouchableOpacity>
             </View>
 
@@ -303,220 +303,5 @@ const PlaylistsScreen = ({navigation}) => {
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: C.bg,
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 128,
-  },
-  header: {
-    paddingTop: 54,
-    paddingBottom: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 30,
-    color: '#f0eaff',
-    fontWeight: '800',
-  },
-  headerSubtitle: {
-    marginTop: 4,
-    color: C.textDim,
-    fontSize: 12,
-  },
-  createButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.accent,
-  },
-  searchWrap: {
-    minHeight: 42,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.bgCard,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    color: C.text,
-    fontSize: 14,
-  },
-  playlistCard: {
-    marginBottom: 10,
-    borderRadius: 9,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.bgCard,
-    flexDirection: 'row',
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  playlistMain: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 86,
-  },
-  playlistArtwork: {
-    marginLeft: 8,
-    marginRight: 10,
-  },
-  artworkGrid: {
-    width: 68,
-    height: 68,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    borderRadius: 6,
-    overflow: 'hidden',
-  },
-  gridImage: {
-    width: 34,
-    height: 34,
-  },
-  gridImageEmpty: {
-    width: 34,
-    height: 34,
-    backgroundColor: '#2a1b49',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  placeholderArtwork: {
-    width: 68,
-    height: 68,
-    borderRadius: 6,
-    backgroundColor: '#2a1b49',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  playlistMeta: {
-    flex: 1,
-    paddingRight: 8,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  playlistName: {
-    flexShrink: 1,
-    color: C.text,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  favoriteBadge: {
-    marginLeft: 8,
-    borderWidth: 1,
-    borderColor: '#704f9e',
-    borderRadius: 10,
-    paddingHorizontal: 7,
-    paddingVertical: 1,
-    backgroundColor: '#2d1b54',
-  },
-  favoriteBadgeText: {
-    color: '#d4c5ff',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  playlistCount: {
-    marginTop: 3,
-    color: C.textDim,
-    fontSize: 12,
-  },
-  playlistDesc: {
-    marginTop: 3,
-    color: C.textMute,
-    fontSize: 11,
-  },
-  playIconButton: {
-    width: 48,
-    minHeight: 86,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyContainer: {
-    paddingTop: 86,
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  emptyTitle: {
-    marginTop: 12,
-    color: '#f0eaff',
-    fontSize: 19,
-    fontWeight: '700',
-  },
-  emptySubtitle: {
-    marginTop: 8,
-    color: C.textDim,
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(8, 5, 18, 0.78)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  modalCard: {
-    width: '100%',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.bgCard,
-    padding: 16,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  modalTitle: {
-    color: C.text,
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 8,
-    backgroundColor: C.bg,
-    color: C.text,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 10,
-    fontSize: 14,
-  },
-  modalTextArea: {
-    minHeight: 90,
-    textAlignVertical: 'top',
-  },
-  createModalButton: {
-    marginTop: 2,
-    borderRadius: 8,
-    backgroundColor: C.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 11,
-  },
-  createModalButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-});
 
 export default PlaylistsScreen;

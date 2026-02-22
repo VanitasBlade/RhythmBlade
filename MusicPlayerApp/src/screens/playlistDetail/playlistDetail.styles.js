@@ -1,0 +1,195 @@
+import {StyleSheet} from 'react-native';
+import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: C.bg,
+  },
+  listContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 40,
+  },
+  topBar: {
+    paddingTop: 54,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topBarTitle: {
+    color: C.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  topBarSpacer: {
+    width: 32,
+  },
+  heroSection: {
+    alignItems: 'center',
+    paddingBottom: 14,
+  },
+  heroArtworkWrap: {
+    marginBottom: 14,
+  },
+  artworkGrid: {
+    width: 180,
+    height: 180,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  gridImage: {
+    width: 90,
+    height: 90,
+  },
+  gridImageEmpty: {
+    width: 90,
+    height: 90,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2a1b49',
+  },
+  placeholderArtwork: {
+    width: 180,
+    height: 180,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2a1b49',
+  },
+  playlistName: {
+    color: '#f0eaff',
+    fontSize: 28,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  playlistDescription: {
+    marginTop: 6,
+    color: C.textDim,
+    fontSize: 12,
+    textAlign: 'center',
+    paddingHorizontal: 14,
+  },
+  playlistInfo: {
+    marginTop: 7,
+    color: C.textMute,
+    fontSize: 12,
+  },
+  playAllButton: {
+    marginTop: 12,
+    borderRadius: 7,
+    backgroundColor: C.accent,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+  },
+  playAllDisabled: {
+    opacity: 0.5,
+  },
+  playAllText: {
+    marginLeft: 4,
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  sectionLabel: {
+    marginTop: 6,
+    marginBottom: 8,
+    color: C.textDim,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  songCard: {
+    marginBottom: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  songMain: {
+    flex: 1,
+    minHeight: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  songIndex: {
+    width: 30,
+    color: C.textDeep,
+    fontSize: 12,
+    textAlign: 'center',
+    fontWeight: '700',
+  },
+  songArtwork: {
+    width: 46,
+    height: 46,
+    borderRadius: 6,
+  },
+  songArtworkFallback: {
+    width: 46,
+    height: 46,
+    borderRadius: 6,
+    backgroundColor: '#2a1b49',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  songMeta: {
+    flex: 1,
+    paddingHorizontal: 10,
+  },
+  songTitle: {
+    color: C.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  songArtist: {
+    marginTop: 3,
+    color: C.textMute,
+    fontSize: 11,
+  },
+  removeBtn: {
+    width: 36,
+    minHeight: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    paddingTop: 60,
+    alignItems: 'center',
+  },
+  emptyTitle: {
+    marginTop: 12,
+    color: '#f0eaff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  emptySubtitle: {
+    marginTop: 7,
+    color: C.textDim,
+    fontSize: 13,
+  },
+});
+
+export default styles;

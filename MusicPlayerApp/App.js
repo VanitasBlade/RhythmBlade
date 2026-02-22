@@ -8,16 +8,18 @@ import TrackPlayer from 'react-native-track-player';
 import {MUSIC_HOME_THEME as C} from './src/theme/musicHomeTheme';
 
 // Services
-import playbackService, {PlaybackServiceHandler} from './src/services/playback';
-import networkService from './src/services/network';
+import playbackService, {
+  PlaybackServiceHandler,
+} from './src/services/playback/PlaybackService';
+import networkService from './src/services/network/NetworkService';
 
 // Screens
-import HomeScreen from './src/screens/HomeScreen';
-import SearchScreen from './src/screens/SearchScreen';
-import LibraryScreen from './src/screens/LibraryScreen';
-import SettingsScreen from './src/screens/SettingsScreen';
-import PlaylistDetailScreen from './src/screens/PlaylistDetailScreen';
-import NowPlayingScreen from './src/screens/NowPlayingScreen';
+import HomeScreen from './src/screens/home/HomeScreen';
+import SearchScreen from './src/screens/search/SearchScreen';
+import LibraryScreen from './src/screens/library/LibraryScreen';
+import SettingsScreen from './src/screens/settings/SettingsScreen';
+import PlaylistDetailScreen from './src/screens/playlistDetail/PlaylistDetailScreen';
+import NowPlayingScreen from './src/screens/nowPlaying/NowPlayingScreen';
 
 // Components
 import MiniPlayer from './src/components/MiniPlayer';

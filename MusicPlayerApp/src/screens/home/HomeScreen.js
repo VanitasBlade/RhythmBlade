@@ -4,7 +4,6 @@ import {
   Image,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -13,13 +12,14 @@ import {
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useFocusEffect} from '@react-navigation/native';
 
-import playbackService from '../services/playback';
-import storageService from '../services/storage';
+import playbackService from '../../services/playback/PlaybackService';
+import storageService from '../../services/storage/StorageService';
 import {
   MUSIC_HOME_ART_COLORS,
   MUSIC_HOME_THEME as C,
   PLAYLIST_EMOJIS,
-} from '../theme/musicHomeTheme';
+} from '../../theme/musicHomeTheme';
+import styles from './home.styles';
 
 const ART_KEYS = Object.keys(MUSIC_HOME_ART_COLORS);
 
@@ -158,7 +158,9 @@ const HomeScreen = ({navigation}) => {
       <View style={styles.sectionRow}>
         <Text style={styles.sectionTitle}>Playlists</Text>
         <TouchableOpacity
-          onPress={() => navigation.navigate('Library', {libraryTab: 'playlists'})}>
+          onPress={() =>
+            navigation.navigate('Library', {libraryTab: 'playlists'})
+          }>
           <Text style={styles.sectionAction}>View all</Text>
         </TouchableOpacity>
       </View>
@@ -283,217 +285,5 @@ const HomeScreen = ({navigation}) => {
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: C.bg,
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 128,
-  },
-  header: {
-    paddingTop: 40,
-    paddingBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  headerTitle: {
-    fontSize: 40,
-    color: '#e8e2f8',
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-  headerSubtitle: {
-    marginTop: 4,
-    color: C.textDim,
-    fontSize: 12,
-  },
-  headerAction: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: C.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.bgCard,
-  },
-  profilePlaceholder: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#3b1f6e',
-    borderWidth: 1,
-    borderColor: C.accent,
-  },
-  profileInitial: {
-    color: '#f0eaff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  searchWrap: {
-    marginTop: 8,
-    marginBottom: 10,
-    minHeight: 42,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.bgCard,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    color: C.text,
-    fontSize: 14,
-  },
-  quickActionsRow: {
-    flexDirection: 'row',
-    marginBottom: 10,
-  },
-  quickActionCard: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.bgCard,
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quickActionGap: {
-    marginRight: 8,
-  },
-  quickActionLabel: {
-    marginLeft: 8,
-    color: C.text,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  sectionRow: {
-    marginTop: 12,
-    marginBottom: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sectionTitle: {
-    color: C.textDim,
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  sectionAction: {
-    color: C.accentFg,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  playlistsRow: {
-    paddingBottom: 4,
-    paddingRight: 2,
-  },
-  playlistCard: {
-    width: 102,
-    marginRight: 10,
-  },
-  playlistArt: {
-    height: 94,
-    borderRadius: 7,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  playlistEmoji: {
-    fontSize: 30,
-  },
-  playlistName: {
-    marginTop: 6,
-    color: '#bdb5d8',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  playlistCount: {
-    marginTop: 2,
-    color: C.textMute,
-    fontSize: 10,
-  },
-  songCard: {
-    marginBottom: 9,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: C.bgCard,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  songMain: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 60,
-  },
-  songArtwork: {
-    width: 60,
-    height: 60,
-  },
-  songArtworkFallback: {
-    width: 60,
-    height: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2a1b49',
-  },
-  songMeta: {
-    flex: 1,
-    minHeight: 60,
-    justifyContent: 'center',
-    paddingHorizontal: 10,
-  },
-  songTitle: {
-    color: C.text,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  songArtist: {
-    marginTop: 3,
-    color: C.textMute,
-    fontSize: 11,
-  },
-  favoriteButton: {
-    width: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 60,
-  },
-  emptyContainer: {
-    paddingTop: 64,
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  emptyTitle: {
-    marginTop: 12,
-    color: '#f0eaff',
-    fontSize: 19,
-    fontWeight: '700',
-  },
-  emptySubtitle: {
-    marginTop: 8,
-    color: C.textDim,
-    fontSize: 13,
-    textAlign: 'center',
-  },
-});
 
 export default HomeScreen;

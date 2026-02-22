@@ -1,7 +1,7 @@
 import axios from 'axios';
 import {NativeModules, Platform} from 'react-native';
-import {checkOnlineStatus} from './network';
-import storageService from './storage';
+import {checkOnlineStatus} from '../network/NetworkService';
+import storageService from '../storage/StorageService';
 
 const LEGACY_SERVER_URL = 'http://10.213.164.15:3001';
 
