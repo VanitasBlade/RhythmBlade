@@ -1,6 +1,5 @@
 import fs from "fs";
 import path from "path";
-
 import {downloadSong} from "../downloader.js";
 import {DOWNLOAD_PIPELINE_TIMEOUT_MS, MAX_STORED_DOWNLOAD_JOBS} from "./constants.js";
 import {
@@ -12,23 +11,53 @@ import {
   withTimeout,
 } from "./helpers.js";
 
-const NOT_FOUND_ERROR = "Download job not found";
-const IN_PROGRESS_ERROR = "Download is already in progress.";
-const RETRY_DATA_ERROR = "Retry data unavailable for this job.";
-const MISSING_SONG_ERROR =
-  "Song not found in current search context. Search first, then download by index.";
-const NOT_DOWNLOADABLE_ERROR = "Selected item is not downloadable.";
+const ERRORS = {
+  notFound: "Download job not found",
+  inProgress: "Download is already in progress.",
+  retryData: "Retry data unavailable for this job.",
+  missingSong: "Song not found in current search context. Search first, then download by index.",
+  notDownloadable: "Selected item is not downloadable.",
+};
+const ACTIVE_STATUSES = new Set(["queued", "preparing", "downloading"]);
+const DOWNLOADING_PHASES = new Set(["downloading", "saving", "done"]);
+const DEFAULT_SETTING = "Hi-Res";
+const fsStat = fs.promises.stat;
 
-function isJobInProgress(status) {
-  return status === "queued" || status === "preparing" || status === "downloading";
+function normalizeSong(song) {
+  if (!song || typeof song !== "object") {
+    return null;
+  }
+  const title = String(song.title || "").trim();
+  if (!title) {
+    return null;
+  }
+  const normalized = {
+    title,
+    artist: String(song.artist || "").trim(),
+    album: String(song.album || "").trim(),
+    subtitle: String(song.subtitle || "").trim(),
+    artwork: upscaleArtworkUrl(song.artwork),
+    duration: Number(song.duration) || 0,
+    downloadable: song.downloadable !== false,
+  };
+  if (Number.isInteger(song.index)) {
+    normalized.index = song.index;
+  }
+  const tidalId = extractTrackIdFromValue(song.tidalId || song.url);
+  if (tidalId) {
+    normalized.tidalId = tidalId;
+  }
+  const url = String(song.url || "").trim();
+  if (url) {
+    normalized.url = url;
+  }
+  return normalized;
 }
 
-export function createDownloadEngine({
-  state,
-  browserController,
-  searchEngine,
-  songsDir,
-}) {
+export function createDownloadEngine({state, browserController, searchEngine, songsDir}) {
+  const resolveSongFromRequest = request =>
+    searchEngine.getSongFromRequest(request.index, request.song) || request.song || null;
+
   function toPublicItem(song) {
     return {
       index: song.index,
@@ -71,7 +100,6 @@ export function createDownloadEngine({
     if (state.downloadJobs.size <= MAX_STORED_DOWNLOAD_JOBS) {
       return;
     }
-
     for (const [jobId, job] of state.downloadJobs) {
       if (state.downloadJobs.size <= MAX_STORED_DOWNLOAD_JOBS) {
         return;
@@ -80,7 +108,6 @@ export function createDownloadEngine({
         state.downloadJobs.delete(jobId);
       }
     }
-
     while (state.downloadJobs.size > MAX_STORED_DOWNLOAD_JOBS) {
       const oldestJobId = state.downloadJobs.keys().next().value;
       if (typeof oldestJobId === "undefined") {
@@ -90,75 +117,35 @@ export function createDownloadEngine({
     }
   }
 
-  function sanitizeDownloadSong(song) {
-    if (!song || typeof song !== "object") {
-      return null;
-    }
-
-    const title = String(song.title || "").trim();
-    if (!title) {
-      return null;
-    }
-
-    const normalized = {
-      title,
-      artist: String(song.artist || "").trim(),
-      album: String(song.album || "").trim(),
-      subtitle: String(song.subtitle || "").trim(),
-      artwork: upscaleArtworkUrl(song.artwork),
-      duration: Number(song.duration) || 0,
-      downloadable: song.downloadable !== false,
-    };
-
-    if (Number.isInteger(song.index)) {
-      normalized.index = song.index;
-    }
-    const tidalId = extractTrackIdFromValue(song.tidalId || song.url);
-    if (tidalId) {
-      normalized.tidalId = tidalId;
-    }
-
-    const url = String(song.url || "").trim();
-    if (url) {
-      normalized.url = url;
-    }
-
-    return normalized;
-  }
-
   function createDownloadRequest(payload = {}) {
-    const normalizedSong = sanitizeDownloadSong(payload.song);
+    const song = normalizeSong(payload.song);
     const index = Number.isInteger(payload.index)
       ? payload.index
-      : Number.isInteger(normalizedSong?.index)
-        ? normalizedSong.index
+      : Number.isInteger(song?.index)
+        ? song.index
         : null;
-
     return {
       index,
-      song: normalizedSong,
-      downloadSetting: payload.downloadSetting || "Hi-Res",
+      song,
+      downloadSetting: payload.downloadSetting || DEFAULT_SETTING,
     };
   }
 
   function canResolveRequest(request = {}) {
-    const {index, song} = request;
-    const selectedSong = searchEngine.getSongFromRequest(index, song) || song || null;
+    const selectedSong = resolveSongFromRequest(request);
     if (!selectedSong?.title) {
-      return {ok: false, selectedSong, error: MISSING_SONG_ERROR};
+      return {ok: false, selectedSong, error: ERRORS.missingSong};
     }
     if (selectedSong.downloadable === false) {
-      return {ok: false, selectedSong, error: NOT_DOWNLOADABLE_ERROR};
+      return {ok: false, selectedSong, error: ERRORS.notDownloadable};
     }
     return {ok: true, selectedSong, error: null};
   }
 
-  function createDownloadJob(request) {
-    const fromSearch = searchEngine.getSongFromRequest(request.index, request.song);
-    const seed = fromSearch || request.song || {};
+  function createDownloadJob(request, seedSong = null) {
+    const seed = seedSong || resolveSongFromRequest(request) || {};
     const now = Date.now();
     const id = `${now}_${Math.random().toString(36).slice(2, 8)}`;
-
     const job = {
       id,
       requestIndex: Number.isInteger(request.index) ? request.index : null,
@@ -168,9 +155,9 @@ export function createDownloadEngine({
       title: seed.title || "Preparing download",
       artist: seed.artist || "",
       album: seed.album || "",
-      artwork: seed.artwork || null,
+      artwork: upscaleArtworkUrl(seed.artwork),
       duration: seed.duration || 0,
-      downloadSetting: request.downloadSetting || "Hi-Res",
+      downloadSetting: request.downloadSetting || DEFAULT_SETTING,
       downloadedBytes: 0,
       totalBytes: null,
       error: null,
@@ -179,53 +166,44 @@ export function createDownloadEngine({
       createdAt: now,
       updatedAt: now,
     };
-
     state.downloadJobs.set(id, job);
     trimDownloadJobs();
     return job;
   }
 
   function patchDownloadJob(jobId, patch = {}) {
-    const current = state.downloadJobs.get(jobId);
-    if (!current) {
+    const job = state.downloadJobs.get(jobId);
+    if (!job) {
       return null;
     }
-
-    const next = {...current, ...patch, updatedAt: Date.now()};
+    const previousProgress = job.progress;
+    Object.assign(job, patch);
+    job.updatedAt = Date.now();
     if (typeof patch.progress === "number") {
-      const clamped = clampProgress(patch.progress, current.progress);
-      const shouldResetProgress = patch.status === "queued";
-      next.progress = next.status === "done"
+      const clamped = clampProgress(patch.progress, previousProgress);
+      job.progress = job.status === "done"
         ? 100
-        : shouldResetProgress
+        : patch.status === "queued"
           ? clamped
-          : Math.max(current.progress, clamped);
-    } else if (next.status === "done") {
-      next.progress = 100;
+          : Math.max(previousProgress, clamped);
+    } else if (job.status === "done") {
+      job.progress = 100;
     }
     if ("error" in patch) {
-      next.error = patch.error ? String(patch.error) : null;
+      job.error = patch.error ? String(patch.error) : null;
     }
-
-    state.downloadJobs.set(jobId, next);
-    return next;
+    return job;
   }
 
-  async function runDownloadPipeline(payload, onProgress = () => {}) {
-    const {index, song, downloadSetting} = payload || {};
+  async function runDownloadPipelineFromRequest(request, onProgress = () => {}) {
+    const {index, song, downloadSetting} = request;
     return withTimeout(
       browserController.runBrowserTask(async () => {
         await browserController.initBrowser();
         onProgress({status: "preparing", phase: "preparing", progress: 4});
-
-        const selectedSong = await searchEngine.resolveDownloadableSong(
-          index,
-          song,
-          onProgress
-        );
+        const selectedSong = await searchEngine.resolveDownloadableSong(index, song, onProgress);
         const songMeta = searchEngine.toSongMeta(selectedSong);
         const {page} = browserController.getBrowserInstance();
-
         const filename = await downloadSong(
           page,
           selectedSong.element,
@@ -235,35 +213,34 @@ export function createDownloadEngine({
             const phase = progressUpdate?.phase || "downloading";
             onProgress({
               ...songMeta,
-              status:
-                phase === "downloading" || phase === "saving" || phase === "done"
-                  ? "downloading"
-                  : "preparing",
+              status: DOWNLOADING_PHASES.has(phase) ? "downloading" : "preparing",
               ...progressUpdate,
             });
           }
         );
-
         const id = Date.now().toString();
         state.downloadedSongs.set(id, filename);
-
-        const requestSongFallback = song || searchEngine.getSongFromRequest(index, song) || {};
-        const normalizedSelectedSong = applyFilenameMetadataFallback(
-          mergeSongMetadata(selectedSong, requestSongFallback),
-          filename
-        );
-
-        return {id, filename, selectedSong: normalizedSelectedSong};
+        return {
+          id,
+          filename,
+          selectedSong: applyFilenameMetadataFallback(
+            mergeSongMetadata(selectedSong, song || {}),
+            filename
+          ),
+        };
       }),
       DOWNLOAD_PIPELINE_TIMEOUT_MS,
       "Download pipeline"
     );
   }
 
+  async function runDownloadPipeline(payload, onProgress = () => {}) {
+    return runDownloadPipelineFromRequest(createDownloadRequest(payload), onProgress);
+  }
+
   async function readDownloadedFileSize(filename) {
     try {
-      const stat = await fs.promises.stat(path.join(songsDir, filename));
-      return stat.size;
+      return (await fsStat(path.join(songsDir, filename))).size;
     } catch {
       return null;
     }
@@ -271,10 +248,9 @@ export function createDownloadEngine({
 
   async function executeDownloadJob(jobId, request) {
     try {
-      const result = await runDownloadPipeline(request, progressPatch => {
+      const result = await runDownloadPipelineFromRequest(request, progressPatch => {
         patchDownloadJob(jobId, {...progressPatch, error: null});
       });
-
       const bytes = await readDownloadedFileSize(result.filename);
       patchDownloadJob(jobId, {
         status: "done",
@@ -298,11 +274,14 @@ export function createDownloadEngine({
     }
   }
 
-  function startDownloadJob(payload = {}, alreadyNormalized = false) {
-    const request = alreadyNormalized ? payload : createDownloadRequest(payload);
-    const job = createDownloadJob(request);
+  function startDownloadRequest(request, seedSong = null) {
+    const job = createDownloadJob(request, seedSong);
     void executeDownloadJob(job.id, request);
     return state.downloadJobs.get(job.id);
+  }
+
+  function startDownloadJob(payload = {}) {
+    return startDownloadRequest(createDownloadRequest(payload));
   }
 
   function enqueueDownload(payload = {}) {
@@ -311,13 +290,13 @@ export function createDownloadEngine({
     if (!validation.ok) {
       return {ok: false, error: validation.error, job: null};
     }
-    return {ok: true, error: null, job: startDownloadJob(request, true)};
+    return {ok: true, error: null, job: startDownloadRequest(request, validation.selectedSong)};
   }
 
   function cancelDownloadJob(jobId) {
     const existing = state.downloadJobs.get(jobId);
     if (!existing) {
-      throw new Error(NOT_FOUND_ERROR);
+      throw new Error(ERRORS.notFound);
     }
     state.downloadJobs.delete(jobId);
     return existing;
@@ -326,28 +305,27 @@ export function createDownloadEngine({
   function retryDownloadJob(jobId) {
     const existing = state.downloadJobs.get(jobId);
     if (!existing) {
-      throw new Error(NOT_FOUND_ERROR);
+      throw new Error(ERRORS.notFound);
     }
-    if (isJobInProgress(existing.status)) {
-      throw new Error(IN_PROGRESS_ERROR);
+    if (ACTIVE_STATUSES.has(existing.status)) {
+      throw new Error(ERRORS.inProgress);
     }
-
-    const fallbackRequest = createDownloadRequest({
-      song: {
-        title: existing.title,
-        artist: existing.artist,
-        album: existing.album,
-        artwork: existing.artwork,
-        duration: existing.duration,
-        downloadable: true,
-      },
-      downloadSetting: existing.downloadSetting,
-    });
-    const request = createDownloadRequest(existing.request || fallbackRequest);
+    const request = createDownloadRequest(
+      existing.request || {
+        song: {
+          title: existing.title,
+          artist: existing.artist,
+          album: existing.album,
+          artwork: existing.artwork,
+          duration: existing.duration,
+          downloadable: true,
+        },
+        downloadSetting: existing.downloadSetting,
+      }
+    );
     if (!request.song && !Number.isInteger(request.index)) {
-      throw new Error(RETRY_DATA_ERROR);
+      throw new Error(ERRORS.retryData);
     }
-
     patchDownloadJob(jobId, {
       status: "queued",
       phase: "queued",
@@ -359,7 +337,6 @@ export function createDownloadEngine({
       downloadSetting: request.downloadSetting,
       request,
     });
-
     void executeDownloadJob(jobId, request);
     return state.downloadJobs.get(jobId);
   }

@@ -15,103 +15,68 @@ import {
 } from "./helpers.js";
 
 const SEP = "\u0001";
-
-const FAST_TRACK_TIMEOUT_MS = 12_000;
-const BROWSER_INIT_TIMEOUT_MS = 10_000;
-const TRACK_FALLBACK_TIMEOUT_MS = 12_000;
-const TRACK_FALLBACK_PIPELINE_TIMEOUT_MS = 20_000;
-const SEARCH_REQUEST_TIMEOUT_MS = 18_000;
-const SEARCH_PIPELINE_TIMEOUT_MS = 30_000;
-const RESOLVE_QUERY_TIMEOUT_MS = 9_000;
+const LOOKUP_EMPTY = {
+  byTrackId: new Map(),
+  byUrl: new Map(),
+  byMeta: new Map(),
+  byTitleArtist: new Map(),
+};
+const TIMEOUTS = {
+  fastTrack: 12_000,
+  browserInit: 10_000,
+  trackFallback: 12_000,
+  trackFallbackPipeline: 20_000,
+  search: 18_000,
+  searchPipeline: 30_000,
+  resolve: 9_000,
+};
 const RESOLVE_MAX_TRACK_RESULTS = 24;
 const STRONG_MATCH_SCORE = 140;
+const EXACT_MATCH_SCORE = 1000;
 
-function createEmptyLookup() {
-  return {
-    byTrackId: new Map(),
-    byUrl: new Map(),
-    byMeta: new Map(),
-    byTitleArtist: new Map(),
-  };
-}
+const key2 = (a, b) => `${a}${SEP}${b}`;
+const key3 = (a, b, c) => `${a}${SEP}${b}${SEP}${c}`;
 
-function toLookupEntry(song) {
-  const title = normalizeText(song?.title);
-  const artist = normalizeText(song?.artist);
-  const album = normalizeText(song?.album);
-  return {
-    song,
-    trackId: extractTrackIdFromValue(song?.tidalId || song?.url),
-    url: normalizeUrlForCompare(song?.url),
-    title,
-    artist,
-    album,
-    duration: Number(song?.duration) || 0,
-    titleArtistKey: `${title}${SEP}${artist}`,
-    metaKey: `${title}${SEP}${artist}${SEP}${album}`,
-  };
-}
-
-function addLookupList(map, key, entry) {
-  if (!key) {
+function addUniqueText(list, seen, value) {
+  const display = normalizeDisplayText(value);
+  if (!display) {
     return;
   }
-  const current = map.get(key);
-  if (current) {
-    current.push(entry);
-    return;
-  }
-  map.set(key, [entry]);
-}
-
-function addUniqueText(target, seen, value) {
-  const text = normalizeDisplayText(value);
-  if (!text) {
-    return;
-  }
-  const key = normalizeText(text);
+  const key = normalizeText(display);
   if (!key || seen.has(key)) {
     return;
   }
   seen.add(key);
-  target.push(text);
+  list.push(display);
 }
 
-function textMatchScore(candidate, target, exactScore, containsScore) {
+function scoreText(candidate, target, exact, partial) {
   if (!candidate || !target) {
     return 0;
   }
   if (candidate === target) {
-    return exactScore;
+    return exact;
   }
-  if (candidate.includes(target) || target.includes(candidate)) {
-    return containsScore;
-  }
-  return 0;
+  return candidate.includes(target) || target.includes(candidate) ? partial : 0;
 }
 
-function buildMatchProfile(song) {
+function buildTargetProfile(song) {
   const title = normalizeDisplayText(song?.title);
   const artist = normalizeDisplayText(song?.artist);
   const album = normalizeDisplayText(song?.album);
   return {
     trackId: extractTrackIdFromValue(song?.tidalId || song?.url),
     url: normalizeUrlForCompare(song?.url),
-    title,
-    artist,
-    album,
-    duration: Number(song?.duration) || 0,
     titleNorm: normalizeText(title),
     artistNorm: normalizeText(artist),
     albumNorm: normalizeText(album),
     titleTokens: tokenizeForSimilarity(title),
     albumTokens: tokenizeForSimilarity(album),
+    duration: Number(song?.duration) || 0,
   };
 }
 
 export function createSearchEngine(state, browserController) {
-  const getTrackCacheKey = normalizeText;
-
   function pruneTrackSearchCache() {
     const now = Date.now();
     for (const [key, entry] of state.trackSearchCache) {
@@ -130,7 +95,7 @@ export function createSearchEngine(state, browserController) {
   }
 
   function getCachedTrackSearch(query) {
-    const key = getTrackCacheKey(query);
+    const key = normalizeText(query);
     const entry = state.trackSearchCache.get(key);
     if (!entry) {
       return null;
@@ -143,7 +108,7 @@ export function createSearchEngine(state, browserController) {
   }
 
   function setCachedTrackSearch(query, songs) {
-    const key = getTrackCacheKey(query);
+    const key = normalizeText(query);
     if (state.trackSearchCache.has(key)) {
       state.trackSearchCache.delete(key);
     }
@@ -159,7 +124,7 @@ export function createSearchEngine(state, browserController) {
       browserController.runBrowserTask(async () => {
         const {page} = await withTimeout(
           browserController.initBrowser(),
-          BROWSER_INIT_TIMEOUT_MS,
+          TIMEOUTS.browserInit,
           "Browser initialization"
         );
         return withTimeout(searchSongs(page, query, type), searchTimeout, label);
@@ -178,7 +143,7 @@ export function createSearchEngine(state, browserController) {
     try {
       const songs = await withTimeout(
         searchTracksFast(query, 25),
-        FAST_TRACK_TIMEOUT_MS,
+        TIMEOUTS.fastTrack,
         "Fast track search"
       );
       setCachedTrackSearch(query, songs);
@@ -187,8 +152,8 @@ export function createSearchEngine(state, browserController) {
       const songs = await runBrowserSearch(
         query,
         "tracks",
-        TRACK_FALLBACK_TIMEOUT_MS,
-        TRACK_FALLBACK_PIPELINE_TIMEOUT_MS,
+        TIMEOUTS.trackFallback,
+        TIMEOUTS.trackFallbackPipeline,
         "Track fallback search"
       );
       if (!songs.length) {
@@ -208,27 +173,51 @@ export function createSearchEngine(state, browserController) {
     return runBrowserSearch(
       query,
       normalizedType,
-      SEARCH_REQUEST_TIMEOUT_MS,
-      SEARCH_PIPELINE_TIMEOUT_MS,
+      TIMEOUTS.search,
+      TIMEOUTS.searchPipeline,
       "Search request"
     );
   }
 
   function setLastSearchSongs(songs = []) {
     state.lastSearchSongs = Array.isArray(songs) ? songs : [];
+    const lookup = {
+      byTrackId: new Map(),
+      byUrl: new Map(),
+      byMeta: new Map(),
+      byTitleArtist: new Map(),
+    };
 
-    const lookup = createEmptyLookup();
     for (const song of state.lastSearchSongs) {
-      const entry = toLookupEntry(song);
-      if (entry.trackId && !lookup.byTrackId.has(entry.trackId)) {
-        lookup.byTrackId.set(entry.trackId, entry.song);
+      const trackId = extractTrackIdFromValue(song?.tidalId || song?.url);
+      if (trackId && !lookup.byTrackId.has(trackId)) {
+        lookup.byTrackId.set(trackId, song);
       }
-      if (entry.url && !lookup.byUrl.has(entry.url)) {
-        lookup.byUrl.set(entry.url, entry.song);
+
+      const url = normalizeUrlForCompare(song?.url);
+      if (url && !lookup.byUrl.has(url)) {
+        lookup.byUrl.set(url, song);
       }
-      if (entry.title) {
-        addLookupList(lookup.byTitleArtist, entry.titleArtistKey, entry);
-        addLookupList(lookup.byMeta, entry.metaKey, entry);
+
+      const title = normalizeText(song?.title);
+      if (!title) {
+        continue;
+      }
+      const artist = normalizeText(song?.artist);
+      const album = normalizeText(song?.album);
+      const duration = Number(song?.duration) || 0;
+
+      const titleArtistKey = key2(title, artist);
+      if (!lookup.byTitleArtist.has(titleArtistKey)) {
+        lookup.byTitleArtist.set(titleArtistKey, song);
+      }
+
+      const metaKey = key3(title, artist, album);
+      const metaList = lookup.byMeta.get(metaKey);
+      if (metaList) {
+        metaList.push([song, duration]);
+      } else {
+        lookup.byMeta.set(metaKey, [[song, duration]]);
       }
     }
 
@@ -240,15 +229,21 @@ export function createSearchEngine(state, browserController) {
       return null;
     }
 
-    const lookup = state.lastSearchLookup || createEmptyLookup();
+    const lookup = state.lastSearchLookup || LOOKUP_EMPTY;
     const trackId = extractTrackIdFromValue(song.tidalId || song.url);
-    if (trackId && lookup.byTrackId.has(trackId)) {
-      return lookup.byTrackId.get(trackId);
+    if (trackId) {
+      const byTrackId = lookup.byTrackId.get(trackId);
+      if (byTrackId) {
+        return byTrackId;
+      }
     }
 
     const url = normalizeUrlForCompare(song.url);
-    if (url && lookup.byUrl.has(url)) {
-      return lookup.byUrl.get(url);
+    if (url) {
+      const byUrl = lookup.byUrl.get(url);
+      if (byUrl) {
+        return byUrl;
+      }
     }
 
     const title = normalizeText(song.title);
@@ -259,22 +254,19 @@ export function createSearchEngine(state, browserController) {
     const artist = normalizeText(song.artist);
     const album = normalizeText(song.album);
     const duration = Number(song.duration) || 0;
-
-    const metaCandidates = lookup.byMeta.get(`${title}${SEP}${artist}${SEP}${album}`);
-    if (metaCandidates?.length) {
+    const metaMatches = lookup.byMeta.get(key3(title, artist, album));
+    if (metaMatches?.length) {
       if (!duration) {
-        return metaCandidates[0].song;
+        return metaMatches[0][0];
       }
-      const closeDuration = metaCandidates.find(item =>
-        !item.duration || Math.abs(item.duration - duration) <= 2
-      );
-      if (closeDuration) {
-        return closeDuration.song;
+      for (const [matchedSong, matchedDuration] of metaMatches) {
+        if (!matchedDuration || Math.abs(matchedDuration - duration) <= 2) {
+          return matchedSong;
+        }
       }
     }
 
-    const titleArtistCandidates = lookup.byTitleArtist.get(`${title}${SEP}${artist}`);
-    return titleArtistCandidates?.[0]?.song || null;
+    return lookup.byTitleArtist.get(key2(title, artist)) || null;
   }
 
   function getSongFromRequest(index, song) {
@@ -297,111 +289,94 @@ export function createSearchEngine(state, browserController) {
     };
   }
 
-  function extractTitleQueryVariants(title) {
-    const raw = normalizeDisplayText(title);
-    if (!raw) {
-      return [];
-    }
-
+  function buildResolveQueries(song) {
+    const title = normalizeDisplayText(song?.title);
+    const artist = normalizeDisplayText(song?.artist);
+    const album = normalizeDisplayText(song?.album);
     const variants = [];
-    const seen = new Set();
-    addUniqueText(variants, seen, raw);
-    addUniqueText(variants, seen, cleanSearchQueryPart(raw));
+    const variantSeen = new Set();
 
-    const fromMatch = raw.match(/\(\s*from\s+["']?([^"')]+)["']?\s*\)/i);
+    addUniqueText(variants, variantSeen, title);
+    addUniqueText(variants, variantSeen, cleanSearchQueryPart(title));
+
+    const fromMatch = title.match(/\(\s*from\s+["']?([^"')]+)["']?\s*\)/i);
     const fromLabel = fromMatch ? normalizeDisplayText(fromMatch[1]) : "";
     if (fromMatch) {
-      const withoutFrom = normalizeDisplayText(raw.replace(fromMatch[0], " "));
-      addUniqueText(variants, seen, withoutFrom);
-      addUniqueText(variants, seen, cleanSearchQueryPart(withoutFrom));
-      addUniqueText(variants, seen, fromLabel);
+      const withoutFrom = normalizeDisplayText(title.replace(fromMatch[0], " "));
+      addUniqueText(variants, variantSeen, withoutFrom);
+      addUniqueText(variants, variantSeen, cleanSearchQueryPart(withoutFrom));
+      addUniqueText(variants, variantSeen, fromLabel);
     }
 
-    const dashParts = raw
+    const dashParts = title
       .split(/\s+-\s+/)
       .map(part => normalizeDisplayText(part))
       .filter(Boolean);
     if (dashParts.length >= 2) {
       const left = dashParts[0];
       const right = normalizeDisplayText(dashParts.slice(1).join(" "));
-      addUniqueText(variants, seen, `${right} ${left}`);
-      addUniqueText(variants, seen, `${left} ${right}`);
+      addUniqueText(variants, variantSeen, `${right} ${left}`);
+      addUniqueText(variants, variantSeen, `${left} ${right}`);
       addUniqueText(
         variants,
-        seen,
+        variantSeen,
         `${cleanSearchQueryPart(right)} ${cleanSearchQueryPart(left)}`
       );
-      addUniqueText(variants, seen, fromLabel ? `${right} ${fromLabel}` : "");
+      if (fromLabel) {
+        addUniqueText(variants, variantSeen, `${right} ${fromLabel}`);
+      }
     }
-
-    return variants;
-  }
-
-  function buildResolveQueries(song) {
-    const title = normalizeDisplayText(song?.title);
-    const artist = normalizeDisplayText(song?.artist);
-    const album = normalizeDisplayText(song?.album);
-    const strongIdentity = Boolean(extractTrackIdFromValue(song?.tidalId || song?.url));
 
     const queries = [];
-    const seen = new Set();
-    for (const variant of extractTitleQueryVariants(title)) {
-      addUniqueText(queries, seen, `${variant} ${artist}`);
-      addUniqueText(queries, seen, `${artist} ${variant}`);
-      addUniqueText(queries, seen, `${variant} ${album}`);
-      addUniqueText(queries, seen, `${album} ${variant}`);
-      addUniqueText(queries, seen, variant);
+    const querySeen = new Set();
+    for (const variant of variants) {
+      addUniqueText(queries, querySeen, `${variant} ${artist}`);
+      addUniqueText(queries, querySeen, `${artist} ${variant}`);
+      addUniqueText(queries, querySeen, `${variant} ${album}`);
+      addUniqueText(queries, querySeen, `${album} ${variant}`);
+      addUniqueText(queries, querySeen, variant);
     }
 
-    addUniqueText(queries, seen, `${title} ${artist} ${album}`);
-    addUniqueText(queries, seen, `${artist} ${title} ${album}`);
-    addUniqueText(queries, seen, `${album} ${title} ${artist}`);
-    addUniqueText(queries, seen, `${artist} ${album}`);
-    addUniqueText(queries, seen, `${album} ${artist}`);
+    addUniqueText(queries, querySeen, `${title} ${artist} ${album}`);
+    addUniqueText(queries, querySeen, `${artist} ${title} ${album}`);
+    addUniqueText(queries, querySeen, `${album} ${title} ${artist}`);
+    addUniqueText(queries, querySeen, `${artist} ${album}`);
+    addUniqueText(queries, querySeen, `${album} ${artist}`);
 
-    return queries.slice(0, strongIdentity ? 3 : 5);
+    const maxQueries = extractTrackIdFromValue(song?.tidalId || song?.url) ? 3 : 5;
+    return queries.slice(0, maxQueries);
   }
 
   function scoreCandidateMatch(candidate, target) {
     const candidateTrackId = extractTrackIdFromValue(candidate?.tidalId || candidate?.url);
-    if (candidateTrackId && target.trackId) {
-      if (candidateTrackId === target.trackId) {
-        return 1200;
-      }
+    if (candidateTrackId && target.trackId && candidateTrackId === target.trackId) {
+      return 1200;
     }
 
     const candidateUrl = normalizeUrlForCompare(candidate?.url);
     if (candidateUrl && target.url) {
       if (candidateUrl === target.url) {
-        return 1000;
+        return EXACT_MATCH_SCORE;
       }
       if (candidateUrl.endsWith(target.url) || target.url.endsWith(candidateUrl)) {
         return 700;
       }
     }
 
-    const candidateTitle = normalizeDisplayText(candidate?.title);
-    const candidateArtist = normalizeDisplayText(candidate?.artist);
-    const candidateAlbum = normalizeDisplayText(candidate?.album);
-    const candidateDuration = Number(candidate?.duration) || 0;
+    const titleNorm = normalizeText(candidate?.title);
+    const artistNorm = normalizeText(candidate?.artist);
+    const albumNorm = normalizeText(candidate?.album);
+    const duration = Number(candidate?.duration) || 0;
 
     let score = candidateTrackId && target.trackId ? -35 : 0;
-    score += textMatchScore(normalizeText(candidateTitle), target.titleNorm, 140, 90);
-    score += getTokenOverlapScore(
-      tokenizeForSimilarity(candidateTitle),
-      target.titleTokens,
-      80
-    );
-    score += textMatchScore(normalizeText(candidateArtist), target.artistNorm, 45, 20);
-    score += textMatchScore(normalizeText(candidateAlbum), target.albumNorm, 65, 30);
-    score += getTokenOverlapScore(
-      tokenizeForSimilarity(candidateAlbum),
-      target.albumTokens,
-      30
-    );
+    score += scoreText(titleNorm, target.titleNorm, 140, 90);
+    score += getTokenOverlapScore(tokenizeForSimilarity(candidate?.title), target.titleTokens, 80);
+    score += scoreText(artistNorm, target.artistNorm, 45, 20);
+    score += scoreText(albumNorm, target.albumNorm, 65, 30);
+    score += getTokenOverlapScore(tokenizeForSimilarity(candidate?.album), target.albumTokens, 30);
 
-    if (candidateDuration > 0 && target.duration > 0) {
-      const delta = Math.abs(candidateDuration - target.duration);
+    if (duration > 0 && target.duration > 0) {
+      const delta = Math.abs(duration - target.duration);
       if (delta === 0) {
         score += 55;
       } else if (delta <= 2) {
@@ -417,33 +392,27 @@ export function createSearchEngine(state, browserController) {
   }
 
   async function searchTrackCandidates(page, query) {
+    if (!query) {
+      return [];
+    }
     return withTimeout(
       searchSongs(page, query, "tracks", {
         fastResolve: true,
         maxTrackResults: RESOLVE_MAX_TRACK_RESULTS,
       }),
-      RESOLVE_QUERY_TIMEOUT_MS,
+      TIMEOUTS.resolve,
       `Resolve query "${query}"`
     );
   }
 
   function emitResolveProgress(onProgress, selectedSong, phase, progress) {
-    onProgress({
-      status: "preparing",
-      phase,
-      progress,
-      ...toSongMeta(selectedSong),
-    });
+    onProgress({status: "preparing", phase, progress, ...toSongMeta(selectedSong)});
   }
 
   async function resolveDownloadableSong(index, song, onProgress = () => {}) {
     let selectedSong = getSongFromRequest(index, song);
     if (!selectedSong && song?.title) {
-      selectedSong = {
-        ...song,
-        downloadable: song.downloadable !== false,
-        element: null,
-      };
+      selectedSong = {...song, downloadable: song.downloadable !== false, element: null};
     }
 
     if (!selectedSong) {
@@ -467,11 +436,11 @@ export function createSearchEngine(state, browserController) {
       artwork: selectedSong.artwork,
       duration: selectedSong.duration,
     };
-    const target = buildMatchProfile(selectedSong);
-
-    emitResolveProgress(onProgress, selectedSong, "resolving", 22);
+    const target = buildTargetProfile(selectedSong);
     const {page} = browserController.getBrowserInstance();
     const resolveQueries = buildResolveQueries(selectedSong);
+
+    emitResolveProgress(onProgress, selectedSong, "resolving", 22);
 
     let bestCandidate = null;
     let bestScore = -1;
@@ -492,19 +461,21 @@ export function createSearchEngine(state, browserController) {
         resolveError = error;
         continue;
       }
-      if (!candidates.length) {
-        continue;
-      }
 
+      let foundExact = false;
       for (const candidate of candidates) {
         const score = scoreCandidateMatch(candidate, target);
         if (score > bestScore) {
           bestScore = score;
           bestCandidate = candidate;
         }
+        if (score >= EXACT_MATCH_SCORE) {
+          foundExact = true;
+          break;
+        }
       }
 
-      if (bestScore >= STRONG_MATCH_SCORE) {
+      if (foundExact || bestScore >= STRONG_MATCH_SCORE) {
         break;
       }
     }
