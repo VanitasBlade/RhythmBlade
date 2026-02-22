@@ -67,6 +67,34 @@ function normalizeDisplayText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function normalizeUrlForCompare(value) {
+  const input = String(value || "").trim();
+  if (!input) {
+    return "";
+  }
+
+  return input
+    .toLowerCase()
+    .replace(/^https?:\/\/[^/]+/i, "")
+    .replace(/[?#].*$/, "")
+    .replace(/\/+$/, "");
+}
+
+function extractTrackIdFromValue(value) {
+  const input = normalizeDisplayText(value);
+  if (!input) {
+    return "";
+  }
+
+  const direct = input.match(/^\d+$/);
+  if (direct) {
+    return direct[0];
+  }
+
+  const fromPath = input.match(/\/track\/(\d+)/i) || input.match(/\/tracks\/(\d+)/i);
+  return fromPath?.[1] || "";
+}
+
 function isUnknownValue(value) {
   const normalized = normalizeText(value);
   return !normalized || normalized === "unknown" || normalized === "unknown artist";
@@ -204,6 +232,7 @@ function toPublicItem(song) {
     artwork: upscaleArtworkUrl(song.artwork),
     duration: song.duration || 0,
     downloadable: Boolean(song.downloadable),
+    tidalId: song.tidalId || null,
     url: song.url || null,
   };
 }
@@ -211,6 +240,7 @@ function toPublicItem(song) {
 function toPublicDownloadJob(job) {
   return {
     id: job.id,
+    requestIndex: Number.isInteger(job.requestIndex) ? job.requestIndex : null,
     status: job.status,
     phase: job.phase,
     progress: job.progress,
@@ -280,14 +310,29 @@ function sanitizeDownloadSong(song) {
   if (Number.isInteger(song.index)) {
     normalized.index = song.index;
   }
+  const tidalId = extractTrackIdFromValue(song.tidalId || song.url);
+  if (tidalId) {
+    normalized.tidalId = tidalId;
+  }
+  const url = String(song.url || "").trim();
+  if (url) {
+    normalized.url = url;
+  }
 
   return normalized;
 }
 
 function createDownloadRequest(payload = {}) {
+  const normalizedSong = sanitizeDownloadSong(payload.song);
+  const resolvedIndex = Number.isInteger(payload.index)
+    ? payload.index
+    : Number.isInteger(normalizedSong?.index)
+      ? normalizedSong.index
+      : null;
+
   return {
-    index: Number.isInteger(payload.index) ? payload.index : null,
-    song: sanitizeDownloadSong(payload.song),
+    index: resolvedIndex,
+    song: normalizedSong,
     downloadSetting: payload.downloadSetting || "Hi-Res",
   };
 }
@@ -300,6 +345,7 @@ function createDownloadJob(payload = {}) {
   const id = `${now}_${Math.random().toString(36).slice(2, 8)}`;
   const job = {
     id,
+    requestIndex: Number.isInteger(request.index) ? request.index : null,
     status: "queued",
     phase: "queued",
     progress: 0,
@@ -351,14 +397,70 @@ function patchDownloadJob(jobId, patch = {}) {
   return next;
 }
 
+function findSongByIdentity(song) {
+  if (!song) {
+    return null;
+  }
+
+  const requestedTrackId = extractTrackIdFromValue(song.tidalId || song.url);
+  if (requestedTrackId) {
+    const byTrackId = lastSearchSongs.find(
+      (item) => extractTrackIdFromValue(item?.tidalId || item?.url) === requestedTrackId
+    );
+    if (byTrackId) {
+      return byTrackId;
+    }
+  }
+
+  const requestedUrl = normalizeUrlForCompare(song.url);
+  if (requestedUrl) {
+    const byUrl = lastSearchSongs.find(
+      (item) => normalizeUrlForCompare(item?.url) === requestedUrl
+    );
+    if (byUrl) {
+      return byUrl;
+    }
+  }
+
+  const title = normalizeText(song.title);
+  const artist = normalizeText(song.artist);
+  const album = normalizeText(song.album);
+  const duration = Number(song.duration) || 0;
+  if (!title) {
+    return null;
+  }
+
+  const exactByMeta = lastSearchSongs.find((item) => {
+    const itemTitle = normalizeText(item?.title);
+    const itemArtist = normalizeText(item?.artist);
+    const itemAlbum = normalizeText(item?.album);
+    const itemDuration = Number(item?.duration) || 0;
+    if (itemTitle !== title || itemArtist !== artist || itemAlbum !== album) {
+      return false;
+    }
+    if (!duration || !itemDuration) {
+      return true;
+    }
+    return Math.abs(itemDuration - duration) <= 2;
+  });
+
+  if (exactByMeta) {
+    return exactByMeta;
+  }
+
+  return lastSearchSongs.find(
+    (item) => normalizeText(item?.title) === title && normalizeText(item?.artist) === artist
+  ) || null;
+}
+
 function getSongFromRequest(index, song) {
   if (Number.isInteger(index)) {
-    return lastSearchSongs[index] || null;
+    return lastSearchSongs[index] || findSongByIdentity(song) || null;
   }
   if (song && typeof song.index === "number") {
-    return lastSearchSongs[song.index] || null;
+    return lastSearchSongs[song.index] || findSongByIdentity(song) || null;
   }
-  return null;
+  return findSongByIdentity(song);
 }
 
 function toSongMeta(song) {
@@ -434,6 +536,7 @@ function buildResolveQueries(song) {
   const title = normalizeDisplayText(song?.title);
   const artist = normalizeDisplayText(song?.artist);
   const album = normalizeDisplayText(song?.album);
+  const strongIdentity = Boolean(extractTrackIdFromValue(song?.tidalId || song?.url));
   const titleVariants = extractTitleQueryVariants(title);
   const queries = [];
 
@@ -451,7 +554,7 @@ function buildResolveQueries(song) {
   pushUniqueQuery(queries, `${artist} ${album}`);
   pushUniqueQuery(queries, `${album} ${artist}`);
 
-  return queries.slice(0, 8);
+  return queries.slice(0, strongIdentity ? 3 : 5);
 }
 
 function tokenizeForSimilarity(value) {
@@ -480,12 +583,39 @@ function getTokenOverlapScore(sourceTokens, targetTokens, weight = 60) {
 }
 
 function scoreCandidateMatch(candidate, targetSong) {
+  const candidateTrackId = extractTrackIdFromValue(candidate?.tidalId || candidate?.url);
+  const targetTrackId = extractTrackIdFromValue(targetSong?.tidalId || targetSong?.url);
+  let score = 0;
+
+  if (candidateTrackId && targetTrackId) {
+    if (candidateTrackId === targetTrackId) {
+      return 1200;
+    }
+    // Track IDs can come from different providers; treat mismatch as weak
+    // signal, not a hard reject, to avoid excessive resolve loops.
+    score -= 35;
+  }
+
+  const candidateUrl = normalizeUrlForCompare(candidate?.url);
+  const targetUrl = normalizeUrlForCompare(targetSong?.url);
+  if (candidateUrl && targetUrl) {
+    if (candidateUrl === targetUrl) {
+      return 1000;
+    }
+    if (candidateUrl.endsWith(targetUrl) || targetUrl.endsWith(candidateUrl)) {
+      return 700;
+    }
+  }
+
   const candidateTitle = normalizeDisplayText(candidate?.title);
   const targetTitle = normalizeDisplayText(targetSong?.title);
   const candidateArtist = normalizeDisplayText(candidate?.artist);
   const targetArtist = normalizeDisplayText(targetSong?.artist);
+  const candidateAlbum = normalizeDisplayText(candidate?.album);
+  const targetAlbum = normalizeDisplayText(targetSong?.album);
+  const candidateDuration = Number(candidate?.duration) || 0;
+  const targetDuration = Number(targetSong?.duration) || 0;
 
-  let score = 0;
   const normalizedCandidateTitle = normalizeText(candidateTitle);
   const normalizedTargetTitle = normalizeText(targetTitle);
 
@@ -515,6 +645,34 @@ function scoreCandidateMatch(candidate, targetSong) {
     }
   }
 
+  const normalizedCandidateAlbum = normalizeText(candidateAlbum);
+  const normalizedTargetAlbum = normalizeText(targetAlbum);
+  if (normalizedCandidateAlbum && normalizedTargetAlbum) {
+    if (normalizedCandidateAlbum === normalizedTargetAlbum) {
+      score += 65;
+    } else if (
+      normalizedCandidateAlbum.includes(normalizedTargetAlbum)
+      || normalizedTargetAlbum.includes(normalizedCandidateAlbum)
+    ) {
+      score += 30;
+    }
+  }
+
+  score += getTokenOverlapScore(tokenizeForSimilarity(candidateAlbum), tokenizeForSimilarity(targetAlbum), 30);
+
+  if (candidateDuration > 0 && targetDuration > 0) {
+    const delta = Math.abs(candidateDuration - targetDuration);
+    if (delta === 0) {
+      score += 55;
+    } else if (delta <= 2) {
+      score += 40;
+    } else if (delta <= 5) {
+      score += 22;
+    } else if (delta >= 20) {
+      score -= 15;
+    }
+  }
+
   return score;
 }
 
@@ -525,8 +683,11 @@ async function searchTrackCandidates(page, query, retries = 1) {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       candidates = await withTimeout(
-        searchSongs(page, query, "tracks"),
-        22000,
+        searchSongs(page, query, "tracks", {
+          fastResolve: true,
+          maxTrackResults: 24,
+        }),
+        9000,
         `Resolve query "${query}"`
       );
     } catch (error) {

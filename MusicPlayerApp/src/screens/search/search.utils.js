@@ -22,10 +22,39 @@ export const normalizeText = value =>
     .trim()
     .toLowerCase();
 
-export const toTrackKey = item =>
-  `${normalizeText(item?.title)}|${normalizeText(
-    item?.artist || item?.subtitle || '',
-  )}`;
+export const toTrackKey = item => {
+  const title = normalizeText(item?.title);
+  const artist = normalizeText(item?.artist || item?.subtitle || '');
+  const album = normalizeText(item?.album || '');
+  const duration = Number(item?.duration) || 0;
+  const requestIndex =
+    Number.isInteger(item?.requestIndex) && item.requestIndex >= 0
+      ? `idx:${item.requestIndex}`
+      : Number.isInteger(item?.index) && item.index >= 0
+      ? `idx:${item.index}`
+      : '';
+  const tidalId = String(item?.tidalId || '').trim();
+  const url = normalizeText(item?.url || '');
+  const base = [title, artist, album].filter(Boolean).join('|') || 'unknown';
+
+  if (requestIndex) {
+    return `${base}|${requestIndex}`;
+  }
+
+  if (tidalId) {
+    return `${base}|id:${tidalId}`;
+  }
+
+  if (url) {
+    return `${base}|url:${url}`;
+  }
+
+  if (duration > 0) {
+    return `${base}|dur:${duration}`;
+  }
+
+  return base;
+};
 
 export const formatDuration = value => {
   if (typeof value === 'string' && value.trim()) {

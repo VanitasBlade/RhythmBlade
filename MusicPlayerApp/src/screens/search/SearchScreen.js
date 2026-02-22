@@ -197,6 +197,12 @@ const SearchScreen = () => {
         return;
       }
 
+      const resolvedIndex = Number.isInteger(item?.index)
+        ? item.index
+        : Number.isInteger(index)
+        ? index
+        : null;
+
       const key = toTrackKey(item);
       const existingJob = queueByTrackKey.get(key);
       if (existingJob && existingJob.status !== 'failed') {
@@ -208,7 +214,7 @@ const SearchScreen = () => {
         setQueuingKeys(prev => ({...prev, [key]: true}));
         const job = await apiService.startDownload(
           item,
-          index,
+          resolvedIndex,
           downloadSetting,
         );
         if (mountedRef.current) {

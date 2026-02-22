@@ -68,7 +68,7 @@ const SearchResultCard = ({
               isFailed && styles.downloadButtonRetry,
               (isQueuing || isActive) && styles.downloadButtonBusy,
             ]}
-            onPress={() => onQueueDownload(item, index)}
+            onPress={() => onQueueDownload(item, item?.index ?? index)}
             disabled={disabled}>
             {isQueuing || isActive ? (
               <ActivityIndicator size="small" color={C.bg} />

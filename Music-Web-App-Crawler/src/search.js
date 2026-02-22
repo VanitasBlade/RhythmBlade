@@ -35,6 +35,36 @@ function parseDuration(value) {
   return (parseInt(match[1], 10) * 60) + parseInt(match[2], 10);
 }
 
+function extractTrackIdFromUrl(value) {
+  const input = normalizeText(value);
+  if (!input) {
+    return null;
+  }
+
+  const match = input.match(/\/track\/(\d+)/i) || input.match(/\/tracks\/(\d+)/i);
+  return match?.[1] || null;
+}
+
+async function getTrackHrefFromCard(card) {
+  try {
+    return await card.evaluate((node) => {
+      if (!node || typeof node.querySelector !== "function") {
+        return null;
+      }
+
+      const directHref = node.getAttribute?.("href");
+      if (directHref && /\/tracks?\//i.test(directHref)) {
+        return directHref;
+      }
+
+      const link = node.querySelector('a[href*="/track/"], a[href*="/tracks/"]');
+      return link?.getAttribute("href") || null;
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function switchToTypeTab(page, searchType) {
   const selector = TYPE_TO_SELECTOR[searchType] || TYPE_TO_SELECTOR.tracks;
   const tab = page.locator(selector).first();
@@ -83,6 +113,8 @@ async function parseTrackResults(page, maxResults = 60) {
     const album = meta ? normalizeText(meta.split(BULLET)[0]) : "";
     const duration = parseDuration(meta);
     const artwork = await card.locator("img").first().getAttribute("src").catch(() => null);
+    const href = await getTrackHrefFromCard(card);
+    const tidalId = extractTrackIdFromUrl(href);
 
     results.push({
       index: results.length,
@@ -93,6 +125,8 @@ async function parseTrackResults(page, maxResults = 60) {
       subtitle: meta || artist,
       duration,
       artwork: artwork || null,
+      url: href || null,
+      tidalId,
       downloadable: true,
       element: card,
     });
@@ -211,7 +245,7 @@ async function parsePlaylistResults(page, maxResults = 60) {
   return results;
 }
 
-async function parseTrackResultsWithRetry(page, attempts = 2) {
+async function parseTrackResultsWithRetry(page, attempts = 2, maxResults = 60) {
   const buttons = page.locator(SELECTORS.downloadButton);
 
   const waitForButtons = async (timeoutMs) => {
@@ -230,7 +264,7 @@ async function parseTrackResultsWithRetry(page, attempts = 2) {
 
   for (let attempt = 0; attempt < attempts; attempt++) {
     await waitForButtons(2000 + (attempt * 1200));
-    results = await parseTrackResults(page);
+    results = await parseTrackResults(page, maxResults);
     if (results.length > 0) {
       return results;
     }
@@ -247,11 +281,17 @@ async function parseTrackResultsWithRetry(page, attempts = 2) {
   return results;
 }
 
-export async function searchSongs(page, query, searchType = "tracks") {
+export async function searchSongs(page, query, searchType = "tracks", options = {}) {
   if (!query || !query.trim()) {
     return [];
   }
 
+  const fastResolve = Boolean(options?.fastResolve);
+  const maxTrackResults = Math.max(
+    8,
+    Math.min(Number(options?.maxTrackResults) || 60, 100)
+  );
+  const trackParseAttempts = fastResolve ? 1 : 2;
   const type = resolveSearchType(searchType);
   await page.waitForLoadState("domcontentloaded");
 
@@ -271,8 +311,16 @@ export async function searchSongs(page, query, searchType = "tracks") {
     await searchInput.press("Enter");
   }
 
-  const settleMs = type === "tracks" ? 1500 : 2600;
-  const postTabMs = type === "tracks" ? 400 : 900;
+  const settleMs = type === "tracks"
+    ? fastResolve
+      ? 900
+      : 1500
+    : 2600;
+  const postTabMs = type === "tracks"
+    ? fastResolve
+      ? 220
+      : 400
+    : 900;
   await page.waitForTimeout(settleMs);
   await switchToTypeTab(page, type);
   await page.waitForTimeout(postTabMs);
@@ -287,5 +335,5 @@ export async function searchSongs(page, query, searchType = "tracks") {
     return parsePlaylistResults(page);
   }
 
-  return parseTrackResultsWithRetry(page);
+  return parseTrackResultsWithRetry(page, trackParseAttempts, maxTrackResults);
 }
