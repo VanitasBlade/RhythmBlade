@@ -178,7 +178,7 @@ async function parseAlbumResults(page, maxResults = 60) {
 }
 
 async function parseArtistResults(page, maxResults = 60) {
-  const cards = page.locator('a[href^="/artist/"]');
+  const cards = page.locator('a[href^="/artist/"], a[href*="/artist/"]');
   const count = await cards.count();
   const limit = Math.min(count, maxResults);
   const results = [];
@@ -212,7 +212,7 @@ async function parseArtistResults(page, maxResults = 60) {
 }
 
 async function parsePlaylistResults(page, maxResults = 60) {
-  const cards = page.locator('a[href^="/playlist/"]');
+  const cards = page.locator('a[href^="/playlist/"], a[href*="/playlist/"]');
   const count = await cards.count();
   const limit = Math.min(count, maxResults);
   const results = [];
@@ -240,6 +240,87 @@ async function parsePlaylistResults(page, maxResults = 60) {
       downloadable: false,
       element: null,
     });
+  }
+
+  return results;
+}
+
+function getNonTrackCardLocator(page, searchType) {
+  if (searchType === "artists") {
+    return page.locator('a[href^="/artist/"], a[href*="/artist/"]');
+  }
+  if (searchType === "playlists") {
+    return page.locator('a[href^="/playlist/"], a[href*="/playlist/"]');
+  }
+  return null;
+}
+
+async function waitForNonTrackCards(page, searchType, timeoutMs = 6000) {
+  const cards = getNonTrackCardLocator(page, searchType);
+  if (!cards) {
+    return false;
+  }
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const count = await cards.count().catch(() => 0);
+    if (count > 0) {
+      return true;
+    }
+
+    const stillSearching = await page
+      .locator("text=/Searching/i")
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (!stillSearching) {
+      await page.waitForTimeout(180);
+      return (await cards.count().catch(() => 0)) > 0;
+    }
+
+    await page.waitForTimeout(260);
+  }
+
+  return (await cards.count().catch(() => 0)) > 0;
+}
+
+async function parseArtistsWithRetry(page, attempts = 3, maxResults = 60) {
+  let results = [];
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    await waitForNonTrackCards(page, "artists", 2200 + (attempt * 1600));
+    results = await parseArtistResults(page, maxResults);
+    if (results.length > 0) {
+      return results;
+    }
+
+    if (attempt === attempts - 1) {
+      return results;
+    }
+
+    await page.waitForTimeout(350 + (attempt * 240));
+    await switchToTypeTab(page, "artists");
+  }
+
+  return results;
+}
+
+async function parsePlaylistsWithRetry(page, attempts = 2, maxResults = 60) {
+  let results = [];
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    await waitForNonTrackCards(page, "playlists", 1800 + (attempt * 1200));
+    results = await parsePlaylistResults(page, maxResults);
+    if (results.length > 0) {
+      return results;
+    }
+
+    if (attempt === attempts - 1) {
+      return results;
+    }
+
+    await page.waitForTimeout(320 + (attempt * 180));
+    await switchToTypeTab(page, "playlists");
   }
 
   return results;
@@ -329,10 +410,10 @@ export async function searchSongs(page, query, searchType = "tracks", options = 
     return parseAlbumResults(page);
   }
   if (type === "artists") {
-    return parseArtistResults(page);
+    return parseArtistsWithRetry(page);
   }
   if (type === "playlists") {
-    return parsePlaylistResults(page);
+    return parsePlaylistsWithRetry(page);
   }
 
   return parseTrackResultsWithRetry(page, trackParseAttempts, maxTrackResults);

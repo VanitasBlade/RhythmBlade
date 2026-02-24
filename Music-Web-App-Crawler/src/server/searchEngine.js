@@ -30,6 +30,8 @@ const TIMEOUTS = {
   searchPipeline: 30_000,
   resolve: 9_000,
 };
+const ARTIST_BROWSER_SEARCH_TIMEOUT_MS = 6_000;
+const ARTIST_BROWSER_PIPELINE_TIMEOUT_MS = 9_000;
 const RESOLVE_MAX_TRACK_RESULTS = 24;
 const STRONG_MATCH_SCORE = 140;
 const EXACT_MATCH_SCORE = 1000;
@@ -164,10 +166,99 @@ export function createSearchEngine(state, browserController) {
     }
   }
 
+  async function searchArtistsFromTracksFallback(query) {
+    const tracks = await searchTracksWithFallback(query);
+    const artistsByKey = new Map();
+    const queryNorm = normalizeText(query);
+    const queryTokens = tokenizeForSimilarity(query);
+
+    function shouldIncludeArtist(artistName, strict = true) {
+      const artistNorm = normalizeText(artistName);
+      if (!artistNorm) {
+        return false;
+      }
+      if (!strict) {
+        return true;
+      }
+      if (queryNorm && (artistNorm.includes(queryNorm) || queryNorm.includes(artistNorm))) {
+        return true;
+      }
+      if (!queryTokens.length) {
+        return true;
+      }
+      const overlap = getTokenOverlapScore(
+        tokenizeForSimilarity(artistName),
+        queryTokens,
+        1
+      );
+      return overlap > 0;
+    }
+
+    function collectArtists(strictMatch) {
+      for (const track of tracks) {
+        const artistName = normalizeDisplayText(track?.artist);
+        if (!artistName || !shouldIncludeArtist(artistName, strictMatch)) {
+          continue;
+        }
+
+        const artistKey = normalizeText(artistName);
+        if (!artistKey || artistsByKey.has(artistKey)) {
+          continue;
+        }
+
+        artistsByKey.set(artistKey, {
+          index: artistsByKey.size,
+          type: "artist",
+          title: artistName,
+          artist: artistName,
+          album: "",
+          subtitle: "Artist",
+          duration: 0,
+          artwork: upscaleArtworkUrl(track?.artwork),
+          url: null,
+          downloadable: false,
+          element: null,
+        });
+      }
+    }
+
+    collectArtists(true);
+    if (artistsByKey.size === 0) {
+      collectArtists(false);
+    }
+
+    return [...artistsByKey.values()];
+  }
+
   async function searchByType(query, type = "tracks") {
     const normalizedType = String(type || "tracks").trim();
-    if (normalizedType.toLowerCase().startsWith("track")) {
+    const normalizedTypeKey = normalizedType.toLowerCase();
+    if (normalizedTypeKey.startsWith("track")) {
       return searchTracksWithFallback(query);
+    }
+
+    if (normalizedTypeKey.startsWith("artist")) {
+      let browserError = null;
+      try {
+        const artists = await runBrowserSearch(
+          query,
+          normalizedType,
+          ARTIST_BROWSER_SEARCH_TIMEOUT_MS,
+          ARTIST_BROWSER_PIPELINE_TIMEOUT_MS,
+          "Search request"
+        );
+        if (artists.length > 0) {
+          return artists;
+        }
+      } catch (error) {
+        browserError = error;
+      }
+
+      const fallbackArtists = await searchArtistsFromTracksFallback(query);
+      if (fallbackArtists.length > 0 || !browserError) {
+        return fallbackArtists;
+      }
+      throw browserError;
     }
 
     return runBrowserSearch(
