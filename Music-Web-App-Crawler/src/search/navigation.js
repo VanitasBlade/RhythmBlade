@@ -4,7 +4,6 @@ import {resolveAlbumPath} from "./utils.js";
 const TYPE_TO_SELECTOR = {
   tracks: SELECTORS.tracksTab,
   albums: SELECTORS.albumsTab,
-  artists: SELECTORS.artistsTab,
   playlists: SELECTORS.playlistsTab,
 };
 

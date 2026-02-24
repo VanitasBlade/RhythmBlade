@@ -1,6 +1,5 @@
 import {searchTracksFast} from "../fastSearch.js";
 import {getAlbumTracks, searchSongs} from "../search.js";
-import {buildArtistsFromTracks} from "./search/artistFallback.js";
 import {createLookupStore} from "./search/lookup.js";
 import {createTrackSearchCache} from "./search/trackSearchCache.js";
 import {
@@ -25,8 +24,6 @@ const TIMEOUTS = {
   searchPipeline: 30_000,
   resolve: 9_000,
 };
-const ARTIST_BROWSER_SEARCH_TIMEOUT_MS = 6_000;
-const ARTIST_BROWSER_PIPELINE_TIMEOUT_MS = 9_000;
 const ALBUM_TRACKS_TIMEOUT_MS = 24_000;
 const ALBUM_TRACKS_PIPELINE_TIMEOUT_MS = 34_000;
 const RESOLVE_MAX_TRACK_RESULTS = 24;
@@ -121,11 +118,6 @@ export function createSearchEngine(state, browserController) {
     }
   }
 
-  async function searchArtistsFromTracksFallback(query) {
-    const tracks = await searchTracksWithFallback(query);
-    return buildArtistsFromTracks(query, tracks);
-  }
-
   async function searchAlbumTracks(albumPath, meta = {}) {
     const normalizedAlbumPath = String(albumPath || "").trim();
     if (!normalizedAlbumPath) {
@@ -160,30 +152,6 @@ export function createSearchEngine(state, browserController) {
     const normalizedTypeKey = normalizedType.toLowerCase();
     if (normalizedTypeKey.startsWith("track")) {
       return searchTracksWithFallback(query);
-    }
-
-    if (normalizedTypeKey.startsWith("artist")) {
-      let browserError = null;
-      try {
-        const artists = await runBrowserSearch(
-          query,
-          normalizedType,
-          ARTIST_BROWSER_SEARCH_TIMEOUT_MS,
-          ARTIST_BROWSER_PIPELINE_TIMEOUT_MS,
-          "Search request"
-        );
-        if (artists.length > 0) {
-          return artists;
-        }
-      } catch (error) {
-        browserError = error;
-      }
-
-      const fallbackArtists = await searchArtistsFromTracksFallback(query);
-      if (fallbackArtists.length > 0 || !browserError) {
-        return fallbackArtists;
-      }
-      throw browserError;
     }
 
     return runBrowserSearch(

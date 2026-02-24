@@ -220,40 +220,6 @@ export async function parseAlbumResults(page, maxResults = 60) {
   return results;
 }
 
-export async function parseArtistResults(page, maxResults = 60) {
-  const cards = page.locator('a[href^="/artist/"], a[href*="/artist/"]');
-  const count = await cards.count();
-  const limit = Math.min(count, maxResults);
-  const results = [];
-
-  for (let i = 0; i < limit; i += 1) {
-    const card = cards.nth(i);
-    const title = normalizeText(await card.locator("h3").first().textContent().catch(() => "")) || "Unknown";
-    const lines = (await card.locator("p").allTextContents().catch(() => []))
-      .map(normalizeText)
-      .filter(Boolean);
-    const subtitle = getSubtitleFromLines(lines);
-    const artwork = await getAttributeFast(card.locator("img").first(), "src");
-    const href = await getAttributeFast(card, "href");
-
-    results.push({
-      index: results.length,
-      type: "artist",
-      title,
-      artist: title,
-      album: "",
-      subtitle,
-      duration: 0,
-      artwork: artwork || null,
-      url: href || null,
-      downloadable: false,
-      element: null,
-    });
-  }
-
-  return results;
-}
-
 export async function parsePlaylistResults(page, maxResults = 60) {
   const cards = page.locator('a[href^="/playlist/"], a[href*="/playlist/"]');
   const count = await cards.count();

@@ -532,7 +532,7 @@ const SearchScreen = () => {
             : `Search ${activeSearchType.toLowerCase()}`}
         </Text>
         <Text style={styles.emptySubtitle}>
-          Find tracks, albums, or artists.
+          Find tracks or albums.
         </Text>
       </View>
     );
@@ -678,7 +678,7 @@ const SearchScreen = () => {
                 <Icon name="magnify" size={16} color={C.textMute} />
                 <TextInput
                   style={styles.searchInput}
-                  placeholder="Search songs, albums, artists..."
+                  placeholder="Search tracks or albums..."
                   placeholderTextColor={C.textMute}
                   value={query}
                   onChangeText={setQuery}

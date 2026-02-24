@@ -5,7 +5,7 @@ export const DOWNLOAD_OPTIONS = [
   {label: '96kbps AAC', description: 'Data saver AAC streaming'},
 ];
 
-export const SEARCH_TYPES = ['Tracks', 'Albums', 'Artists'];
+export const SEARCH_TYPES = ['Tracks', 'Albums'];
 export const DOWNLOADER_TABS = ['Search', 'Queue'];
 export const ACTIVE_QUEUE_STATUSES = new Set([
   'queued',

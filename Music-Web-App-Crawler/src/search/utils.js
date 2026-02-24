@@ -14,7 +14,6 @@ export function resolveSearchType(value) {
 
   if (normalized.startsWith("track")) return "tracks";
   if (normalized.startsWith("album")) return "albums";
-  if (normalized.startsWith("artist")) return "artists";
   if (normalized.startsWith("playlist")) return "playlists";
 
   return SEARCH_TYPES.includes(normalized) ? normalized : "tracks";

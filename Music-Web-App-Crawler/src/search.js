@@ -3,12 +3,10 @@ import {SELECTORS} from "./config.js";
 import {
   parseAlbumResults,
   parseAlbumTrackResults,
-  parseArtistResults,
   parsePlaylistResults,
   parseTrackResults,
 } from "./search/parsers.js";
 import {
-  parseArtistsWithRetry,
   parsePlaylistsWithRetry,
   parseTrackResultsWithRetry,
 } from "./search/retry.js";
@@ -51,9 +49,6 @@ export async function searchSongs(page, query, searchType = "tracks", options = 
 
   if (type === "albums") {
     return parseAlbumResults(page);
-  }
-  if (type === "artists") {
-    return parseArtistsWithRetry(page, switchToTypeTab, parseArtistResults);
   }
   if (type === "playlists") {
     return parsePlaylistsWithRetry(page, switchToTypeTab, parsePlaylistResults);
