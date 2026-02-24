@@ -167,6 +167,50 @@ class ApiService {
     }
   }
 
+  async getAlbumTracks(album) {
+    const isOnline = await checkOnlineStatus();
+    if (!isOnline) {
+      throw new Error('No internet connection');
+    }
+
+    const albumUrl = String(album?.url || '').trim();
+    if (!albumUrl) {
+      throw new Error('Album URL is missing');
+    }
+
+    try {
+      const response = await this.requestWithServerFallback(baseUrl =>
+        axios.get(`${baseUrl}/api/album-tracks`, {
+          params: {
+            url: albumUrl,
+            album: album?.title || '',
+            artist: album?.artist || '',
+            artwork: album?.artwork || '',
+          },
+          timeout: 35000,
+        }),
+      );
+
+      if (response.data.success) {
+        return response.data.songs || [];
+      }
+
+      return [];
+    } catch (error) {
+      if (error.code === 'ECONNABORTED') {
+        throw new Error('Album tracks request timed out');
+      }
+      if (!error.response) {
+        throw new Error(
+          `Cannot reach crawler server. Ensure backend is running on port 3001 (tried: ${this.getFallbackBaseUrls().join(
+            ', ',
+          )})`,
+        );
+      }
+      throw new Error(error.response?.data?.error || error.message);
+    }
+  }
+
   async downloadSong(song, index = null, downloadSetting = 'Hi-Res') {
     const isOnline = await checkOnlineStatus();
     if (!isOnline) {

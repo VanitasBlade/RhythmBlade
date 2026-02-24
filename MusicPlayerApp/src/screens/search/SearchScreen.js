@@ -38,6 +38,10 @@ const SearchScreen = () => {
   const [cancelingJobs, setCancelingJobs] = useState({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [downloadSetting, setDownloadSetting] = useState('Hi-Res');
+  const [activeAlbum, setActiveAlbum] = useState(null);
+  const [albumTracks, setAlbumTracks] = useState([]);
+  const [albumTracksLoading, setAlbumTracksLoading] = useState(false);
+  const [albumQueueingAll, setAlbumQueueingAll] = useState(false);
 
   const mountedRef = useRef(true);
   const pollInFlightRef = useRef(false);
@@ -173,6 +177,13 @@ const SearchScreen = () => {
     });
   }, []);
 
+  const closeAlbumView = useCallback(() => {
+    setActiveAlbum(null);
+    setAlbumTracks([]);
+    setAlbumTracksLoading(false);
+    setAlbumQueueingAll(false);
+  }, []);
+
   const searchSongs = useCallback(async () => {
     if (!query.trim()) {
       return;
@@ -181,6 +192,7 @@ const SearchScreen = () => {
     try {
       setLoading(true);
       setResults([]);
+      closeAlbumView();
       const songs = await apiService.searchSongs(
         query.trim(),
         activeSearchType.toLowerCase(),
@@ -201,12 +213,16 @@ const SearchScreen = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeSearchType, query]);
+  }, [activeSearchType, closeAlbumView, query]);
 
   const queueDownload = useCallback(
-    async (item, index) => {
+    async (item, index, options = {}) => {
+      const suppressAlert = Boolean(options?.suppressAlert);
+      const switchToQueue =
+        typeof options?.switchToQueue === 'boolean' ? options.switchToQueue : true;
+
       if (!item.downloadable) {
-        return;
+        return {status: 'not-downloadable'};
       }
 
       const resolvedIndex = Number.isInteger(item?.index)
@@ -218,8 +234,10 @@ const SearchScreen = () => {
       const key = toTrackKey(item);
       const existingJob = queueByTrackKey.get(key);
       if (existingJob && existingJob.status !== 'failed') {
-        setActiveDownloaderTab('Queue');
-        return;
+        if (switchToQueue) {
+          setActiveDownloaderTab('Queue');
+        }
+        return {status: 'exists', job: existingJob};
       }
 
       try {
@@ -234,13 +252,19 @@ const SearchScreen = () => {
             const withoutDup = prev.filter(existing => existing.id !== job.id);
             return [...withoutDup, job];
           });
-          setActiveDownloaderTab('Queue');
+          if (switchToQueue) {
+            setActiveDownloaderTab('Queue');
+          }
         }
+        return {status: 'queued', job};
       } catch (error) {
-        Alert.alert(
-          'Download Failed',
-          error.message || 'Failed to queue download. Please try again.',
-        );
+        if (!suppressAlert) {
+          Alert.alert(
+            'Download Failed',
+            error.message || 'Failed to queue download. Please try again.',
+          );
+        }
+        return {status: 'failed', error};
       } finally {
         if (mountedRef.current) {
           setQueuingKeys(prev => {
@@ -253,6 +277,92 @@ const SearchScreen = () => {
     },
     [downloadSetting, queueByTrackKey],
   );
+
+  const openAlbum = useCallback(async album => {
+    if (!album?.url) {
+      Alert.alert('Album Error', 'Album details are unavailable for this item.');
+      return;
+    }
+
+    setActiveAlbum(album);
+    setAlbumTracks([]);
+    setAlbumTracksLoading(true);
+    setAlbumQueueingAll(false);
+
+    try {
+      const tracks = await apiService.getAlbumTracks(album);
+      if (!mountedRef.current) {
+        return;
+      }
+      setAlbumTracks(tracks);
+      if (tracks.length === 0) {
+        Alert.alert('No Tracks', 'No tracks found for this album.');
+      }
+    } catch (error) {
+      if (mountedRef.current) {
+        setActiveAlbum(null);
+        setAlbumTracks([]);
+        Alert.alert(
+          'Album Error',
+          error.message || 'Failed to load album tracks.',
+        );
+      }
+    } finally {
+      if (mountedRef.current) {
+        setAlbumTracksLoading(false);
+      }
+    }
+  }, []);
+
+  const queueAlbumTracksAll = useCallback(async () => {
+    if (!activeAlbum || albumQueueingAll || albumTracks.length === 0) {
+      return;
+    }
+
+    setAlbumQueueingAll(true);
+    let queued = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    try {
+      for (const track of albumTracks) {
+        const result = await queueDownload(track, track?.index, {
+          suppressAlert: true,
+          switchToQueue: false,
+        });
+
+        if (result?.status === 'queued') {
+          queued += 1;
+        } else if (
+          result?.status === 'exists' ||
+          result?.status === 'not-downloadable'
+        ) {
+          skipped += 1;
+        } else {
+          failed += 1;
+        }
+      }
+    } finally {
+      if (mountedRef.current) {
+        setAlbumQueueingAll(false);
+      }
+    }
+
+    if (failed > 0) {
+      Alert.alert(
+        'Album Queue Result',
+        `Queued ${queued} tracks, skipped ${skipped}, failed ${failed}.`,
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Album Queued',
+      skipped > 0
+        ? `Queued ${queued} tracks. Skipped ${skipped} already in queue.`
+        : `Queued ${queued} tracks from ${activeAlbum.title}.`,
+    );
+  }, [activeAlbum, albumQueueingAll, albumTracks, queueDownload]);
 
   const retryQueueItem = useCallback(
     async job => {
@@ -345,6 +455,10 @@ const SearchScreen = () => {
   const renderSearchResult = useCallback(
     ({item, index}) => {
       const key = toTrackKey(item);
+      const canOpenAlbum =
+        activeSearchType === 'Albums' &&
+        (item?.type === 'album' || String(item?.url || '').includes('/album/'));
+
       return (
         <SearchResultCard
           item={item}
@@ -353,10 +467,30 @@ const SearchScreen = () => {
           linkedJob={queueByTrackKey.get(key)}
           isQueuing={Boolean(queuingKeys[key])}
           onQueueDownload={queueDownload}
+          onPress={canOpenAlbum ? openAlbum : null}
         />
       );
     },
-    [activeSearchType, queueByTrackKey, queuingKeys, queueDownload],
+    [activeSearchType, openAlbum, queueByTrackKey, queuingKeys, queueDownload],
+  );
+
+  const renderAlbumTrack = useCallback(
+    ({item, index}) => {
+      const key = toTrackKey(item);
+      return (
+        <SearchResultCard
+          item={item}
+          index={index}
+          activeSearchType="Tracks"
+          linkedJob={queueByTrackKey.get(key)}
+          isQueuing={Boolean(queuingKeys[key])}
+          onQueueDownload={(trackItem, trackIndex) =>
+            queueDownload(trackItem, trackIndex, {switchToQueue: false})
+          }
+        />
+      );
+    },
+    [queueByTrackKey, queuingKeys, queueDownload],
   );
 
   const renderQueueItem = useCallback(
@@ -398,11 +532,81 @@ const SearchScreen = () => {
             : `Search ${activeSearchType.toLowerCase()}`}
         </Text>
         <Text style={styles.emptySubtitle}>
-          Find tracks, albums, artists, or playlists.
+          Find tracks, albums, or artists.
         </Text>
       </View>
     );
   }, [activeSearchType, loading, query]);
+
+  const renderAlbumTracksHeader = useCallback(
+    () => (
+      <View style={styles.albumHeaderCard}>
+        <View style={styles.albumHeaderTopRow}>
+          <TouchableOpacity
+            style={styles.albumBackButton}
+            onPress={closeAlbumView}
+            disabled={albumQueueingAll}>
+            <Icon name="arrow-left" size={15} color={C.textDim} />
+            <Text style={styles.albumBackText}>Back to albums</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.albumQueueAllButton,
+              (albumQueueingAll || albumTracksLoading || albumTracks.length === 0) &&
+                styles.albumQueueAllButtonDisabled,
+            ]}
+            onPress={queueAlbumTracksAll}
+            disabled={albumQueueingAll || albumTracksLoading || albumTracks.length === 0}>
+            {albumQueueingAll ? (
+              <ActivityIndicator size="small" color={C.accentFg} />
+            ) : (
+              <Icon name="download-multiple" size={14} color={C.accentFg} />
+            )}
+            <Text style={styles.albumQueueAllText}>Download all</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.albumHeaderTitle} numberOfLines={2}>
+          {activeAlbum?.title || 'Album'}
+        </Text>
+        <Text style={styles.albumHeaderMeta} numberOfLines={1}>
+          {activeAlbum?.artist || 'Unknown Artist'}
+          {albumTracks.length > 0 ? `  •  ${albumTracks.length} tracks` : ''}
+        </Text>
+      </View>
+    ),
+    [
+      activeAlbum,
+      albumQueueingAll,
+      albumTracks.length,
+      albumTracksLoading,
+      closeAlbumView,
+      queueAlbumTracksAll,
+    ],
+  );
+
+  const renderAlbumTracksEmpty = useCallback(
+    () => (
+      <View style={styles.albumTracksEmptyWrap}>
+        {albumTracksLoading ? (
+          <>
+            <ActivityIndicator size="small" color={C.accent} />
+            <Text style={styles.albumTracksLoadingText}>Loading album tracks...</Text>
+          </>
+        ) : (
+          <>
+            <Icon
+              name="music-note-off-outline"
+              size={20}
+              color={C.textDeep}
+              style={styles.emptyIcon}
+            />
+            <Text style={styles.emptySubtitle}>No tracks found for this album.</Text>
+          </>
+        )}
+      </View>
+    ),
+    [albumTracksLoading],
+  );
 
   const renderQueueEmpty = useCallback(
     () => (
@@ -512,6 +716,7 @@ const SearchScreen = () => {
                       onPress={() => {
                         setActiveSearchType(tab);
                         setResults([]);
+                        closeAlbumView();
                       }}>
                       <Text
                         style={[
@@ -528,16 +733,30 @@ const SearchScreen = () => {
             <View style={styles.searchControlsDivider} />
           </View>
 
-          <FlatList
-            style={styles.searchResultsList}
-            data={results}
-            renderItem={renderSearchResult}
-            keyExtractor={(item, index) =>
-              `${item.type || activeSearchType}-${item.title}-${index}`
-            }
-            contentContainerStyle={styles.searchListContent}
-            ListEmptyComponent={renderSearchEmpty}
-          />
+          {activeAlbum ? (
+            <FlatList
+              style={styles.searchResultsList}
+              data={albumTracks}
+              renderItem={renderAlbumTrack}
+              keyExtractor={(item, index) =>
+                `${item.type || 'track'}-${item.title}-${item.artist}-${index}`
+              }
+              contentContainerStyle={styles.searchListContent}
+              ListHeaderComponent={renderAlbumTracksHeader}
+              ListEmptyComponent={renderAlbumTracksEmpty}
+            />
+          ) : (
+            <FlatList
+              style={styles.searchResultsList}
+              data={results}
+              renderItem={renderSearchResult}
+              keyExtractor={(item, index) =>
+                `${item.type || activeSearchType}-${item.title}-${index}`
+              }
+              contentContainerStyle={styles.searchListContent}
+              ListEmptyComponent={renderSearchEmpty}
+            />
+          )}
         </View>
       ) : (
         <FlatList

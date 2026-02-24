@@ -58,6 +58,29 @@ export function registerRoutes({
     }
   });
 
+  app.get("/api/album-tracks", async (req, res) => {
+    try {
+      const albumUrl = String(req.query.url || req.query.albumUrl || "").trim();
+      if (!albumUrl) {
+        return sendApiError(res, 400, "Missing album path 'url'");
+      }
+
+      const songs = await searchEngine.searchAlbumTracks(albumUrl, {
+        albumTitle: String(req.query.album || req.query.title || "").trim(),
+        albumArtist: String(req.query.artist || "").trim(),
+        albumArtwork: String(req.query.artwork || "").trim() || null,
+      });
+      searchEngine.setLastSearchSongs(songs);
+
+      return res.json({
+        success: true,
+        songs: songs.map(downloadEngine.toPublicItem),
+      });
+    } catch (error) {
+      return sendApiError(res, /timed out/i.test(errorMessage(error)) ? 504 : 500, error);
+    }
+  });
+
   app.post("/api/download", async (req, res) => {
     try {
       const result = await downloadEngine.runDownloadPipeline(req.body || {});

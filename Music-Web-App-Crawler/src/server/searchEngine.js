@@ -1,6 +1,8 @@
 import {searchTracksFast} from "../fastSearch.js";
-import {searchSongs} from "../search.js";
-import {MAX_TRACK_CACHE_ENTRIES, TRACK_CACHE_TTL_MS} from "./constants.js";
+import {getAlbumTracks, searchSongs} from "../search.js";
+import {buildArtistsFromTracks} from "./search/artistFallback.js";
+import {createLookupStore} from "./search/lookup.js";
+import {createTrackSearchCache} from "./search/trackSearchCache.js";
 import {
   cleanSearchQueryPart,
   extractTrackIdFromValue,
@@ -14,13 +16,6 @@ import {
   withTimeout,
 } from "./helpers.js";
 
-const SEP = "\u0001";
-const LOOKUP_EMPTY = {
-  byTrackId: new Map(),
-  byUrl: new Map(),
-  byMeta: new Map(),
-  byTitleArtist: new Map(),
-};
 const TIMEOUTS = {
   fastTrack: 12_000,
   browserInit: 10_000,
@@ -32,12 +27,11 @@ const TIMEOUTS = {
 };
 const ARTIST_BROWSER_SEARCH_TIMEOUT_MS = 6_000;
 const ARTIST_BROWSER_PIPELINE_TIMEOUT_MS = 9_000;
+const ALBUM_TRACKS_TIMEOUT_MS = 24_000;
+const ALBUM_TRACKS_PIPELINE_TIMEOUT_MS = 34_000;
 const RESOLVE_MAX_TRACK_RESULTS = 24;
 const STRONG_MATCH_SCORE = 140;
 const EXACT_MATCH_SCORE = 1000;
-
-const key2 = (a, b) => `${a}${SEP}${b}`;
-const key3 = (a, b, c) => `${a}${SEP}${b}${SEP}${c}`;
 
 function addUniqueText(list, seen, value) {
   const display = normalizeDisplayText(value);
@@ -79,47 +73,8 @@ function buildTargetProfile(song) {
 }
 
 export function createSearchEngine(state, browserController) {
-  function pruneTrackSearchCache() {
-    const now = Date.now();
-    for (const [key, entry] of state.trackSearchCache) {
-      if (entry.expiresAt < now) {
-        state.trackSearchCache.delete(key);
-      }
-    }
-
-    while (state.trackSearchCache.size > MAX_TRACK_CACHE_ENTRIES) {
-      const oldestKey = state.trackSearchCache.keys().next().value;
-      if (typeof oldestKey === "undefined") {
-        break;
-      }
-      state.trackSearchCache.delete(oldestKey);
-    }
-  }
-
-  function getCachedTrackSearch(query) {
-    const key = normalizeText(query);
-    const entry = state.trackSearchCache.get(key);
-    if (!entry) {
-      return null;
-    }
-    if (entry.expiresAt < Date.now()) {
-      state.trackSearchCache.delete(key);
-      return null;
-    }
-    return entry.songs;
-  }
-
-  function setCachedTrackSearch(query, songs) {
-    const key = normalizeText(query);
-    if (state.trackSearchCache.has(key)) {
-      state.trackSearchCache.delete(key);
-    }
-    state.trackSearchCache.set(key, {
-      songs,
-      expiresAt: Date.now() + TRACK_CACHE_TTL_MS,
-    });
-    pruneTrackSearchCache();
-  }
+  const {getCachedTrackSearch, setCachedTrackSearch} = createTrackSearchCache(state);
+  const {setLastSearchSongs, getSongFromRequest} = createLookupStore(state);
 
   async function runBrowserSearch(query, type, searchTimeout, pipelineTimeout, label) {
     return withTimeout(
@@ -168,66 +123,36 @@ export function createSearchEngine(state, browserController) {
 
   async function searchArtistsFromTracksFallback(query) {
     const tracks = await searchTracksWithFallback(query);
-    const artistsByKey = new Map();
-    const queryNorm = normalizeText(query);
-    const queryTokens = tokenizeForSimilarity(query);
+    return buildArtistsFromTracks(query, tracks);
+  }
 
-    function shouldIncludeArtist(artistName, strict = true) {
-      const artistNorm = normalizeText(artistName);
-      if (!artistNorm) {
-        return false;
-      }
-      if (!strict) {
-        return true;
-      }
-      if (queryNorm && (artistNorm.includes(queryNorm) || queryNorm.includes(artistNorm))) {
-        return true;
-      }
-      if (!queryTokens.length) {
-        return true;
-      }
-      const overlap = getTokenOverlapScore(
-        tokenizeForSimilarity(artistName),
-        queryTokens,
-        1
-      );
-      return overlap > 0;
+  async function searchAlbumTracks(albumPath, meta = {}) {
+    const normalizedAlbumPath = String(albumPath || "").trim();
+    if (!normalizedAlbumPath) {
+      throw new Error("Album path is missing.");
     }
 
-    function collectArtists(strictMatch) {
-      for (const track of tracks) {
-        const artistName = normalizeDisplayText(track?.artist);
-        if (!artistName || !shouldIncludeArtist(artistName, strictMatch)) {
-          continue;
-        }
+    return withTimeout(
+      browserController.runBrowserTask(async () => {
+        const {page} = await withTimeout(
+          browserController.initBrowser(),
+          TIMEOUTS.browserInit,
+          "Browser initialization"
+        );
 
-        const artistKey = normalizeText(artistName);
-        if (!artistKey || artistsByKey.has(artistKey)) {
-          continue;
-        }
-
-        artistsByKey.set(artistKey, {
-          index: artistsByKey.size,
-          type: "artist",
-          title: artistName,
-          artist: artistName,
-          album: "",
-          subtitle: "Artist",
-          duration: 0,
-          artwork: upscaleArtworkUrl(track?.artwork),
-          url: null,
-          downloadable: false,
-          element: null,
-        });
-      }
-    }
-
-    collectArtists(true);
-    if (artistsByKey.size === 0) {
-      collectArtists(false);
-    }
-
-    return [...artistsByKey.values()];
+        return withTimeout(
+          getAlbumTracks(page, normalizedAlbumPath, {
+            albumTitle: meta?.albumTitle || "",
+            albumArtist: meta?.albumArtist || "",
+            albumArtwork: meta?.albumArtwork || null,
+          }),
+          ALBUM_TRACKS_TIMEOUT_MS,
+          "Album tracks request"
+        );
+      }),
+      ALBUM_TRACKS_PIPELINE_TIMEOUT_MS,
+      "Album tracks pipeline"
+    );
   }
 
   async function searchByType(query, type = "tracks") {
@@ -268,106 +193,6 @@ export function createSearchEngine(state, browserController) {
       TIMEOUTS.searchPipeline,
       "Search request"
     );
-  }
-
-  function setLastSearchSongs(songs = []) {
-    state.lastSearchSongs = Array.isArray(songs) ? songs : [];
-    const lookup = {
-      byTrackId: new Map(),
-      byUrl: new Map(),
-      byMeta: new Map(),
-      byTitleArtist: new Map(),
-    };
-
-    for (const song of state.lastSearchSongs) {
-      const trackId = extractTrackIdFromValue(song?.tidalId || song?.url);
-      if (trackId && !lookup.byTrackId.has(trackId)) {
-        lookup.byTrackId.set(trackId, song);
-      }
-
-      const url = normalizeUrlForCompare(song?.url);
-      if (url && !lookup.byUrl.has(url)) {
-        lookup.byUrl.set(url, song);
-      }
-
-      const title = normalizeText(song?.title);
-      if (!title) {
-        continue;
-      }
-      const artist = normalizeText(song?.artist);
-      const album = normalizeText(song?.album);
-      const duration = Number(song?.duration) || 0;
-
-      const titleArtistKey = key2(title, artist);
-      if (!lookup.byTitleArtist.has(titleArtistKey)) {
-        lookup.byTitleArtist.set(titleArtistKey, song);
-      }
-
-      const metaKey = key3(title, artist, album);
-      const metaList = lookup.byMeta.get(metaKey);
-      if (metaList) {
-        metaList.push([song, duration]);
-      } else {
-        lookup.byMeta.set(metaKey, [[song, duration]]);
-      }
-    }
-
-    state.lastSearchLookup = lookup;
-  }
-
-  function findSongByIdentity(song) {
-    if (!song) {
-      return null;
-    }
-
-    const lookup = state.lastSearchLookup || LOOKUP_EMPTY;
-    const trackId = extractTrackIdFromValue(song.tidalId || song.url);
-    if (trackId) {
-      const byTrackId = lookup.byTrackId.get(trackId);
-      if (byTrackId) {
-        return byTrackId;
-      }
-    }
-
-    const url = normalizeUrlForCompare(song.url);
-    if (url) {
-      const byUrl = lookup.byUrl.get(url);
-      if (byUrl) {
-        return byUrl;
-      }
-    }
-
-    const title = normalizeText(song.title);
-    if (!title) {
-      return null;
-    }
-
-    const artist = normalizeText(song.artist);
-    const album = normalizeText(song.album);
-    const duration = Number(song.duration) || 0;
-    const metaMatches = lookup.byMeta.get(key3(title, artist, album));
-    if (metaMatches?.length) {
-      if (!duration) {
-        return metaMatches[0][0];
-      }
-      for (const [matchedSong, matchedDuration] of metaMatches) {
-        if (!matchedDuration || Math.abs(matchedDuration - duration) <= 2) {
-          return matchedSong;
-        }
-      }
-    }
-
-    return lookup.byTitleArtist.get(key2(title, artist)) || null;
-  }
-
-  function getSongFromRequest(index, song) {
-    if (Number.isInteger(index)) {
-      return state.lastSearchSongs[index] || findSongByIdentity(song) || null;
-    }
-    if (song && typeof song.index === "number") {
-      return state.lastSearchSongs[song.index] || findSongByIdentity(song) || null;
-    }
-    return findSongByIdentity(song);
   }
 
   function toSongMeta(song) {
@@ -588,6 +413,7 @@ export function createSearchEngine(state, browserController) {
   return {
     searchByType,
     searchTracksWithFallback,
+    searchAlbumTracks,
     setLastSearchSongs,
     getSongFromRequest,
     resolveDownloadableSong,

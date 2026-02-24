@@ -20,18 +20,28 @@ const SearchResultCard = ({
   linkedJob,
   isQueuing,
   onQueueDownload,
+  onPress,
 }) => {
   const isActive = linkedJob
     ? ACTIVE_QUEUE_STATUSES.has(linkedJob.status)
     : false;
   const isDone = linkedJob?.status === 'done';
   const isFailed = linkedJob?.status === 'failed';
-  const disabled = !item.downloadable || isQueuing || isActive || isDone;
+  const navigable = typeof onPress === 'function';
+  const disabled =
+    !item.downloadable || isQueuing || isActive || isDone || navigable;
   const durationText = formatDuration(item.duration);
   const fallbackColor = getFallbackArtColor(item);
+  const CardContainer = navigable ? TouchableOpacity : View;
+  const cardProps = navigable
+    ? {
+        activeOpacity: 0.85,
+        onPress: () => onPress(item, item?.index ?? index),
+      }
+    : {};
 
   return (
-    <View style={styles.resultCard}>
+    <CardContainer style={styles.resultCard} {...cardProps}>
       <View
         style={[styles.resultArtworkShell, {backgroundColor: fallbackColor}]}>
         {item.artwork ? (
@@ -59,8 +69,12 @@ const SearchResultCard = ({
       </View>
 
       <View style={styles.resultRight}>
-        <Text style={styles.resultDuration}>{durationText || '--:--'}</Text>
-        {item.downloadable ? (
+        {navigable ? (
+          <Icon name="chevron-right" size={18} color={C.textDeep} />
+        ) : (
+          <Text style={styles.resultDuration}>{durationText || '--:--'}</Text>
+        )}
+        {!navigable && item.downloadable ? (
           <TouchableOpacity
             style={[
               styles.downloadButton,
@@ -82,7 +96,7 @@ const SearchResultCard = ({
           </TouchableOpacity>
         ) : null}
       </View>
-    </View>
+    </CardContainer>
   );
 };
 
