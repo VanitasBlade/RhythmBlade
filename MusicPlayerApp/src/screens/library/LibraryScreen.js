@@ -43,6 +43,7 @@ const LibraryScreen = ({navigation, route}) => {
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [migratingArtwork, setMigratingArtwork] = useState(false);
+  const [migratingDuration, setMigratingDuration] = useState(false);
 
   const [tab, setTab] = useState('tracks');
   const [sortBy, setSortBy] = useState('Name');
@@ -73,6 +74,15 @@ const LibraryScreen = ({navigation, route}) => {
 
       storageService
         .hydrateArtworkForLibrary(library, 3)
+        .then(updated => {
+          if (updated?.length) {
+            setSongs(updated);
+          }
+        })
+        .catch(() => {});
+
+      storageService
+        .hydrateDurationForLibrary(library, 4)
         .then(updated => {
           if (updated?.length) {
             setSongs(updated);
@@ -154,6 +164,10 @@ const LibraryScreen = ({navigation, route}) => {
       navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
     } catch (error) {
       console.error('Error playing song:', error);
+      Alert.alert(
+        'Playback Error',
+        error.message || 'Could not play this track.',
+      );
     }
   };
 
@@ -169,6 +183,10 @@ const LibraryScreen = ({navigation, route}) => {
       navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
     } catch (error) {
       console.error('Error playing all songs:', error);
+      Alert.alert(
+        'Playback Error',
+        error.message || 'Could not play songs right now.',
+      );
     }
   };
 
@@ -192,6 +210,10 @@ const LibraryScreen = ({navigation, route}) => {
       navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
     } catch (error) {
       console.error('Error shuffling songs:', error);
+      Alert.alert(
+        'Playback Error',
+        error.message || 'Could not start shuffle playback.',
+      );
     }
   };
 
@@ -314,6 +336,10 @@ const LibraryScreen = ({navigation, route}) => {
       const updatedCount = Number(migration.updatedCount) || 0;
       const extractedCount = Number(migration.extractedCount) || 0;
       const inlineConvertedCount = Number(migration.inlineConvertedCount) || 0;
+      const durationMigration = result.durationMigration || {};
+      const durationUpdatedCount = Number(durationMigration.updatedCount) || 0;
+      const durationProcessedCount =
+        Number(durationMigration.processedCount) || 0;
       Alert.alert(
         'Folder Imported',
         `${result.fileCount} audio file${
@@ -322,7 +348,9 @@ const LibraryScreen = ({navigation, route}) => {
           result.sourcePath
         }.\n\nArtwork migration updated ${updatedCount} track${
           updatedCount === 1 ? '' : 's'
-        } (${extractedCount} extracted, ${inlineConvertedCount} inline converted).`,
+        } (${extractedCount} extracted, ${inlineConvertedCount} inline converted).\nDuration migration updated ${durationUpdatedCount} track${
+          durationUpdatedCount === 1 ? '' : 's'
+        } (processed ${durationProcessedCount}).`,
       );
     } catch (error) {
       if (!DocumentPicker.isCancel(error)) {
@@ -376,6 +404,41 @@ const LibraryScreen = ({navigation, route}) => {
       );
     } finally {
       setMigratingArtwork(false);
+    }
+  };
+
+  const migrateDurationsNow = async () => {
+    if (migratingDuration) {
+      return;
+    }
+
+    try {
+      setMigratingDuration(true);
+      const summary = await storageService.migrateAllDurationsNow({
+        batchSize: 10,
+        yieldMs: 0,
+      });
+      await loadLibrary();
+
+      const updatedCount = Number(summary?.updatedCount) || 0;
+      const processedCount = Number(summary?.processedCount) || 0;
+      const skippedCount = Number(summary?.skippedCount) || 0;
+
+      Alert.alert(
+        'Duration Migration Complete',
+        `${updatedCount} track${
+          updatedCount === 1 ? '' : 's'
+        } updated.\nProcessed ${processedCount} candidate track${
+          processedCount === 1 ? '' : 's'
+        }, skipped ${skippedCount}.`,
+      );
+    } catch (error) {
+      Alert.alert(
+        'Migration Failed',
+        error.message || 'Could not migrate durations right now.',
+      );
+    } finally {
+      setMigratingDuration(false);
     }
   };
 
@@ -702,6 +765,21 @@ const LibraryScreen = ({navigation, route}) => {
                 {migratingArtwork
                   ? 'Migrating artwork...'
                   : 'Migrate Artwork Now (One-Time)'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.migrateArtworkBtn,
+                migratingDuration && styles.disabled,
+              ]}
+              onPress={migrateDurationsNow}
+              disabled={migratingDuration}>
+              <Icon name="timer-outline" size={18} color={C.accentFg} />
+              <Text style={styles.migrateArtworkText}>
+                {migratingDuration
+                  ? 'Migrating durations...'
+                  : 'Migrate Durations Now (One-Time)'}
               </Text>
             </TouchableOpacity>
           </ScrollView>

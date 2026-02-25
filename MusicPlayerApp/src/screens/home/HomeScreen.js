@@ -1,5 +1,6 @@
 import React, {useCallback, useMemo, useState} from 'react';
 import {
+  Alert,
   FlatList,
   Image,
   RefreshControl,
@@ -99,6 +100,10 @@ const HomeScreen = ({navigation}) => {
       navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
     } catch (error) {
       console.error('Error playing song:', error);
+      Alert.alert(
+        'Playback Error',
+        error.message || 'Could not play this track.',
+      );
     }
   };
 

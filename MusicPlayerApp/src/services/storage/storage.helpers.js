@@ -171,18 +171,47 @@ export function stripUriQueryAndHash(value) {
     .split('#')[0];
 }
 
+function hasUriScheme(value) {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(String(value || '').trim());
+}
+
 export function toPathFromUri(value) {
-  const rawValue = stripUriQueryAndHash(String(value || '').trim());
-  if (!rawValue) {
+  const input = String(value || '').trim();
+  if (!input) {
     return '';
   }
 
+  const shouldStripQueryAndHash =
+    hasUriScheme(input) && !input.toLowerCase().startsWith('file://');
+  const rawValue = shouldStripQueryAndHash
+    ? stripUriQueryAndHash(input)
+    : input;
   const withoutFilePrefix = rawValue.replace(/^file:\/\//, '');
   return safeDecodeUriComponent(withoutFilePrefix);
 }
 
+export function toFileUriFromPath(value) {
+  const path = toPathFromUri(value);
+  if (!path) {
+    return '';
+  }
+
+  const encodedPath = encodeURI(path)
+    .replace(/#/g, '%23')
+    .replace(/\?/g, '%3F');
+  if (/^[a-z]:\//i.test(encodedPath)) {
+    return `file:///${encodedPath}`;
+  }
+  if (encodedPath.startsWith('/')) {
+    return `file://${encodedPath}`;
+  }
+
+  return `file:///${encodedPath}`;
+}
+
 export function getFileNameFromUriOrPath(value) {
-  const cleaned = stripUriQueryAndHash(value);
+  const input = String(value || '').trim();
+  const cleaned = hasUriScheme(input) ? stripUriQueryAndHash(input) : input;
   if (!cleaned) {
     return '';
   }

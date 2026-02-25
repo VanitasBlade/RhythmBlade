@@ -11,11 +11,17 @@ function safeDecodeUriComponent(value) {
   }
 }
 
+function hasUriScheme(value) {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(String(value || '').trim());
+}
+
 function normalizePathToken(value) {
-  const cleaned = String(value || '')
-    .trim()
-    .split('?')[0]
-    .split('#')[0];
+  const input = String(value || '').trim();
+  const shouldStripQueryAndHash =
+    hasUriScheme(input) && !input.toLowerCase().startsWith('file://');
+  const cleaned = shouldStripQueryAndHash
+    ? input.split('?')[0].split('#')[0]
+    : input;
   return safeDecodeUriComponent(cleaned);
 }
 

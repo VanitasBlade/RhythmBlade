@@ -6,7 +6,12 @@ import {
   optimizeArtworkUriForTrack,
 } from '../../artwork/ArtworkService';
 import {STORAGE_KEYS} from '../storage.constants';
-import {isUnknownValue, normalizeText, toPathFromUri} from '../storage.helpers';
+import {
+  isUnknownValue,
+  normalizeText,
+  toFileUriFromPath,
+  toPathFromUri,
+} from '../storage.helpers';
 
 const INLINE_ARTWORK_URI_PREFIX = 'data:image/';
 const DEFAULT_ARTWORK_MIGRATION_BATCH_SIZE = 8;
@@ -79,7 +84,7 @@ export const artworkMethods = {
     const effectivePath = incomingPath || existingPath;
     if (effectivePath) {
       merged.localPath = effectivePath;
-      merged.url = `file://${effectivePath}`;
+      merged.url = toFileUriFromPath(effectivePath);
       merged.isLocal = true;
     }
 
@@ -215,7 +220,7 @@ export const artworkMethods = {
       const artwork = await extractEmbeddedArtworkDataUri({
         ...song,
         localPath: filePath,
-        url: `file://${filePath}`,
+        url: toFileUriFromPath(filePath),
       });
       if (!artwork) {
         return null;
@@ -374,7 +379,7 @@ export const artworkMethods = {
               const extractedArtwork = await extractEmbeddedArtworkDataUri({
                 ...song,
                 localPath: filePath,
-                url: `file://${filePath}`,
+                url: toFileUriFromPath(filePath),
               });
 
               if (extractedArtwork) {

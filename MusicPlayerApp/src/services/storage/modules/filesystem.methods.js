@@ -7,6 +7,7 @@ import {
   normalizeFileSourcePath,
   safeDecodeUriComponent,
   stripUriQueryAndHash,
+  toFileUriFromPath,
   toPathFromUri,
 } from '../storage.helpers';
 
@@ -278,7 +279,7 @@ export const filesystemMethods = {
     const filename = normalizedPath.split('/').filter(Boolean).pop() || '';
     return this.importLocalAudioFile(
       {
-        uri: `file://${normalizedPath}`,
+        uri: toFileUriFromPath(normalizedPath),
         name: filename,
       },
       options,
@@ -299,9 +300,15 @@ export const filesystemMethods = {
       options.recursive !== false,
     );
     const shouldRunArtworkMigration = options.migrateArtwork !== false;
+    const shouldRunDurationMigration = options.migrateDuration !== false;
     const importOptions = shouldRunArtworkMigration
-      ? {skipArtworkHydration: true}
-      : {};
+      ? {
+          skipArtworkHydration: true,
+          skipDurationHydration: shouldRunDurationMigration,
+        }
+      : {
+          skipDurationHydration: shouldRunDurationMigration,
+        };
     const formats = new Set();
     let importedCount = 0;
 
@@ -330,6 +337,12 @@ export const filesystemMethods = {
           yieldMs: 0,
         })
       : null;
+    const durationMigration = shouldRunDurationMigration
+      ? await this.migrateAllDurationsNow({
+          batchSize: 10,
+          yieldMs: 0,
+        })
+      : null;
 
     return {
       sourcePath,
@@ -338,6 +351,7 @@ export const filesystemMethods = {
       formats: Array.from(formats),
       fileSources: nextSources,
       artworkMigration,
+      durationMigration,
     };
   },
 

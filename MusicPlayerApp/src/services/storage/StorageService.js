@@ -11,6 +11,8 @@ class StorageService {
     this.rhythmBladeDir = this.getPreferredMusicDir();
     this.artworkHydrationTasks = new Map();
     this.artworkMigrationTask = null;
+    this.durationHydrationTasks = new Map();
+    this.durationMigrationTask = null;
     this.initializeDirectories();
   }
 }

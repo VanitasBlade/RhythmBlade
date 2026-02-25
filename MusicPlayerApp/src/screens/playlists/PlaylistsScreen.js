@@ -116,6 +116,10 @@ const PlaylistsScreen = ({navigation}) => {
       navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
     } catch (error) {
       console.error('Error playing playlist:', error);
+      Alert.alert(
+        'Playback Error',
+        error.message || 'Could not play songs from this playlist.',
+      );
     }
   };
 

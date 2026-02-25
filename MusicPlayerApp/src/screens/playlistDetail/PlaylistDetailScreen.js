@@ -45,6 +45,10 @@ const PlaylistDetailScreen = ({route, navigation}) => {
       navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
     } catch (error) {
       console.error('Error playing song:', error);
+      Alert.alert(
+        'Playback Error',
+        error.message || 'Could not play this track.',
+      );
     }
   };
 
@@ -60,6 +64,10 @@ const PlaylistDetailScreen = ({route, navigation}) => {
       navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
     } catch (error) {
       console.error('Error playing all songs:', error);
+      Alert.alert(
+        'Playback Error',
+        error.message || 'Could not play songs from this playlist.',
+      );
     }
   };
 
