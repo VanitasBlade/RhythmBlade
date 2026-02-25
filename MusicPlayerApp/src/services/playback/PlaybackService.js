@@ -1,5 +1,8 @@
 import TrackPlayer, {Capability, Event} from 'react-native-track-player';
-import {extractEmbeddedArtworkDataUri} from '../artwork/ArtworkService';
+import {
+  canExtractEmbeddedArtwork,
+  extractEmbeddedArtworkDataUri,
+} from '../artwork/ArtworkService';
 import storageService from '../storage/StorageService';
 
 const PLACEHOLDER_VALUES = new Set([
@@ -7,6 +10,8 @@ const PLACEHOLDER_VALUES = new Set([
   'unknown artist',
   'unknown album',
 ]);
+const INLINE_ARTWORK_URI_PREFIX = 'data:image/';
+const ARTWORK_FALLBACK_COOLDOWN_MS = 3000;
 
 function normalizeText(value) {
   return String(value || '')
@@ -43,6 +48,13 @@ function normalizeArtworkUri(value) {
   return uri;
 }
 
+function isInlineArtworkUri(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .startsWith(INLINE_ARTWORK_URI_PREFIX);
+}
+
 function runDetached(task, label) {
   Promise.resolve()
     .then(task)
@@ -61,9 +73,11 @@ class PlaybackService {
     this.initialized = false;
     this.metadataSubscriptions = [];
     this.artworkFallbackInFlight = new Set();
+    this.artworkFallbackAttemptAt = new Map();
   }
 
-  normalizeTrackForQueue(track = {}) {
+  normalizeTrackForQueue(track = {}, options = {}) {
+    const {allowInlineArtwork = false} = options;
     const normalized = {...track};
     const title = normalizeMetadataValue(normalized.title);
     const artist = normalizeMetadataValue(normalized.artist);
@@ -85,7 +99,7 @@ class PlaybackService {
     } else {
       delete normalized.album;
     }
-    if (artwork) {
+    if (artwork && (allowInlineArtwork || !isInlineArtworkUri(artwork))) {
       normalized.artwork = artwork;
     } else {
       delete normalized.artwork;
@@ -94,7 +108,7 @@ class PlaybackService {
     return normalized;
   }
 
-  toQueueTrack(song = {}) {
+  toQueueTrack(song = {}, options = {}) {
     const rawId = String(
       song.id || song.sourceSongId || song.url || song.localPath || '',
     ).trim();
@@ -109,38 +123,50 @@ class PlaybackService {
       return null;
     }
 
-    return this.normalizeTrackForQueue({
-      id:
-        rawId ||
-        `track_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      url: rawUrl,
-      title: song.title,
-      artist: song.artist,
-      album: song.album || 'Unknown Album',
-      artwork: song.artwork || null,
-      duration: coerceDuration(song.duration),
-    });
+    return this.normalizeTrackForQueue(
+      {
+        id:
+          rawId ||
+          `track_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        url: rawUrl,
+        title: song.title,
+        artist: song.artist,
+        album: song.album || 'Unknown Album',
+        artwork: song.artwork || null,
+        duration: coerceDuration(song.duration),
+      },
+      options,
+    );
   }
 
-  buildQueueTracks(songs = []) {
+  buildQueueTracks(songs = [], options = {}) {
+    const {inlineArtworkIndex = -1, allowInlineArtworkForAll = false} = options;
     if (!Array.isArray(songs) || songs.length === 0) {
       return [];
     }
 
-    return songs.map(song => this.toQueueTrack(song)).filter(Boolean);
+    return songs
+      .map((song, index) =>
+        this.toQueueTrack(song, {
+          allowInlineArtwork:
+            allowInlineArtworkForAll || Number(inlineArtworkIndex) === index,
+        }),
+      )
+      .filter(Boolean);
   }
 
   async playSongs(songs = [], options = {}) {
     const {startIndex = 0} = options;
-    const queueTracks = this.buildQueueTracks(songs);
+    const boundedIndex = Math.max(
+      0,
+      Math.min(Number(startIndex) || 0, songs.length - 1),
+    );
+    const queueTracks = this.buildQueueTracks(songs, {
+      inlineArtworkIndex: boundedIndex,
+    });
     if (queueTracks.length === 0) {
       return false;
     }
-
-    const boundedIndex = Math.max(
-      0,
-      Math.min(Number(startIndex) || 0, queueTracks.length - 1),
-    );
 
     await this.reset();
     await this.addTracks(queueTracks);
@@ -153,7 +179,7 @@ class PlaybackService {
   }
 
   async playSong(song) {
-    const track = this.toQueueTrack(song);
+    const track = this.toQueueTrack(song, {allowInlineArtwork: true});
     if (!track) {
       return false;
     }
@@ -180,6 +206,8 @@ class PlaybackService {
       const artwork = normalizeArtworkUri(
         metadata.artworkUri || metadata.artwork,
       );
+      const activeTrack = await TrackPlayer.getActiveTrack().catch(() => null);
+      const existingArtwork = normalizeArtworkUri(activeTrack?.artwork);
 
       if (title) {
         patch.title = title;
@@ -192,13 +220,16 @@ class PlaybackService {
       }
       if (artwork) {
         patch.artwork = artwork;
+      } else if (existingArtwork) {
+        // Preserve the current cover when metadata events omit artwork.
+        patch.artwork = existingArtwork;
       }
 
       if (Object.keys(patch).length > 0) {
         await TrackPlayer.updateMetadataForTrack(trackIndex, patch);
       }
 
-      if (!patch.artwork) {
+      if (!patch.artwork && !existingArtwork) {
         runDetached(
           () => this.applyArtworkFallbackForActiveTrack(),
           'applying artwork fallback',
@@ -212,13 +243,14 @@ class PlaybackService {
   async applyArtworkFallbackForActiveTrack() {
     let fallbackKey = '';
     try {
-      const trackIndex = await TrackPlayer.getActiveTrackIndex();
+      const [trackIndex, activeTrack] = await Promise.all([
+        TrackPlayer.getActiveTrackIndex(),
+        TrackPlayer.getActiveTrack().catch(() => null),
+      ]);
       if (trackIndex === null || trackIndex === undefined) {
         return;
       }
 
-      const queue = await TrackPlayer.getQueue();
-      const activeTrack = queue[trackIndex];
       if (!activeTrack) {
         return;
       }
@@ -232,10 +264,24 @@ class PlaybackService {
         String(activeTrack.id || '').trim() ||
         String(activeTrack.url || '').trim() ||
         `${trackIndex}`;
+      const now = Date.now();
+      const lastAttemptAt = this.artworkFallbackAttemptAt.get(fallbackKey) || 0;
+      if (now - lastAttemptAt < ARTWORK_FALLBACK_COOLDOWN_MS) {
+        return;
+      }
+      this.artworkFallbackAttemptAt.set(fallbackKey, now);
+      if (this.artworkFallbackAttemptAt.size > 500) {
+        this.artworkFallbackAttemptAt.clear();
+      }
+
       if (this.artworkFallbackInFlight.has(fallbackKey)) {
         return;
       }
       this.artworkFallbackInFlight.add(fallbackKey);
+
+      if (!canExtractEmbeddedArtwork(activeTrack)) {
+        return;
+      }
 
       const embeddedArtwork = await extractEmbeddedArtworkDataUri(activeTrack);
       if (!embeddedArtwork) {
@@ -335,15 +381,13 @@ class PlaybackService {
 
   async addTrack(track) {
     try {
-      const normalizedTrack = this.toQueueTrack(track);
+      const normalizedTrack = this.toQueueTrack(track, {
+        allowInlineArtwork: true,
+      });
       if (!normalizedTrack) {
         return;
       }
       await TrackPlayer.add(normalizedTrack);
-      runDetached(
-        () => this.applyArtworkFallbackForActiveTrack(),
-        'prefetching track artwork',
-      );
       console.log('Track added:', normalizedTrack.title || normalizedTrack.id);
     } catch (error) {
       console.error('Error adding track:', error);
@@ -358,10 +402,6 @@ class PlaybackService {
       }
 
       await TrackPlayer.add(normalizedTracks);
-      runDetached(
-        () => this.applyArtworkFallbackForActiveTrack(),
-        'prefetching queue artwork',
-      );
       console.log(`${normalizedTracks.length} tracks added`);
     } catch (error) {
       console.error('Error adding tracks:', error);

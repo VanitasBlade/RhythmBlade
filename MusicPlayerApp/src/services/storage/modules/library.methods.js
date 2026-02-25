@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNFS from 'react-native-fs';
+import {optimizeArtworkUriForTrack} from '../../artwork/ArtworkService';
 import {DEFAULT_AUDIO_EXTENSION, STORAGE_KEYS} from '../storage.constants';
 import {
   getExtensionFromSong,
@@ -10,12 +11,15 @@ import {
   toPathFromUri,
 } from '../storage.helpers';
 
+const MAX_ARTWORK_MIGRATIONS_PER_READ = 2;
+
 export const libraryMethods = {
   async getLocalLibrary() {
     try {
       const library = await AsyncStorage.getItem(STORAGE_KEYS.LIBRARY);
       const parsedLibrary = library ? JSON.parse(library) : [];
       let changed = false;
+      let artworkMigrations = 0;
 
       const normalizedLibrary = [];
       for (const song of parsedLibrary) {
@@ -41,6 +45,26 @@ export const libraryMethods = {
             artist: nextArtist,
             title: nextTitle,
           };
+        }
+
+        const currentArtwork = String(nextSong?.artwork || '').trim();
+        if (
+          currentArtwork.toLowerCase().startsWith('data:image/') &&
+          artworkMigrations < MAX_ARTWORK_MIGRATIONS_PER_READ
+        ) {
+          const optimizedArtwork = await optimizeArtworkUriForTrack(
+            nextSong,
+            currentArtwork,
+          );
+
+          if (optimizedArtwork && optimizedArtwork !== currentArtwork) {
+            artworkMigrations += 1;
+            changed = true;
+            nextSong = {
+              ...nextSong,
+              artwork: optimizedArtwork,
+            };
+          }
         }
 
         const currentUrl = String(nextSong?.url || '').trim();
@@ -295,7 +319,8 @@ export const libraryMethods = {
     return localSong;
   },
 
-  async importLocalAudioFile(file) {
+  async importLocalAudioFile(file, options = {}) {
+    const {skipArtworkHydration = false} = options;
     try {
       const sourceUri = file?.fileCopyUri || file?.uri;
       if (!sourceUri) {
@@ -360,12 +385,16 @@ export const libraryMethods = {
       if (canReuseExisting) {
         const merged = this.mergeSongRecords(existing, track);
         await this.addToLibrary(merged);
-        this.hydrateArtworkForSong(merged, {persist: true}).catch(() => {});
+        if (!skipArtworkHydration) {
+          this.hydrateArtworkForSong(merged, {persist: true}).catch(() => {});
+        }
         return merged;
       }
 
       await this.addToLibrary(track);
-      this.hydrateArtworkForSong(track, {persist: true}).catch(() => {});
+      if (!skipArtworkHydration) {
+        this.hydrateArtworkForSong(track, {persist: true}).catch(() => {});
+      }
       return track;
     } catch (error) {
       console.error('Error importing local audio file:', error);

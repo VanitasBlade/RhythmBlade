@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {Image, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useNavigation} from '@react-navigation/native';
@@ -23,10 +23,33 @@ const MiniPlayer = () => {
   const playbackState = usePlaybackState();
   const track = useActiveTrack();
   const {position, duration} = useProgress(1);
+  const [stableTrackKey, setStableTrackKey] = useState('');
+  const [stableArtworkUri, setStableArtworkUri] = useState('');
+  const currentTrackKey = String(track?.id || track?.url || '').trim();
+  const currentArtworkUri = String(track?.artwork || '').trim();
+  const displayArtworkUri = currentArtworkUri || stableArtworkUri;
 
   const isPlaying = playbackState.state === State.Playing;
   const progressPct =
     duration > 0 ? Math.min(100, Math.max(0, (position / duration) * 100)) : 0;
+
+  useEffect(() => {
+    if (!currentTrackKey) {
+      setStableTrackKey('');
+      setStableArtworkUri('');
+      return;
+    }
+
+    if (currentTrackKey !== stableTrackKey) {
+      setStableTrackKey(currentTrackKey);
+      setStableArtworkUri(currentArtworkUri || '');
+      return;
+    }
+
+    if (currentArtworkUri) {
+      setStableArtworkUri(currentArtworkUri);
+    }
+  }, [currentArtworkUri, currentTrackKey, stableTrackKey]);
 
   if (!track) {
     return null;
@@ -60,8 +83,8 @@ const MiniPlayer = () => {
         onPress={() =>
           navigation.navigate('NowPlaying', {optimisticTrack: track})
         }>
-        {track.artwork ? (
-          <Image source={{uri: track.artwork}} style={styles.artwork} />
+        {displayArtworkUri ? (
+          <Image source={{uri: displayArtworkUri}} style={styles.artwork} />
         ) : (
           <View style={styles.artworkFallback}>
             <Icon name="music-note" size={18} color={C.accentFg} />

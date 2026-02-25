@@ -269,17 +269,20 @@ export const filesystemMethods = {
     return filePaths;
   },
 
-  async importLocalAudioPath(filePath) {
+  async importLocalAudioPath(filePath, options = {}) {
     const normalizedPath = toPathFromUri(filePath);
     if (!normalizedPath) {
       throw new Error('Invalid local audio path');
     }
 
     const filename = normalizedPath.split('/').filter(Boolean).pop() || '';
-    return this.importLocalAudioFile({
-      uri: `file://${normalizedPath}`,
-      name: filename,
-    });
+    return this.importLocalAudioFile(
+      {
+        uri: `file://${normalizedPath}`,
+        name: filename,
+      },
+      options,
+    );
   },
 
   async importFolderAsFileSource(folderUriOrPath, options = {}) {
@@ -295,6 +298,10 @@ export const filesystemMethods = {
       sourcePath,
       options.recursive !== false,
     );
+    const shouldRunArtworkMigration = options.migrateArtwork !== false;
+    const importOptions = shouldRunArtworkMigration
+      ? {skipArtworkHydration: true}
+      : {};
     const formats = new Set();
     let importedCount = 0;
 
@@ -304,7 +311,7 @@ export const filesystemMethods = {
         formats.add(ext.toUpperCase());
       }
       try {
-        await this.importLocalAudioPath(filePath);
+        await this.importLocalAudioPath(filePath, importOptions);
         importedCount += 1;
       } catch (error) {
         // Continue importing other files.
@@ -317,12 +324,20 @@ export const filesystemMethods = {
       fmt: Array.from(formats),
     });
 
+    const artworkMigration = shouldRunArtworkMigration
+      ? await this.migrateAllArtworkNow({
+          batchSize: 8,
+          yieldMs: 0,
+        })
+      : null;
+
     return {
       sourcePath,
       fileCount: audioFiles.length,
       importedCount,
       formats: Array.from(formats),
       fileSources: nextSources,
+      artworkMigration,
     };
   },
 

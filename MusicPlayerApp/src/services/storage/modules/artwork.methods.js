@@ -1,8 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNFS from 'react-native-fs';
-import {extractEmbeddedArtworkDataUri} from '../../artwork/ArtworkService';
+import {
+  canExtractEmbeddedArtwork,
+  extractEmbeddedArtworkDataUri,
+  optimizeArtworkUriForTrack,
+} from '../../artwork/ArtworkService';
 import {STORAGE_KEYS} from '../storage.constants';
 import {isUnknownValue, normalizeText, toPathFromUri} from '../storage.helpers';
+
+const INLINE_ARTWORK_URI_PREFIX = 'data:image/';
+const DEFAULT_ARTWORK_MIGRATION_BATCH_SIZE = 8;
 
 export const artworkMethods = {
   resolveSongLocalPath(song) {
@@ -151,7 +158,8 @@ export const artworkMethods = {
   },
 
   async persistArtworkForSong(song, artwork) {
-    const normalizedArtwork = String(artwork || '').trim();
+    const optimizedArtwork = await optimizeArtworkUriForTrack(song, artwork);
+    const normalizedArtwork = String(optimizedArtwork || '').trim();
     if (!song || !normalizedArtwork) {
       return false;
     }
@@ -188,7 +196,7 @@ export const artworkMethods = {
     }
 
     const filePath = this.resolveSongLocalPath(song);
-    if (!filePath || !/\.flac$/i.test(filePath)) {
+    if (!filePath || !canExtractEmbeddedArtwork(filePath)) {
       return null;
     }
 
@@ -242,7 +250,7 @@ export const artworkMethods = {
           return false;
         }
         const localPath = this.resolveSongLocalPath(song);
-        return Boolean(localPath && /\.flac$/i.test(localPath));
+        return Boolean(localPath && canExtractEmbeddedArtwork(localPath));
       })
       .slice(0, Math.max(0, maxSongs));
 
@@ -250,17 +258,176 @@ export const artworkMethods = {
       return [];
     }
 
-    const hydrationResults = await Promise.all(
-      candidates.map(candidate =>
-        this.hydrateArtworkForSong(candidate, {persist: true}),
-      ),
-    );
-    const changed = hydrationResults.some(Boolean);
+    let changed = false;
+    for (const candidate of candidates) {
+      const hydratedArtwork = await this.hydrateArtworkForSong(candidate, {
+        persist: true,
+      });
+      if (hydratedArtwork) {
+        changed = true;
+      }
+
+      // Yield between heavy metadata parsing tasks to keep UI responsive.
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
 
     if (!changed) {
       return [];
     }
 
     return this.getLocalLibrary();
+  },
+
+  async migrateAllArtworkNow(options = {}) {
+    if (this.artworkMigrationTask) {
+      return this.artworkMigrationTask;
+    }
+
+    const {
+      batchSize = DEFAULT_ARTWORK_MIGRATION_BATCH_SIZE,
+      yieldMs = 0,
+      onlySongIds = null,
+    } = options;
+    const effectiveBatchSize = Math.max(1, Number(batchSize) || 1);
+    const effectiveYieldMs = Math.max(0, Number(yieldMs) || 0);
+    const onlyIdsSet = Array.isArray(onlySongIds)
+      ? new Set(onlySongIds.map(id => String(id || '').trim()).filter(Boolean))
+      : null;
+
+    const task = (async () => {
+      const rawLibrary = await AsyncStorage.getItem(STORAGE_KEYS.LIBRARY);
+      const library = rawLibrary ? JSON.parse(rawLibrary) : [];
+      if (!Array.isArray(library) || library.length === 0) {
+        return {
+          totalSongs: 0,
+          processedCount: 0,
+          updatedCount: 0,
+          extractedCount: 0,
+          inlineConvertedCount: 0,
+          skippedCount: 0,
+          errorCount: 0,
+        };
+      }
+
+      const targets = library
+        .map((song, index) => ({song, index}))
+        .filter(({song}) => {
+          const id = String(song?.id || '').trim();
+          if (onlyIdsSet && !onlyIdsSet.has(id)) {
+            return false;
+          }
+
+          const artwork = String(song?.artwork || '').trim();
+          if (artwork.toLowerCase().startsWith(INLINE_ARTWORK_URI_PREFIX)) {
+            return true;
+          }
+
+          if (artwork) {
+            return false;
+          }
+
+          const localPath = this.resolveSongLocalPath(song);
+          return Boolean(localPath && canExtractEmbeddedArtwork(localPath));
+        });
+
+      if (targets.length === 0) {
+        return {
+          totalSongs: library.length,
+          processedCount: 0,
+          updatedCount: 0,
+          extractedCount: 0,
+          inlineConvertedCount: 0,
+          skippedCount: 0,
+          errorCount: 0,
+        };
+      }
+
+      let processedCount = 0;
+      let updatedCount = 0;
+      let extractedCount = 0;
+      let inlineConvertedCount = 0;
+      let skippedCount = 0;
+      let errorCount = 0;
+      let changed = false;
+      const nextLibrary = [...library];
+
+      for (const {song, index} of targets) {
+        processedCount += 1;
+        try {
+          const currentArtwork = String(song?.artwork || '').trim();
+          let nextArtwork = currentArtwork;
+
+          if (
+            currentArtwork.toLowerCase().startsWith(INLINE_ARTWORK_URI_PREFIX)
+          ) {
+            const convertedArtwork = await optimizeArtworkUriForTrack(
+              song,
+              currentArtwork,
+            );
+            if (convertedArtwork && convertedArtwork !== currentArtwork) {
+              nextArtwork = convertedArtwork;
+              inlineConvertedCount += 1;
+            }
+          } else if (!currentArtwork) {
+            const filePath = this.resolveSongLocalPath(song);
+            if (filePath && canExtractEmbeddedArtwork(filePath)) {
+              const extractedArtwork = await extractEmbeddedArtworkDataUri({
+                ...song,
+                localPath: filePath,
+                url: `file://${filePath}`,
+              });
+
+              if (extractedArtwork) {
+                const optimizedExtractedArtwork =
+                  await optimizeArtworkUriForTrack(song, extractedArtwork);
+                if (optimizedExtractedArtwork) {
+                  nextArtwork = optimizedExtractedArtwork;
+                  extractedCount += 1;
+                }
+              }
+            }
+          }
+
+          if (nextArtwork && nextArtwork !== currentArtwork) {
+            nextLibrary[index] = {
+              ...song,
+              artwork: nextArtwork,
+            };
+            updatedCount += 1;
+            changed = true;
+          } else {
+            skippedCount += 1;
+          }
+        } catch (error) {
+          errorCount += 1;
+        }
+
+        if (processedCount % effectiveBatchSize === 0) {
+          await new Promise(resolve => setTimeout(resolve, effectiveYieldMs));
+        }
+      }
+
+      if (changed) {
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.LIBRARY,
+          JSON.stringify(nextLibrary),
+        );
+      }
+
+      return {
+        totalSongs: library.length,
+        processedCount,
+        updatedCount,
+        extractedCount,
+        inlineConvertedCount,
+        skippedCount,
+        errorCount,
+      };
+    })().finally(() => {
+      this.artworkMigrationTask = null;
+    });
+
+    this.artworkMigrationTask = task;
+    return task;
   },
 };

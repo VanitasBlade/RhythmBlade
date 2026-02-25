@@ -10,6 +10,7 @@ class StorageService {
     this.musicDir = `${RNFS.DocumentDirectoryPath}/Music`;
     this.rhythmBladeDir = this.getPreferredMusicDir();
     this.artworkHydrationTasks = new Map();
+    this.artworkMigrationTask = null;
     this.initializeDirectories();
   }
 }

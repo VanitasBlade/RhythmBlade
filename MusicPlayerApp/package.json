@@ -4,8 +4,13 @@
   "private": true,
   "scripts": {
     "android": "react-native run-android",
+    "android:phone": "react-native run-android --no-packager --port 8081",
+    "reverse:metro": "adb reverse tcp:8081 tcp:8081",
+    "reverse:crawler": "adb reverse tcp:3001 tcp:3001",
+    "reverse:phone": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:3001 tcp:3001",
     "ios": "react-native run-ios",
     "start": "react-native start",
+    "start:phone": "react-native start --port 8081 --reset-cache",
     "test": "jest",
     "lint": "eslint .",
     "postinstall": "patch-package"

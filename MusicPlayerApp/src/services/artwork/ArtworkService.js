@@ -1,235 +1,89 @@
 import RNFS from 'react-native-fs';
-import {Buffer} from 'buffer';
+import {getFileExtension, normalizeFilePath} from './helpers/path.helpers';
+import {writeDataUriToArtworkCache} from './helpers/cache.helpers';
+import {extractFlacArtworkDataUri} from './parsers/flac.parser';
+import {extractMp3ArtworkDataUri} from './parsers/mp3.parser';
+import {extractMp4ArtworkDataUri} from './parsers/mp4.parser';
 
-const FLAC_SIGNATURE = 'fLaC';
-const FLAC_PICTURE_BLOCK_TYPE = 6;
-const FRONT_COVER_PICTURE_TYPE = 3;
-const METADATA_SCAN_STEPS = [
-  256 * 1024, // 256 KB
-  1024 * 1024, // 1 MB
-  4 * 1024 * 1024, // 4 MB
-];
 const NO_ARTWORK = Symbol('NO_ARTWORK');
 const artworkCache = new Map();
 const artworkInFlight = new Map();
 
-function safeDecodeUriComponent(value) {
-  const text = String(value || '');
-  if (!text) {
-    return '';
-  }
+const ARTWORK_EXTRACTORS_BY_EXTENSION = {
+  flac: extractFlacArtworkDataUri,
+  mp3: extractMp3ArtworkDataUri,
+  m4a: extractMp4ArtworkDataUri,
+  mp4: extractMp4ArtworkDataUri,
+  m4b: extractMp4ArtworkDataUri,
+  aac: extractMp4ArtworkDataUri,
+};
 
-  try {
-    return decodeURIComponent(text);
-  } catch (error) {
-    return text;
-  }
+const INLINE_ARTWORK_URI_PREFIX = 'data:image/';
+
+function resolveExtractor(filePath) {
+  const extension = getFileExtension(filePath);
+  return ARTWORK_EXTRACTORS_BY_EXTENSION[extension] || null;
 }
 
-function normalizePathToken(value) {
-  const cleaned = String(value || '')
-    .trim()
-    .split('?')[0]
-    .split('#')[0];
-  return safeDecodeUriComponent(cleaned);
+function isExtractablePath(filePath) {
+  return Boolean(filePath && resolveExtractor(filePath));
 }
 
-function normalizeFilePath(trackOrPath) {
-  if (!trackOrPath) {
-    return '';
-  }
-
-  if (typeof trackOrPath === 'string') {
-    const normalizedValue = normalizePathToken(trackOrPath);
-    if (normalizedValue.startsWith('file://')) {
-      return normalizePathToken(normalizedValue.slice(7));
-    }
-    if (normalizedValue.startsWith('content://')) {
-      return '';
-    }
-    return normalizedValue;
-  }
-
-  const localPath = normalizePathToken(trackOrPath.localPath || '');
-  if (localPath) {
-    if (localPath.startsWith('content://')) {
-      return '';
-    }
-    return localPath.startsWith('file://')
-      ? normalizePathToken(localPath.slice(7))
-      : localPath;
-  }
-
-  const url = normalizePathToken(trackOrPath.url || '');
-  if (url.startsWith('content://')) {
-    return '';
-  }
-  if (url.startsWith('file://')) {
-    return normalizePathToken(url.slice(7));
-  }
-
-  return '';
+function resolveCacheKey(trackOrPath) {
+  return normalizeFilePath(trackOrPath);
 }
 
-function isFlacPath(filePath) {
-  return /\.flac$/i.test(String(filePath || ''));
-}
-
-function readUint32(bytes, offset) {
-  return (
-    (bytes[offset] || 0) * 16777216 +
-    (bytes[offset + 1] || 0) * 65536 +
-    (bytes[offset + 2] || 0) * 256 +
-    (bytes[offset + 3] || 0)
-  );
-}
-
-function parseFlacPictureBlock(bufferBytes, blockStart, blockLength) {
-  const blockEnd = blockStart + blockLength;
-  if (blockEnd > bufferBytes.length) {
-    return null;
-  }
-
-  let cursor = blockStart;
-  if (cursor + 32 > blockEnd) {
-    return null;
-  }
-
-  const pictureType = readUint32(bufferBytes, cursor);
-  cursor += 4;
-
-  const mimeLength = readUint32(bufferBytes, cursor);
-  cursor += 4;
-  if (cursor + mimeLength > blockEnd) {
-    return null;
-  }
-  const mime = Buffer.from(
-    bufferBytes.slice(cursor, cursor + mimeLength),
-  ).toString('utf8');
-  cursor += mimeLength;
-
-  const descriptionLength = readUint32(bufferBytes, cursor);
-  cursor += 4 + descriptionLength;
-  if (cursor + 16 > blockEnd) {
-    return null;
-  }
-
-  // Skip width/height/depth/colors (4 uint32 values)
-  cursor += 16;
-
-  if (cursor + 4 > blockEnd) {
-    return null;
-  }
-  const imageDataLength = readUint32(bufferBytes, cursor);
-  cursor += 4;
-
-  if (cursor + imageDataLength > blockEnd) {
-    return null;
-  }
-
-  return {
-    pictureType,
-    mime: mime || 'image/jpeg',
-    dataOffset: cursor,
-    dataLength: imageDataLength,
-  };
-}
-
-function parseFlacMetadataForPicture(bufferBytes) {
-  if (bufferBytes.length < 8) {
-    return null;
-  }
-
-  const signature = Buffer.from(bufferBytes.slice(0, 4)).toString('ascii');
-  if (signature !== FLAC_SIGNATURE) {
-    return null;
-  }
-
-  let cursor = 4;
-  let fallback = null;
-
-  while (cursor + 4 <= bufferBytes.length) {
-    const headerByte = bufferBytes[cursor] || 0;
-    const isLastBlock = headerByte >= 128;
-    const blockType = headerByte % 128;
-    const blockLength =
-      (bufferBytes[cursor + 1] || 0) * 65536 +
-      (bufferBytes[cursor + 2] || 0) * 256 +
-      (bufferBytes[cursor + 3] || 0);
-
-    const blockStart = cursor + 4;
-    const blockEnd = blockStart + blockLength;
-    if (blockEnd > bufferBytes.length) {
-      break;
-    }
-
-    if (blockType === FLAC_PICTURE_BLOCK_TYPE) {
-      const parsedPicture = parseFlacPictureBlock(
-        bufferBytes,
-        blockStart,
-        blockLength,
-      );
-      if (parsedPicture) {
-        if (parsedPicture.pictureType === FRONT_COVER_PICTURE_TYPE) {
-          return parsedPicture;
-        }
-        if (!fallback) {
-          fallback = parsedPicture;
-        }
-      }
-    }
-
-    cursor = blockEnd;
-    if (isLastBlock) {
-      break;
-    }
-  }
-
-  return fallback;
-}
-
-function normalizeMimeType(mime) {
-  const normalized = String(mime || '')
-    .trim()
-    .toLowerCase();
+function normalizeArtworkUri(artworkUri) {
+  const normalized = String(artworkUri || '').trim();
   if (!normalized) {
-    return 'image/jpeg';
+    return '';
   }
-  if (normalized === 'image/jpg') {
-    return 'image/jpeg';
+
+  if (normalized.startsWith('/')) {
+    return `file://${normalized}`;
   }
+
   return normalized;
 }
 
-async function readFlacPictureMetadata(filePath) {
-  for (const scanBytes of METADATA_SCAN_STEPS) {
-    const headerBase64 = await RNFS.read(
-      filePath,
-      scanBytes,
-      0,
-      'base64',
-    ).catch(() => null);
-    if (!headerBase64) {
-      return null;
-    }
+function isInlineArtworkUri(uri) {
+  return String(uri || '')
+    .trim()
+    .toLowerCase()
+    .startsWith(INLINE_ARTWORK_URI_PREFIX);
+}
 
-    const headerBytes = Buffer.from(headerBase64, 'base64');
-    const picture = parseFlacMetadataForPicture(headerBytes);
-    if (picture?.dataLength) {
-      return picture;
-    }
-
-    if (headerBytes.length < scanBytes) {
-      break;
-    }
+async function optimizeArtworkUri(sourceKey, artworkUri) {
+  const normalizedUri = normalizeArtworkUri(artworkUri);
+  if (!normalizedUri) {
+    return null;
   }
 
-  return null;
+  if (!isInlineArtworkUri(normalizedUri)) {
+    return normalizedUri;
+  }
+
+  const cachedUri = await writeDataUriToArtworkCache(sourceKey, normalizedUri);
+  return cachedUri || normalizedUri;
+}
+
+export function canExtractEmbeddedArtwork(trackOrPath) {
+  const filePath = resolveCacheKey(trackOrPath);
+  return isExtractablePath(filePath);
+}
+
+export async function optimizeArtworkUriForTrack(trackOrPath, artworkUri) {
+  const sourceKey =
+    resolveCacheKey(trackOrPath) ||
+    String(trackOrPath?.id || trackOrPath?.url || artworkUri || '').trim();
+
+  return optimizeArtworkUri(sourceKey, artworkUri);
 }
 
 export async function extractEmbeddedArtworkDataUri(trackOrPath) {
-  const filePath = normalizeFilePath(trackOrPath);
-  if (!filePath || !isFlacPath(filePath)) {
+  const filePath = resolveCacheKey(trackOrPath);
+  const extractor = resolveExtractor(filePath);
+  if (!filePath || !extractor) {
     return null;
   }
 
@@ -250,29 +104,23 @@ export async function extractEmbeddedArtworkDataUri(trackOrPath) {
       return null;
     }
 
-    const picture = await readFlacPictureMetadata(filePath);
-    if (!picture || !picture.dataLength) {
+    const extractedArtwork = await extractor(filePath);
+    if (!extractedArtwork) {
       artworkCache.set(filePath, NO_ARTWORK);
       return null;
     }
 
-    const imageBase64 = await RNFS.read(
+    const optimizedArtwork = await optimizeArtworkUri(
       filePath,
-      picture.dataLength,
-      picture.dataOffset,
-      'base64',
-    ).catch(() => null);
-
-    if (!imageBase64) {
+      extractedArtwork,
+    );
+    if (!optimizedArtwork) {
       artworkCache.set(filePath, NO_ARTWORK);
       return null;
     }
 
-    const dataUri = `data:${normalizeMimeType(
-      picture.mime,
-    )};base64,${imageBase64}`;
-    artworkCache.set(filePath, dataUri);
-    return dataUri;
+    artworkCache.set(filePath, optimizedArtwork);
+    return optimizedArtwork;
   })()
     .catch(() => {
       artworkCache.set(filePath, NO_ARTWORK);

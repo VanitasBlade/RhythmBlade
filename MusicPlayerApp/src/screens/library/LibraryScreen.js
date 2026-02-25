@@ -42,6 +42,7 @@ const LibraryScreen = ({navigation, route}) => {
   const [favoriteIds, setFavoriteIds] = useState(new Set());
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [migratingArtwork, setMigratingArtwork] = useState(false);
 
   const [tab, setTab] = useState('tracks');
   const [sortBy, setSortBy] = useState('Name');
@@ -71,7 +72,7 @@ const LibraryScreen = ({navigation, route}) => {
       setSources(storedSources);
 
       storageService
-        .hydrateArtworkForLibrary(library, 6)
+        .hydrateArtworkForLibrary(library, 3)
         .then(updated => {
           if (updated?.length) {
             setSongs(updated);
@@ -309,11 +310,19 @@ const LibraryScreen = ({navigation, route}) => {
       setSources(result.fileSources);
 
       await loadLibrary();
+      const migration = result.artworkMigration || {};
+      const updatedCount = Number(migration.updatedCount) || 0;
+      const extractedCount = Number(migration.extractedCount) || 0;
+      const inlineConvertedCount = Number(migration.inlineConvertedCount) || 0;
       Alert.alert(
         'Folder Imported',
         `${result.fileCount} audio file${
           result.fileCount === 1 ? '' : 's'
-        } scanned from ${result.sourcePath}.`,
+        } scanned from ${
+          result.sourcePath
+        }.\n\nArtwork migration updated ${updatedCount} track${
+          updatedCount === 1 ? '' : 's'
+        } (${extractedCount} extracted, ${inlineConvertedCount} inline converted).`,
       );
     } catch (error) {
       if (!DocumentPicker.isCancel(error)) {
@@ -331,6 +340,42 @@ const LibraryScreen = ({navigation, route}) => {
       setSources(nextSources);
     } catch (error) {
       Alert.alert('Error', 'Could not update this source.');
+    }
+  };
+
+  const migrateArtworkNow = async () => {
+    if (migratingArtwork) {
+      return;
+    }
+
+    try {
+      setMigratingArtwork(true);
+      const summary = await storageService.migrateAllArtworkNow({
+        batchSize: 8,
+        yieldMs: 0,
+      });
+      await loadLibrary();
+
+      const updatedCount = Number(summary?.updatedCount) || 0;
+      const extractedCount = Number(summary?.extractedCount) || 0;
+      const inlineConvertedCount = Number(summary?.inlineConvertedCount) || 0;
+      const processedCount = Number(summary?.processedCount) || 0;
+
+      Alert.alert(
+        'Artwork Migration Complete',
+        `${updatedCount} track${
+          updatedCount === 1 ? '' : 's'
+        } updated (${extractedCount} extracted, ${inlineConvertedCount} inline converted).\nProcessed ${processedCount} candidate track${
+          processedCount === 1 ? '' : 's'
+        }.`,
+      );
+    } catch (error) {
+      Alert.alert(
+        'Migration Failed',
+        error.message || 'Could not migrate artwork right now.',
+      );
+    } finally {
+      setMigratingArtwork(false);
     }
   };
 
@@ -643,6 +688,21 @@ const LibraryScreen = ({navigation, route}) => {
               style={styles.addSourceBtn}
               onPress={addFileSource}>
               <Text style={styles.addSourceText}>+ Add file source</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.migrateArtworkBtn,
+                migratingArtwork && styles.disabled,
+              ]}
+              onPress={migrateArtworkNow}
+              disabled={migratingArtwork}>
+              <Icon name="cached" size={18} color={C.accentFg} />
+              <Text style={styles.migrateArtworkText}>
+                {migratingArtwork
+                  ? 'Migrating artwork...'
+                  : 'Migrate Artwork Now (One-Time)'}
+              </Text>
             </TouchableOpacity>
           </ScrollView>
         </View>

@@ -110,6 +110,16 @@ class ApiService {
     return [...new Set(urls.filter(Boolean))];
   }
 
+  getCrawlerUnavailableMessage() {
+    const tried = this.getFallbackBaseUrls().join(', ');
+    const androidPhoneHint =
+      Platform.OS === 'android'
+        ? ' On a physical Android device via USB, run: adb reverse tcp:3001 tcp:3001'
+        : '';
+
+    return `Cannot reach crawler server. Ensure backend is running on port 3001 (tried: ${tried}).${androidPhoneHint}`;
+  }
+
   async requestWithServerFallback(requestFn) {
     const candidates = this.getFallbackBaseUrls();
     let lastError = null;
@@ -157,11 +167,7 @@ class ApiService {
         throw new Error('Search timeout - check your server connection');
       }
       if (!error.response) {
-        throw new Error(
-          `Cannot reach crawler server. Ensure backend is running on port 3001 (tried: ${this.getFallbackBaseUrls().join(
-            ', ',
-          )})`,
-        );
+        throw new Error(this.getCrawlerUnavailableMessage());
       }
       throw new Error(error.response?.data?.error || error.message);
     }
@@ -201,11 +207,7 @@ class ApiService {
         throw new Error('Album tracks request timed out');
       }
       if (!error.response) {
-        throw new Error(
-          `Cannot reach crawler server. Ensure backend is running on port 3001 (tried: ${this.getFallbackBaseUrls().join(
-            ', ',
-          )})`,
-        );
+        throw new Error(this.getCrawlerUnavailableMessage());
       }
       throw new Error(error.response?.data?.error || error.message);
     }
