@@ -476,6 +476,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
   },
+  hiddenWebView: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
+    left: -9999,
+    top: -9999,
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(8, 5, 18, 0.45)',

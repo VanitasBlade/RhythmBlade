@@ -3,7 +3,9 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Keyboard,
   Modal,
+  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
@@ -11,13 +13,14 @@ import {
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import {WebView} from 'react-native-webview';
 
-import apiService from '../../services/api/ApiService';
 import storageService from '../../services/storage/StorageService';
 import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
 import QueueItemCard from './components/QueueItemCard';
 import SearchResultCard from './components/SearchResultCard';
 import styles from './search.styles';
+import useSquidWebViewDownloader from './useSquidWebViewDownloader';
 import {
   ACTIVE_QUEUE_STATUSES,
   DOWNLOAD_OPTIONS,
@@ -47,6 +50,16 @@ const SearchScreen = () => {
   const pollInFlightRef = useRef(false);
   const persistedJobsRef = useRef(new Set());
   const dismissedDoneJobsRef = useRef(new Set());
+  const {
+    webViewRef,
+    webViewProps,
+    searchSongs: searchSongsFromWebView,
+    getAlbumTracks: getAlbumTracksFromWebView,
+    startDownload: startDownloadFromWebView,
+    getDownloadJobs: getDownloadJobsFromWebView,
+    retryDownload: retryDownloadFromWebView,
+    cancelDownload: cancelDownloadFromWebView,
+  } = useSquidWebViewDownloader();
 
   const currentOption = useMemo(
     () =>
@@ -97,7 +110,7 @@ const SearchScreen = () => {
     }
     pollInFlightRef.current = true;
     try {
-      const jobs = await apiService.getDownloadJobs(100);
+      const jobs = await getDownloadJobsFromWebView(100);
       if (mountedRef.current) {
         jobs.forEach(job => {
           if (job.status !== 'done') {
@@ -117,7 +130,7 @@ const SearchScreen = () => {
     } finally {
       pollInFlightRef.current = false;
     }
-  }, []);
+  }, [getDownloadJobsFromWebView]);
 
   useFocusEffect(
     useCallback(() => {
@@ -157,7 +170,12 @@ const SearchScreen = () => {
       for (const job of completedJobs) {
         persistedJobsRef.current.add(job.id);
         try {
-          await storageService.saveRemoteSongToDevice(job.song);
+          const isAlreadyLocalFile =
+            job?.song?.isLocal &&
+            String(job?.song?.url || '').startsWith('file://');
+          if (!isAlreadyLocalFile) {
+            await storageService.saveRemoteSongToDevice(job.song);
+          }
         } catch (error) {
           persistedJobsRef.current.delete(job.id);
           // Do not block queue rendering for storage failures.
@@ -184,20 +202,53 @@ const SearchScreen = () => {
     setAlbumQueueingAll(false);
   }, []);
 
+  const getSearchResultKey = useCallback(
+    (item, index) => {
+      const type = String(item?.type || activeSearchType || 'track').toLowerCase();
+      const tidalId = String(item?.tidalId || '').trim();
+      const url = String(item?.url || '').trim();
+      const title = String(item?.title || 'unknown').trim();
+      const artist = String(item?.artist || '').trim();
+      const itemIndex = Number.isInteger(item?.index) ? item.index : index;
+      const identity = tidalId || url || `${title}|${artist}|${item?.duration || 0}`;
+      return `${type}-${identity}-${itemIndex}`;
+    },
+    [activeSearchType],
+  );
+
   const searchSongs = useCallback(async () => {
     if (!query.trim()) {
       return;
     }
 
     try {
+      Keyboard.dismiss();
       setLoading(true);
       setResults([]);
       closeAlbumView();
-      const songs = await apiService.searchSongs(
+      const songs = await searchSongsFromWebView(
         query.trim(),
         activeSearchType.toLowerCase(),
       );
       setResults(songs);
+      console.log('[SquidWV UI] FlatList render diagnostics.', {
+        requestedCount: songs.length,
+        sampleKeys: songs.slice(0, 10).map((item, index) =>
+          getSearchResultKey(item, index),
+        ),
+      });
+      console.log('[SquidWV UI] Search state updated.', {
+        query: query.trim(),
+        searchType: activeSearchType.toLowerCase(),
+        count: songs.length,
+        firstFive: songs.slice(0, 5).map(item => ({
+          title: item?.title,
+          artist: item?.artist,
+          index: item?.index,
+          tidalId: item?.tidalId || null,
+          url: item?.url || null,
+        })),
+      });
 
       if (songs.length === 0) {
         Alert.alert(
@@ -213,7 +264,13 @@ const SearchScreen = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeSearchType, closeAlbumView, query]);
+  }, [
+    activeSearchType,
+    closeAlbumView,
+    getSearchResultKey,
+    query,
+    searchSongsFromWebView,
+  ]);
 
   const queueDownload = useCallback(
     async (item, index, options = {}) => {
@@ -242,7 +299,7 @@ const SearchScreen = () => {
 
       try {
         setQueuingKeys(prev => ({...prev, [key]: true}));
-        const job = await apiService.startDownload(
+        const job = await startDownloadFromWebView(
           item,
           resolvedIndex,
           downloadSetting,
@@ -275,7 +332,7 @@ const SearchScreen = () => {
         }
       }
     },
-    [downloadSetting, queueByTrackKey],
+    [downloadSetting, queueByTrackKey, startDownloadFromWebView],
   );
 
   const openAlbum = useCallback(async album => {
@@ -290,7 +347,7 @@ const SearchScreen = () => {
     setAlbumQueueingAll(false);
 
     try {
-      const tracks = await apiService.getAlbumTracks(album);
+      const tracks = await getAlbumTracksFromWebView(album);
       if (!mountedRef.current) {
         return;
       }
@@ -312,7 +369,7 @@ const SearchScreen = () => {
         setAlbumTracksLoading(false);
       }
     }
-  }, []);
+  }, [getAlbumTracksFromWebView]);
 
   const queueAlbumTracksAll = useCallback(async () => {
     if (!activeAlbum || albumQueueingAll || albumTracks.length === 0) {
@@ -380,7 +437,7 @@ const SearchScreen = () => {
           duration: job.duration || 0,
           downloadable: true,
         };
-        const retriedJob = await apiService.retryDownload(
+        const retriedJob = await retryDownloadFromWebView(
           job.id,
           fallbackSong,
           job.downloadSetting || downloadSetting,
@@ -409,7 +466,7 @@ const SearchScreen = () => {
         }
       }
     },
-    [downloadSetting, retryingJobs],
+    [downloadSetting, retryDownloadFromWebView, retryingJobs],
   );
 
   const cancelQueueItem = useCallback(
@@ -420,7 +477,7 @@ const SearchScreen = () => {
 
       try {
         setCancelingJobs(prev => ({...prev, [job.id]: true}));
-        await apiService.cancelDownload(job.id);
+        await cancelDownloadFromWebView(job.id);
         if (mountedRef.current) {
           setQueue(prev => prev.filter(existing => existing.id !== job.id));
         }
@@ -439,7 +496,7 @@ const SearchScreen = () => {
         }
       }
     },
-    [cancelingJobs],
+    [cancelDownloadFromWebView, cancelingJobs],
   );
 
   const dismissDoneQueueItem = useCallback(jobId => {
@@ -734,28 +791,36 @@ const SearchScreen = () => {
           </View>
 
           {activeAlbum ? (
-            <FlatList
+            <ScrollView
               style={styles.searchResultsList}
-              data={albumTracks}
-              renderItem={renderAlbumTrack}
-              keyExtractor={(item, index) =>
-                `${item.type || 'track'}-${item.title}-${item.artist}-${index}`
-              }
               contentContainerStyle={styles.searchListContent}
-              ListHeaderComponent={renderAlbumTracksHeader}
-              ListEmptyComponent={renderAlbumTracksEmpty}
-            />
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}>
+              {renderAlbumTracksHeader()}
+              {albumTracks.length > 0
+                ? albumTracks.map((item, index) => (
+                    <View key={getSearchResultKey(item, index)}>
+                      {renderAlbumTrack({item, index})}
+                    </View>
+                  ))
+                : renderAlbumTracksEmpty()}
+            </ScrollView>
           ) : (
-            <FlatList
+            <ScrollView
               style={styles.searchResultsList}
-              data={results}
-              renderItem={renderSearchResult}
-              keyExtractor={(item, index) =>
-                `${item.type || activeSearchType}-${item.title}-${index}`
-              }
               contentContainerStyle={styles.searchListContent}
-              ListEmptyComponent={renderSearchEmpty}
-            />
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}>
+              {results.length > 0
+                ? results.map((item, index) => (
+                    <View key={getSearchResultKey(item, index)}>
+                      {renderSearchResult({item, index})}
+                    </View>
+                  ))
+                : renderSearchEmpty()}
+            </ScrollView>
           )}
         </View>
       ) : (
@@ -807,6 +872,12 @@ const SearchScreen = () => {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <WebView
+        ref={webViewRef}
+        {...webViewProps}
+        style={styles.hiddenWebView}
+      />
     </View>
   );
 };
