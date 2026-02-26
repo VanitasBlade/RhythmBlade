@@ -23,6 +23,27 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.3,
   },
+  topBarRightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  bridgeToggleButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 7,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  bridgeToggleButtonActive: {
+    borderColor: C.accent,
+    backgroundColor: '#1e1445',
+  },
+  bridgeToggleButtonInactive: {
+    borderColor: C.borderDim,
+    backgroundColor: C.bgCard,
+  },
   settingsButton: {
     flexDirection: 'row',
     alignItems: 'center',

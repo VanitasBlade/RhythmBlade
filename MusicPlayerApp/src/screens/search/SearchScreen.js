@@ -22,8 +22,11 @@ import styles from './search.styles';
 import useSquidWebViewDownloader from './useSquidWebViewDownloader';
 import {
   ACTIVE_QUEUE_STATUSES,
+  DEFAULT_DOWNLOAD_SETTING,
   DOWNLOAD_OPTIONS,
   DOWNLOADER_TABS,
+  getDownloadSettingShortLabel,
+  normalizeDownloadSetting,
   SEARCH_TYPES,
 } from './search.constants';
 import {toTrackKey} from './search.utils';
@@ -39,13 +42,17 @@ const SearchScreen = () => {
   const [retryingJobs, setRetryingJobs] = useState({});
   const [cancelingJobs, setCancelingJobs] = useState({});
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [downloadSetting, setDownloadSetting] = useState('Hi-Res');
+  const [downloadSetting, setDownloadSetting] = useState(
+    DEFAULT_DOWNLOAD_SETTING,
+  );
+  const [bridgeEnabled, setBridgeEnabled] = useState(true);
   const [activeAlbum, setActiveAlbum] = useState(null);
   const [albumTracks, setAlbumTracks] = useState([]);
   const [albumTracksLoading, setAlbumTracksLoading] = useState(false);
   const [albumQueueingAll, setAlbumQueueingAll] = useState(false);
 
   const mountedRef = useRef(true);
+  const downloadSettingRef = useRef(DEFAULT_DOWNLOAD_SETTING);
   const pollInFlightRef = useRef(false);
   const persistedJobsRef = useRef(new Set());
   const dismissedDoneJobsRef = useRef(new Set());
@@ -60,12 +67,17 @@ const SearchScreen = () => {
     cancelDownload: cancelDownloadFromWebView,
   } = useSquidWebViewDownloader();
 
-  const currentOption = useMemo(
-    () =>
-      DOWNLOAD_OPTIONS.find(option => option.label === downloadSetting) ||
-      DOWNLOAD_OPTIONS[0],
+  const currentOptionShortLabel = useMemo(
+    () => getDownloadSettingShortLabel(downloadSetting),
     [downloadSetting],
   );
+
+  const applyDownloadSetting = useCallback(nextSetting => {
+    const normalized = normalizeDownloadSetting(nextSetting);
+    downloadSettingRef.current = normalized;
+    setDownloadSetting(normalized);
+    return normalized;
+  }, []);
 
   const activeQueueCount = useMemo(
     () =>
@@ -138,8 +150,10 @@ const SearchScreen = () => {
 
       const loadFocusedData = async () => {
         const settings = await storageService.getSettings();
-        if (active && settings?.downloadSetting) {
-          setDownloadSetting(settings.downloadSetting);
+        if (active) {
+          applyDownloadSetting(
+            settings?.downloadSetting || DEFAULT_DOWNLOAD_SETTING,
+          );
         }
         await refreshQueue();
       };
@@ -154,7 +168,7 @@ const SearchScreen = () => {
         mountedRef.current = false;
         clearInterval(timer);
       };
-    }, [refreshQueue]),
+    }, [applyDownloadSetting, refreshQueue]),
   );
 
   useEffect(() => {
@@ -186,13 +200,38 @@ const SearchScreen = () => {
   }, [queue]);
 
   const persistDownloadSetting = useCallback(async nextSetting => {
-    setDownloadSetting(nextSetting);
+    const normalized = applyDownloadSetting(nextSetting);
     const settings = await storageService.getSettings();
     await storageService.saveSettings({
       ...settings,
-      downloadSetting: nextSetting,
+      downloadSetting: normalized,
     });
-  }, []);
+  }, [applyDownloadSetting]);
+
+  const toggleBridgeEnabled = useCallback(() => {
+    if (!bridgeEnabled) {
+      setBridgeEnabled(true);
+      return;
+    }
+
+    if (activeQueueCount > 0) {
+      Alert.alert(
+        'Bridge Busy',
+        'Wait for active downloads to finish before turning the bridge off.',
+      );
+      return;
+    }
+
+    if (loading || albumTracksLoading) {
+      Alert.alert(
+        'Bridge Busy',
+        'Wait for the current search task to finish before turning the bridge off.',
+      );
+      return;
+    }
+
+    setBridgeEnabled(false);
+  }, [activeQueueCount, albumTracksLoading, bridgeEnabled, loading]);
 
   const closeAlbumView = useCallback(() => {
     setActiveAlbum(null);
@@ -216,6 +255,14 @@ const SearchScreen = () => {
   );
 
   const searchSongs = useCallback(async () => {
+    if (!bridgeEnabled) {
+      Alert.alert(
+        'Bridge Disabled',
+        'Enable the bridge button in the top bar to search from Squid.',
+      );
+      return;
+    }
+
     if (!query.trim()) {
       return;
     }
@@ -266,6 +313,7 @@ const SearchScreen = () => {
   }, [
     activeSearchType,
     closeAlbumView,
+    bridgeEnabled,
     getSearchResultKey,
     query,
     searchSongsFromWebView,
@@ -279,6 +327,16 @@ const SearchScreen = () => {
 
       if (!item.downloadable) {
         return {status: 'not-downloadable'};
+      }
+
+      if (!bridgeEnabled) {
+        if (!suppressAlert) {
+          Alert.alert(
+            'Bridge Disabled',
+            'Enable the bridge button in the top bar to start downloads.',
+          );
+        }
+        return {status: 'bridge-disabled'};
       }
 
       const resolvedIndex = Number.isInteger(item?.index)
@@ -298,10 +356,13 @@ const SearchScreen = () => {
 
       try {
         setQueuingKeys(prev => ({...prev, [key]: true}));
+        const selectedSetting = normalizeDownloadSetting(
+          downloadSettingRef.current,
+        );
         const job = await startDownloadFromWebView(
           item,
           resolvedIndex,
-          downloadSetting,
+          selectedSetting,
         );
         if (mountedRef.current) {
           setQueue(prev => {
@@ -331,10 +392,18 @@ const SearchScreen = () => {
         }
       }
     },
-    [downloadSetting, queueByTrackKey, startDownloadFromWebView],
+    [bridgeEnabled, queueByTrackKey, startDownloadFromWebView],
   );
 
   const openAlbum = useCallback(async album => {
+    if (!bridgeEnabled) {
+      Alert.alert(
+        'Bridge Disabled',
+        'Enable the bridge button in the top bar to load album tracks.',
+      );
+      return;
+    }
+
     if (!album?.url) {
       Alert.alert('Album Error', 'Album details are unavailable for this item.');
       return;
@@ -368,7 +437,7 @@ const SearchScreen = () => {
         setAlbumTracksLoading(false);
       }
     }
-  }, [getAlbumTracksFromWebView]);
+  }, [bridgeEnabled, getAlbumTracksFromWebView]);
 
   const queueAlbumTracksAll = useCallback(async () => {
     if (!activeAlbum || albumQueueingAll || albumTracks.length === 0) {
@@ -426,6 +495,14 @@ const SearchScreen = () => {
         return;
       }
 
+      if (!bridgeEnabled) {
+        Alert.alert(
+          'Bridge Disabled',
+          'Enable the bridge button in the top bar to retry downloads.',
+        );
+        return;
+      }
+
       try {
         setRetryingJobs(prev => ({...prev, [job.id]: true}));
         const fallbackSong = {
@@ -439,7 +516,9 @@ const SearchScreen = () => {
         const retriedJob = await retryDownloadFromWebView(
           job.id,
           fallbackSong,
-          job.downloadSetting || downloadSetting,
+          normalizeDownloadSetting(
+            job.downloadSetting || downloadSettingRef.current,
+          ),
         );
         if (mountedRef.current && retriedJob) {
           setQueue(prev => {
@@ -465,7 +544,7 @@ const SearchScreen = () => {
         }
       }
     },
-    [downloadSetting, retryDownloadFromWebView, retryingJobs],
+    [bridgeEnabled, retryDownloadFromWebView, retryingJobs],
   );
 
   const cancelQueueItem = useCallback(
@@ -702,13 +781,30 @@ const SearchScreen = () => {
     <View style={styles.container}>
       <View style={styles.topBar}>
         <Text style={styles.brand}>Downloader</Text>
-        <TouchableOpacity
-          style={styles.settingsButton}
-          onPress={() => setSettingsOpen(true)}>
-          <Icon name="music-note-eighth" size={14} color={C.textDim} />
-          <Text style={styles.settingsValue}>{currentOption.label}</Text>
-          <Icon name="chevron-down" size={15} color={C.textMute} />
-        </TouchableOpacity>
+        <View style={styles.topBarRightGroup}>
+          <TouchableOpacity
+            style={[
+              styles.bridgeToggleButton,
+              bridgeEnabled
+                ? styles.bridgeToggleButtonActive
+                : styles.bridgeToggleButtonInactive,
+            ]}
+            onPress={toggleBridgeEnabled}
+            activeOpacity={0.85}>
+            <Icon
+              name="lan"
+              size={15}
+              color={bridgeEnabled ? C.accentFg : C.textMute}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.settingsButton}
+            onPress={() => setSettingsOpen(true)}>
+            <Icon name="music-note-eighth" size={14} color={C.textDim} />
+            <Text style={styles.settingsValue}>{currentOptionShortLabel}</Text>
+            <Icon name="chevron-down" size={15} color={C.textMute} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.downloaderTabsRow}>
@@ -872,19 +968,21 @@ const SearchScreen = () => {
         </TouchableOpacity>
       </Modal>
 
-      <View
-        style={styles.hiddenWebViewHost}
-        pointerEvents="none"
-        accessible={false}
-        importantForAccessibility="no-hide-descendants">
-        <WebView
-          ref={webViewRef}
-          {...webViewProps}
+      {bridgeEnabled ? (
+        <View
+          style={styles.hiddenWebViewHost}
           pointerEvents="none"
-          importantForAccessibility="no-hide-descendants"
-          style={styles.hiddenWebView}
-        />
-      </View>
+          accessible={false}
+          importantForAccessibility="no-hide-descendants">
+          <WebView
+            ref={webViewRef}
+            {...webViewProps}
+            pointerEvents="none"
+            importantForAccessibility="no-hide-descendants"
+            style={styles.hiddenWebView}
+          />
+        </View>
+      ) : null}
     </View>
   );
 };

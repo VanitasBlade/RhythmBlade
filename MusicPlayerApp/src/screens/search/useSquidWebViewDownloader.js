@@ -10,11 +10,14 @@ import {
   sanitizeFileSegment,
   toFileUriFromPath,
 } from '../../services/storage/storage.helpers';
+import {
+  DEFAULT_DOWNLOAD_SETTING,
+  normalizeDownloadSetting,
+} from './search.constants';
 import SQUID_BRIDGE_SCRIPT from './webview/squidBridgeScript';
 
 const SQUID_WEB_URL = 'https://tidal.squid.wtf/';
 const MAX_STORED_JOBS = 120;
-const DEFAULT_DOWNLOAD_SETTING = 'Hi-Res';
 const ACTIVE_STATUSES = new Set(['queued', 'preparing', 'downloading']);
 const CANCELLED_ERROR = '__RB_DOWNLOAD_CANCELLED__';
 const BRIDGE_BOOTSTRAP_TIMEOUT_MS = 25000;
@@ -575,6 +578,7 @@ function useSquidWebViewDownloader() {
 
   const queueDownloadJob = useCallback((song, index, downloadSetting) => {
     const requestSong = normalizeSong(song);
+    const resolvedDownloadSetting = normalizeDownloadSetting(downloadSetting);
     const createdAt = now();
     const id = `${createdAt}_${Math.random().toString(36).slice(2, 8)}`;
     const requestIndex = Number.isInteger(index)
@@ -594,7 +598,7 @@ function useSquidWebViewDownloader() {
       album: requestSong.album,
       artwork: requestSong.artwork,
       duration: requestSong.duration,
-      downloadSetting: downloadSetting || DEFAULT_DOWNLOAD_SETTING,
+      downloadSetting: resolvedDownloadSetting,
       downloadedBytes: 0,
       totalBytes: null,
       error: null,
@@ -602,7 +606,7 @@ function useSquidWebViewDownloader() {
       request: {
         index: requestIndex,
         song: requestSong,
-        downloadSetting: downloadSetting || DEFAULT_DOWNLOAD_SETTING,
+        downloadSetting: resolvedDownloadSetting,
       },
       createdAt,
       updatedAt: createdAt,
@@ -665,7 +669,9 @@ function useSquidWebViewDownloader() {
             'download',
             {
               song: requestSong,
-              downloadSetting: job.downloadSetting || DEFAULT_DOWNLOAD_SETTING,
+              downloadSetting: normalizeDownloadSetting(
+                job.downloadSetting || DEFAULT_DOWNLOAD_SETTING,
+              ),
               attempt,
             },
             130000,
@@ -1104,6 +1110,9 @@ function useSquidWebViewDownloader() {
           duration: job.duration,
         },
       );
+      const resolvedRetrySetting = normalizeDownloadSetting(
+        downloadSetting || job.downloadSetting,
+      );
 
       cancelledJobsRef.current.delete(jobId);
       patchJob(jobId, {
@@ -1117,9 +1126,9 @@ function useSquidWebViewDownloader() {
         request: {
           index: job.requestIndex,
           song: requestSong,
-          downloadSetting: downloadSetting || job.downloadSetting,
+          downloadSetting: resolvedRetrySetting,
         },
-        downloadSetting: downloadSetting || job.downloadSetting,
+        downloadSetting: resolvedRetrySetting,
       });
 
       log('Retry queued for job.', {jobId});

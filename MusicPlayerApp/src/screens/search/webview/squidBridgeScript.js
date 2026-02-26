@@ -1237,13 +1237,29 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
       return target;
     }
 
-    var current = lower(
-      settings.getAttribute("aria-label") ||
-      settings.textContent
-    ).replace(/[^a-z0-9]+/g, "");
-    if (current && current.indexOf(wanted) >= 0) {
+    function readCurrentSetting() {
+      var compact = lower(
+        (settings && settings.getAttribute("aria-label")) ||
+        (settings && settings.textContent) ||
+        ""
+      ).replace(/[^a-z0-9]+/g, "");
+      if (!compact) return "";
+      if (compact.indexOf("320") >= 0 && compact.indexOf("aac") >= 0) return "320kbps AAC";
+      if (compact.indexOf("96") >= 0 && compact.indexOf("aac") >= 0) return "96kbps AAC";
+      if (compact.indexOf("cd") >= 0 && compact.indexOf("lossless") >= 0) return "CD Lossless";
+      if (compact.indexOf("hires") >= 0 || (compact.indexOf("hi") >= 0 && compact.indexOf("res") >= 0)) {
+        return "Hi-Res";
+      }
+      return "";
+    }
+
+    var current = readCurrentSetting();
+    if (
+      (current && current === target) ||
+      (current && lower(current).replace(/[^a-z0-9]+/g, "").indexOf(wanted) >= 0)
+    ) {
       blog("Download setting already applied", {target: target});
-      return target;
+      return current || target;
     }
 
     settings.click();
@@ -1269,33 +1285,70 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     if (/hires/i.test(wanted)) labels.push("Hi Res", "Hi-Res");
     if (/cdlossless/i.test(wanted)) labels.push("CD Lossless", "Lossless");
 
-    var nodes = Array.prototype.slice.call(panel.querySelectorAll("button,div,span"));
+    var nodes = Array.prototype.slice.call(
+      panel.querySelectorAll(
+        'button,[role="menuitemradio"],[role="option"],[role="button"],[aria-checked],div,span'
+      )
+    );
+    var globalNodes = Array.prototype.slice.call(
+      document.querySelectorAll(
+        'button,[role="menuitemradio"],[role="option"],[role="button"],[aria-checked]'
+      )
+    );
+    for (var gi = 0; gi < globalNodes.length; gi += 1) {
+      if (nodes.indexOf(globalNodes[gi]) < 0) {
+        nodes.push(globalNodes[gi]);
+      }
+    }
+
     for (var li = 0; li < labels.length; li += 1) {
       var lookFor = lower(labels[li]);
       for (var ni = 0; ni < nodes.length; ni += 1) {
         if (!visible(nodes[ni])) continue;
-        var text = lower(nodes[ni].textContent);
+        var text = lower(
+          ((nodes[ni] && nodes[ni].textContent) || "") +
+          " " +
+          ((nodes[ni] && nodes[ni].getAttribute && nodes[ni].getAttribute("aria-label")) || "")
+        );
         if (!text) continue;
+        if (text.indexOf("settings menu") >= 0) continue;
+        if (text.indexOf("streaming & downloads") >= 0) continue;
+        if (!/(aac|kbps|lossless|hires|hi-res|hi res|flac)/i.test(text)) continue;
         if (text === lookFor || text.indexOf(lookFor) >= 0) {
-          nodes[ni].click();
+          var clickable =
+            nodes[ni].closest(
+              '[role="menuitemradio"],[role="option"],button,[role="button"],[aria-checked]'
+            ) || nodes[ni];
+          if (!visible(clickable) || clickable === settings) continue;
+          clickable.click();
           await sleep(260);
+          var afterSetting = readCurrentSetting();
           var after = lower(
-            settings.getAttribute("aria-label") ||
-            settings.textContent
+            (settings && settings.getAttribute("aria-label")) ||
+            (settings && settings.textContent) ||
+            ""
           ).replace(/[^a-z0-9]+/g, "");
-          var applied = after.indexOf(wanted) >= 0;
+          var applied = afterSetting === target;
           blog("Apply setting click result", {
             target: target,
             matchedLabel: labels[li],
+            matchedText: norm(text).slice(0, 120),
             applied: applied,
             current: after,
+            currentSetting: afterSetting || null,
           });
-          return applied ? target : labels[li];
+          if (applied) {
+            return target;
+          }
         }
       }
     }
-    blog("Setting option not found in panel", {target: target});
-    return target;
+    var finalSetting = readCurrentSetting();
+    blog("Setting option not found in panel", {
+      target: target,
+      currentSetting: finalSetting || null,
+    });
+    return finalSetting || target;
   }
 
   function score(song, cand) {
