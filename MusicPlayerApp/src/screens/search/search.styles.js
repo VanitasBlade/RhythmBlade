@@ -27,38 +27,46 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  bridgeToggleButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 7,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  bridgeToggleButtonActive: {
-    borderColor: C.accent,
-    backgroundColor: '#1e1445',
-  },
-  bridgeToggleButtonInactive: {
-    borderColor: C.borderDim,
-    backgroundColor: C.bgCard,
-  },
-  settingsButton: {
+  topBarSegmentedControl: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'stretch',
+    height: 34,
     borderWidth: 1,
     borderColor: C.border,
     borderRadius: 7,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    overflow: 'hidden',
+    backgroundColor: '#1e1445',
+  },
+  bridgeToggleSegment: {
+    width: 34,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bridgeToggleSegmentActive: {
+    backgroundColor: '#1e1445',
+  },
+  bridgeToggleSegmentInactive: {
+    backgroundColor: C.bgCard,
+  },
+  topBarSegmentDivider: {
+    width: 1,
+    backgroundColor: C.border,
+  },
+  qualitySelectorSegment: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
+    paddingHorizontal: 8,
+    paddingVertical: 0,
+    gap: 4,
     backgroundColor: '#1e1445',
   },
   settingsValue: {
     color: C.accentFg,
     fontWeight: '600',
     fontSize: 13,
-    marginHorizontal: 6,
   },
   downloaderTabsRow: {
     flexDirection: 'row',

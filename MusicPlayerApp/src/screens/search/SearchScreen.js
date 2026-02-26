@@ -782,28 +782,31 @@ const SearchScreen = () => {
       <View style={styles.topBar}>
         <Text style={styles.brand}>Downloader</Text>
         <View style={styles.topBarRightGroup}>
-          <TouchableOpacity
-            style={[
-              styles.bridgeToggleButton,
-              bridgeEnabled
-                ? styles.bridgeToggleButtonActive
-                : styles.bridgeToggleButtonInactive,
-            ]}
-            onPress={toggleBridgeEnabled}
-            activeOpacity={0.85}>
-            <Icon
-              name="lan"
-              size={15}
-              color={bridgeEnabled ? C.accentFg : C.textMute}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.settingsButton}
-            onPress={() => setSettingsOpen(true)}>
-            <Icon name="music-note-eighth" size={14} color={C.textDim} />
-            <Text style={styles.settingsValue}>{currentOptionShortLabel}</Text>
-            <Icon name="chevron-down" size={15} color={C.textMute} />
-          </TouchableOpacity>
+          <View style={styles.topBarSegmentedControl}>
+            <TouchableOpacity
+              style={[
+                styles.bridgeToggleSegment,
+                bridgeEnabled
+                  ? styles.bridgeToggleSegmentActive
+                  : styles.bridgeToggleSegmentInactive,
+              ]}
+              onPress={toggleBridgeEnabled}
+              activeOpacity={0.85}>
+              <Icon
+                name="lan"
+                size={15}
+                color={bridgeEnabled ? C.accentFg : C.textMute}
+              />
+            </TouchableOpacity>
+            <View style={styles.topBarSegmentDivider} />
+            <TouchableOpacity
+              style={styles.qualitySelectorSegment}
+              onPress={() => setSettingsOpen(true)}>
+              <Icon name="music-note-eighth" size={14} color={C.textDim} />
+              <Text style={styles.settingsValue}>{currentOptionShortLabel}</Text>
+              <Icon name="chevron-down" size={15} color={C.textMute} />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
