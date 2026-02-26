@@ -71,6 +71,21 @@ const SearchScreen = () => {
     () => getDownloadSettingShortLabel(downloadSetting),
     [downloadSetting],
   );
+  const qualityOutlineColor = useMemo(() => {
+    if (downloadSetting === 'Hi-Res') {
+      return '#eab308';
+    }
+    if (downloadSetting === 'CD Lossless') {
+      return '#6366f1';
+    }
+    if (downloadSetting === '320kbps AAC') {
+      return '#06b6d4';
+    }
+    if (downloadSetting === '96kbps AAC') {
+      return '#ec4899';
+    }
+    return C.border;
+  }, [downloadSetting]);
 
   const applyDownloadSetting = useCallback(nextSetting => {
     const normalized = normalizeDownloadSetting(nextSetting);
@@ -800,7 +815,10 @@ const SearchScreen = () => {
             </TouchableOpacity>
             <View style={styles.topBarSegmentDivider} />
             <TouchableOpacity
-              style={styles.qualitySelectorSegment}
+              style={[
+                styles.qualitySelectorSegment,
+                {borderColor: qualityOutlineColor},
+              ]}
               onPress={() => setSettingsOpen(true)}>
               <Icon name="music-note-eighth" size={14} color={C.textDim} />
               <Text style={styles.settingsValue}>{currentOptionShortLabel}</Text>
