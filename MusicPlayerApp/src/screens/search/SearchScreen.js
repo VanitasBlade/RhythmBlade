@@ -5,7 +5,6 @@ import {
   FlatList,
   Keyboard,
   Modal,
-  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
@@ -683,6 +682,22 @@ const SearchScreen = () => {
     [],
   );
 
+  const searchListData = activeAlbum ? albumTracks : results;
+  const searchListKey = useMemo(
+    () =>
+      activeAlbum
+        ? `album-${String(activeAlbum?.url || activeAlbum?.title || 'current')}`
+        : `search-${activeSearchType.toLowerCase()}-${query.trim().toLowerCase()}`,
+    [activeAlbum, activeSearchType, query],
+  );
+  const searchListContentStyle = useMemo(
+    () => [
+      styles.searchListContent,
+      searchListData.length === 0 && styles.searchListContentEmpty,
+    ],
+    [searchListData.length],
+  );
+
   return (
     <View style={styles.container}>
       <View style={styles.topBar}>
@@ -790,38 +805,23 @@ const SearchScreen = () => {
             <View style={styles.searchControlsDivider} />
           </View>
 
-          {activeAlbum ? (
-            <ScrollView
-              style={styles.searchResultsList}
-              contentContainerStyle={styles.searchListContent}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
-              showsVerticalScrollIndicator={false}>
-              {renderAlbumTracksHeader()}
-              {albumTracks.length > 0
-                ? albumTracks.map((item, index) => (
-                    <View key={getSearchResultKey(item, index)}>
-                      {renderAlbumTrack({item, index})}
-                    </View>
-                  ))
-                : renderAlbumTracksEmpty()}
-            </ScrollView>
-          ) : (
-            <ScrollView
-              style={styles.searchResultsList}
-              contentContainerStyle={styles.searchListContent}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
-              showsVerticalScrollIndicator={false}>
-              {results.length > 0
-                ? results.map((item, index) => (
-                    <View key={getSearchResultKey(item, index)}>
-                      {renderSearchResult({item, index})}
-                    </View>
-                  ))
-                : renderSearchEmpty()}
-            </ScrollView>
-          )}
+          <FlatList
+            key={searchListKey}
+            style={styles.searchResultsList}
+            data={searchListData}
+            renderItem={activeAlbum ? renderAlbumTrack : renderSearchResult}
+            keyExtractor={getSearchResultKey}
+            contentContainerStyle={searchListContentStyle}
+            ListHeaderComponent={activeAlbum ? renderAlbumTracksHeader : null}
+            ListEmptyComponent={
+              activeAlbum ? renderAlbumTracksEmpty : renderSearchEmpty
+            }
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+            nestedScrollEnabled
+            removeClippedSubviews={false}
+          />
         </View>
       ) : (
         <FlatList

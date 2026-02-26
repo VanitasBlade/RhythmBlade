@@ -5,6 +5,10 @@ import {
   canExtractEmbeddedDuration,
   extractEmbeddedDurationSeconds,
 } from '../../metadata/DurationService';
+import {
+  canExtractEmbeddedTextMetadata,
+  extractEmbeddedTextMetadata,
+} from '../../metadata/TextMetadataService';
 import {DEFAULT_AUDIO_EXTENSION, STORAGE_KEYS} from '../storage.constants';
 import {
   getExtensionFromSong,
@@ -17,7 +21,29 @@ import {
 } from '../storage.helpers';
 
 const MAX_ARTWORK_MIGRATIONS_PER_READ = 2;
+const MAX_TEXT_METADATA_MIGRATIONS_PER_READ = 4;
 const DEFAULT_DURATION_MIGRATION_BATCH_SIZE = 10;
+
+function resolveMetadataField(candidate, fallback) {
+  const text = String(candidate || '').trim();
+  if (!text || isUnknownValue(text)) {
+    return String(fallback || '').trim();
+  }
+  return text;
+}
+
+function isLikelyNoisyMetadata(value) {
+  const text = String(value || '').trim();
+  if (!text) {
+    return false;
+  }
+
+  return (
+    text.includes('•') ||
+    /(?:hi-res|cd|aac|flac|khz|bit\/)/i.test(text) ||
+    text.split(/\s+/).length > 16
+  );
+}
 
 export const libraryMethods = {
   async getLocalLibrary() {
@@ -26,6 +52,7 @@ export const libraryMethods = {
       const parsedLibrary = library ? JSON.parse(library) : [];
       let changed = false;
       let artworkMigrations = 0;
+      let textMetadataMigrations = 0;
 
       const normalizedLibrary = [];
       for (const song of parsedLibrary) {
@@ -51,6 +78,47 @@ export const libraryMethods = {
             artist: nextArtist,
             title: nextTitle,
           };
+        }
+
+        const shouldAttemptTextMetadata =
+          textMetadataMigrations < MAX_TEXT_METADATA_MIGRATIONS_PER_READ &&
+          canExtractEmbeddedTextMetadata(nextSong) &&
+          (isUnknownValue(nextSong?.title) ||
+            isUnknownValue(nextSong?.artist) ||
+            isUnknownValue(nextSong?.album) ||
+            isLikelyNoisyMetadata(nextSong?.title) ||
+            isLikelyNoisyMetadata(nextSong?.artist) ||
+            isLikelyNoisyMetadata(nextSong?.album));
+
+        if (shouldAttemptTextMetadata) {
+          const embeddedTextMetadata = await extractEmbeddedTextMetadata(nextSong);
+          const embeddedTitle = resolveMetadataField(
+            embeddedTextMetadata?.title,
+            nextSong?.title,
+          );
+          const embeddedArtist = resolveMetadataField(
+            embeddedTextMetadata?.artist,
+            nextSong?.artist,
+          );
+          const embeddedAlbum = resolveMetadataField(
+            embeddedTextMetadata?.album,
+            nextSong?.album,
+          );
+
+          if (
+            embeddedTitle !== nextSong?.title ||
+            embeddedArtist !== nextSong?.artist ||
+            embeddedAlbum !== nextSong?.album
+          ) {
+            textMetadataMigrations += 1;
+            changed = true;
+            nextSong = {
+              ...nextSong,
+              title: embeddedTitle,
+              artist: embeddedArtist,
+              album: embeddedAlbum,
+            };
+          }
         }
 
         const currentArtwork = String(nextSong?.artwork || '').trim();
@@ -508,6 +576,25 @@ export const libraryMethods = {
       incomingFilePath &&
       (await RNFS.exists(incomingFilePath))
     ) {
+      const embeddedTextMetadata = canExtractEmbeddedTextMetadata(
+        incomingFilePath,
+      )
+        ? await extractEmbeddedTextMetadata(incomingFilePath)
+        : null;
+      const resolvedFromFile = {
+        title: resolveMetadataField(
+          embeddedTextMetadata?.title,
+          incomingSong.title,
+        ),
+        artist: resolveMetadataField(
+          embeddedTextMetadata?.artist,
+          incomingSong.artist,
+        ),
+        album: resolveMetadataField(
+          embeddedTextMetadata?.album,
+          incomingSong.album || '',
+        ),
+      };
       const extractedDuration = await this.hydrateDurationForSong(
         incomingSong,
         {
@@ -516,6 +603,7 @@ export const libraryMethods = {
       );
       const reusedSong = {
         ...incomingSong,
+        ...resolvedFromFile,
         localPath: incomingFilePath,
         url: toFileUriFromPath(incomingFilePath),
         duration: extractedDuration || Number(incomingSong.duration) || 0,
@@ -593,6 +681,21 @@ export const libraryMethods = {
       filename,
       isLocal: true,
     };
+    const embeddedTextMetadata = canExtractEmbeddedTextMetadata(destPath)
+      ? await extractEmbeddedTextMetadata(destPath)
+      : null;
+    localSong.title = resolveMetadataField(
+      embeddedTextMetadata?.title,
+      localSong.title,
+    );
+    localSong.artist = resolveMetadataField(
+      embeddedTextMetadata?.artist,
+      localSong.artist,
+    );
+    localSong.album = resolveMetadataField(
+      embeddedTextMetadata?.album,
+      localSong.album || '',
+    );
     const extractedDuration = await this.hydrateDurationForSong(localSong, {
       persist: false,
     });

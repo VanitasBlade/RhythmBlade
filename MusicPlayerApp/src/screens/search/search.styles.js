@@ -91,6 +91,7 @@ const styles = StyleSheet.create({
   },
   searchPanel: {
     flex: 1,
+    minHeight: 0,
   },
   searchControlsSection: {
     paddingBottom: 10,
@@ -167,12 +168,15 @@ const styles = StyleSheet.create({
   },
   searchResultsList: {
     flex: 1,
+    minHeight: 0,
   },
   searchListContent: {
-    flexGrow: 1,
     paddingHorizontal: 16,
     paddingTop: 18,
     paddingBottom: 180,
+  },
+  searchListContentEmpty: {
+    flexGrow: 1,
   },
   albumHeaderCard: {
     borderRadius: 8,

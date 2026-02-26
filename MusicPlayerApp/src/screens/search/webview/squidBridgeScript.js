@@ -701,6 +701,25 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     return unique;
   }
 
+  function splitBulletText(text) {
+    return norm(text)
+      .split(/(?:•|â€¢)/)
+      .map(function (part) { return norm(part); })
+      .filter(Boolean);
+  }
+
+  function stripLeadingTitle(value, title) {
+    var source = norm(value);
+    var target = norm(title);
+    if (!source || !target) return source;
+    var sourceLower = lower(source);
+    var targetLower = lower(target);
+    if (sourceLower === targetLower) return "";
+    if (sourceLower.indexOf(targetLower + " ") === 0) {
+      return norm(source.slice(target.length));
+    }
+    return source;
+  }
   function parseTrack(btn, index) {
     var card = cardFromButton(btn);
     if (!card) return null;
@@ -729,18 +748,38 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     var meta = "";
     var artist = "";
     for (var i = 0; i < lines.length; i += 1) {
-      if (!meta && (lines[i].indexOf("•") >= 0 || /(\d{1,2}):(\d{2})/.test(lines[i]))) {
+      var hasBullet = lines[i].indexOf("•") >= 0 || lines[i].indexOf("â€¢") >= 0;
+      if (!meta && (hasBullet || /(\d{1,2}):(\d{2})/.test(lines[i]))) {
         meta = lines[i];
       }
-      if (!artist && lines[i] !== title && !/(\d{1,2}):(\d{2})/.test(lines[i])) {
+      if (
+        !artist &&
+        lines[i] !== title &&
+        !/(\d{1,2}):(\d{2})/.test(lines[i]) &&
+        !hasBullet
+      ) {
         artist = lines[i];
       }
       if (meta && artist) break;
     }
 
+    if (!artist && meta) {
+      var metaLead = splitBulletText(meta)[0] || "";
+      artist = stripLeadingTitle(metaLead, title);
+    }
+    artist = norm(artist || "Unknown");
+    if (!artist) {
+      artist = "Unknown";
+    }
+
     var album = "";
-    if (meta.indexOf("•") >= 0) {
-      album = norm(meta.split("•")[0]);
+    var metaParts = splitBulletText(meta);
+    if (metaParts.length > 0) {
+      album = stripLeadingTitle(metaParts[0], title);
+      if (album && artist && lower(album).indexOf(lower(artist)) === 0) {
+        var trimmedAlbum = norm(album.slice(artist.length));
+        album = trimmedAlbum || album;
+      }
     }
 
     var duration = 0;
@@ -981,7 +1020,7 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
       );
       var tags = norm(
         (row.querySelector('[class*="track-row__tags"]') || {}).textContent
-      ).replace(/^\s*•\s*/, "");
+      ).replace(/^\s*(?:•|â€¢)\s*/, "");
       var subtitle = tags ? artist + " • " + tags : artist;
       var artwork = norm((row.querySelector("img") || {}).src) || albumArtwork || null;
 
@@ -1462,3 +1501,4 @@ true;
 `;
 
 export default SQUID_BRIDGE_SCRIPT;
+
