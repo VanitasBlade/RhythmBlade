@@ -703,9 +703,18 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
 
   function splitBulletText(text) {
     return norm(text)
-      .split(/(?:•|â€¢)/)
+      .split(/(?:\u2022|\u00e2\u20ac\u00a2|\u00c3\u00a2\u00e2\u201a\u00ac\u00c2\u00a2)/)
       .map(function (part) { return norm(part); })
       .filter(Boolean);
+  }
+
+  function containsBulletToken(text) {
+    var value = String(text || "");
+    return (
+      value.indexOf("\u2022") >= 0 ||
+      value.indexOf("\u00e2\u20ac\u00a2") >= 0 ||
+      value.indexOf("\u00c3\u00a2\u00e2\u201a\u00ac\u00c2\u00a2") >= 0
+    );
   }
 
   function stripLeadingTitle(value, title) {
@@ -748,7 +757,7 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     var meta = "";
     var artist = "";
     for (var i = 0; i < lines.length; i += 1) {
-      var hasBullet = lines[i].indexOf("•") >= 0 || lines[i].indexOf("â€¢") >= 0;
+      var hasBullet = containsBulletToken(lines[i]);
       if (!meta && (hasBullet || /(\d{1,2}):(\d{2})/.test(lines[i]))) {
         meta = lines[i];
       }
@@ -882,6 +891,154 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     return out;
   }
 
+  function resultIdentity(item) {
+    if (!item) return "";
+    return [
+      lower(item.type || ""),
+      lower(item.title || ""),
+      lower(item.artist || ""),
+      lower(item.album || ""),
+      String(Number(item.duration) || 0),
+      lower(item.url || ""),
+    ].join("|");
+  }
+
+  function mergeUniqueResults(current, incoming) {
+    var out = Array.isArray(current) ? current.slice() : [];
+    var seen = {};
+    for (var i = 0; i < out.length; i += 1) {
+      seen[resultIdentity(out[i])] = true;
+    }
+
+    var next = Array.isArray(incoming) ? incoming : [];
+    for (var j = 0; j < next.length; j += 1) {
+      var key = resultIdentity(next[j]);
+      if (!key || seen[key]) continue;
+      seen[key] = true;
+      out.push(next[j]);
+    }
+
+    for (var k = 0; k < out.length; k += 1) {
+      out[k].index = k;
+    }
+    return out;
+  }
+
+  function isScrollableElement(el) {
+    if (!el || !el.scrollHeight || !el.clientHeight) return false;
+    if (el.scrollHeight <= el.clientHeight + 10) return false;
+    var style = window.getComputedStyle(el);
+    var overflowY = lower(style && (style.overflowY || style.overflow));
+    return (
+      overflowY === "auto" ||
+      overflowY === "scroll" ||
+      overflowY === "overlay"
+    );
+  }
+
+  function findNearestScrollable(node) {
+    var current = node;
+    while (current && current !== document.body && current !== document.documentElement) {
+      if (isScrollableElement(current)) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+    return null;
+  }
+
+  function findResultsScrollTarget() {
+    var seed = getDownloadButtons()[0] || getTrackLinks()[0] || null;
+    var nested = findNearestScrollable(seed);
+    if (nested) {
+      return nested;
+    }
+
+    var pageScrollable =
+      (document.documentElement.scrollHeight || 0) > (window.innerHeight || 0) + 10;
+    return pageScrollable ? window : null;
+  }
+
+  function scrollTargetStep(target) {
+    if (!target) return false;
+
+    if (target === window) {
+      var currentWinTop =
+        window.pageYOffset ||
+        document.documentElement.scrollTop ||
+        document.body.scrollTop ||
+        0;
+      var maxWinTop = Math.max(
+        0,
+        (document.documentElement.scrollHeight || 0) - (window.innerHeight || 0)
+      );
+      var nextWinTop = Math.min(
+        maxWinTop,
+        currentWinTop + Math.max(260, Math.floor((window.innerHeight || 720) * 0.9))
+      );
+      if (nextWinTop <= currentWinTop + 1) {
+        return false;
+      }
+      window.scrollTo(0, nextWinTop);
+      return true;
+    }
+
+    var currentTop = target.scrollTop || 0;
+    var maxTop = Math.max(0, (target.scrollHeight || 0) - (target.clientHeight || 0));
+    var nextTop = Math.min(
+      maxTop,
+      currentTop + Math.max(220, Math.floor((target.clientHeight || 480) * 0.9))
+    );
+    if (nextTop <= currentTop + 1) {
+      return false;
+    }
+    target.scrollTop = nextTop;
+    return true;
+  }
+
+  function resetScrollTarget(target) {
+    if (!target) return;
+    if (target === window) {
+      window.scrollTo(0, 0);
+      return;
+    }
+    target.scrollTop = 0;
+  }
+
+  async function collectResultsWithScroll(type, initialItems) {
+    var mode = type || "tracks";
+    var merged = mergeUniqueResults([], initialItems);
+    var target = findResultsScrollTarget();
+    if (!target) {
+      return merged;
+    }
+
+    var previousCount = merged.length;
+    var stagnantPasses = 0;
+
+    for (var pass = 0; pass < 20 && stagnantPasses < 4 && merged.length < 80; pass += 1) {
+      var moved = scrollTargetStep(target);
+      if (!moved) {
+        break;
+      }
+
+      await sleep(220);
+      await switchTab(mode);
+      var parsed = parseResults(mode);
+      merged = mergeUniqueResults(merged, parsed);
+
+      if (merged.length > previousCount) {
+        previousCount = merged.length;
+        stagnantPasses = 0;
+      } else {
+        stagnantPasses += 1;
+      }
+    }
+
+    resetScrollTarget(target);
+    return merged;
+  }
+
   async function runSearch(q, type) {
     var query = norm(q);
     if (!query) return [];
@@ -944,6 +1101,7 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
       await sleep(420);
       parsed = parseResults(mode);
     }
+    parsed = await collectResultsWithScroll(mode, parsed);
     blog("Search parse summary", {
       query: query,
       type: mode,
@@ -1020,8 +1178,11 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
       );
       var tags = norm(
         (row.querySelector('[class*="track-row__tags"]') || {}).textContent
-      ).replace(/^\s*(?:•|â€¢)\s*/, "");
-      var subtitle = tags ? artist + " • " + tags : artist;
+      ).replace(
+        /^\s*(?:\u2022|\u00e2\u20ac\u00a2|\u00c3\u00a2\u00e2\u201a\u00ac\u00c2\u00a2)\s*/,
+        "",
+      );
+      var subtitle = tags ? artist + " \u2022 " + tags : artist;
       var artwork = norm((row.querySelector("img") || {}).src) || albumArtwork || null;
 
       out.push({

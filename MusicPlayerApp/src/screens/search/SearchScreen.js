@@ -819,7 +819,6 @@ const SearchScreen = () => {
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
-            nestedScrollEnabled
             removeClippedSubviews={false}
           />
         </View>
@@ -873,11 +872,19 @@ const SearchScreen = () => {
         </TouchableOpacity>
       </Modal>
 
-      <WebView
-        ref={webViewRef}
-        {...webViewProps}
-        style={styles.hiddenWebView}
-      />
+      <View
+        style={styles.hiddenWebViewHost}
+        pointerEvents="none"
+        accessible={false}
+        importantForAccessibility="no-hide-descendants">
+        <WebView
+          ref={webViewRef}
+          {...webViewProps}
+          pointerEvents="none"
+          importantForAccessibility="no-hide-descendants"
+          style={styles.hiddenWebView}
+        />
+      </View>
     </View>
   );
 };

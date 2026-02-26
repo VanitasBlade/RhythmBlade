@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
   searchListContent: {
     paddingHorizontal: 16,
     paddingTop: 18,
-    paddingBottom: 180,
+    paddingBottom: 84,
   },
   searchListContentEmpty: {
     flexGrow: 1,
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 180,
+    paddingBottom: 84,
   },
   queueCardShell: {
     marginBottom: 8,
@@ -480,13 +480,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
   },
+  hiddenWebViewHost: {
+    position: 'absolute',
+    width: 0,
+    height: 0,
+    overflow: 'hidden',
+    opacity: 0,
+    zIndex: -10,
+    elevation: -10,
+  },
   hiddenWebView: {
     position: 'absolute',
-    width: 1,
-    height: 1,
+    left: 0,
+    top: 0,
+    width: 1280,
+    height: 2400,
     opacity: 0,
-    left: -9999,
-    top: -9999,
   },
   modalBackdrop: {
     flex: 1,

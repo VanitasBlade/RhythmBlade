@@ -87,6 +87,7 @@ function TabNavigator() {
           options={{
             tabBarIcon: tabIcons.Search,
             tabBarLabel: 'Downloader',
+            tabBarHideOnKeyboard: true,
           }}
         />
         <Tab.Screen
