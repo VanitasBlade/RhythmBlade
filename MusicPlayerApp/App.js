@@ -1,5 +1,5 @@
-import React, {useEffect} from 'react';
-import {StatusBar, StyleSheet, View} from 'react-native';
+import React, {useEffect, useState} from 'react';
+import {ActivityIndicator, Alert, StatusBar, StyleSheet, Text, View} from 'react-native';
 import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
@@ -12,6 +12,8 @@ import playbackService, {
   PlaybackServiceHandler,
 } from './src/services/playback/PlaybackService';
 import networkService from './src/services/network/NetworkService';
+import storageService from './src/services/storage/StorageService';
+import appDialogService from './src/services/ui/AppDialogService';
 
 // Screens
 import HomeScreen from './src/screens/home/HomeScreen';
@@ -23,6 +25,7 @@ import NowPlayingScreen from './src/screens/nowPlaying/NowPlayingScreen';
 
 // Components
 import MiniPlayer from './src/components/MiniPlayer';
+import AppDialogHost from './src/components/AppDialogHost';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -104,13 +107,45 @@ function TabNavigator() {
 }
 
 function App() {
+  const [bootstrapping, setBootstrapping] = useState(true);
+
+  useEffect(() => {
+    const nativeAlert = Alert.alert.bind(Alert);
+    appDialogService.setNativeAlert(nativeAlert);
+    try {
+      Alert.alert = (...args) => {
+        appDialogService.alert(...args);
+      };
+    } catch (error) {
+      console.error('Could not override Alert.alert:', error);
+    }
+
+    return () => {
+      try {
+        Alert.alert = nativeAlert;
+      } catch (error) {
+        // noop
+      }
+    };
+  }, []);
+
   useEffect(() => {
     const initializeApp = async () => {
-      // Initialize playback service
-      await playbackService.initialize();
+      try {
+        await playbackService.initialize();
+        networkService.initialize();
 
-      // Initialize network monitoring
-      networkService.initialize();
+        await storageService.syncEnabledFileSourcesToLibrary({
+          recursive: true,
+          promptForPermission: true,
+          migrateArtwork: true,
+          migrateDuration: true,
+        });
+      } catch (error) {
+        console.error('App bootstrap failed:', error);
+      } finally {
+        setBootstrapping(false);
+      }
     };
 
     initializeApp();
@@ -119,6 +154,17 @@ function App() {
       networkService.cleanup();
     };
   }, []);
+
+  if (bootstrapping) {
+    return (
+      <View style={styles.bootContainer}>
+        <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+        <ActivityIndicator size="small" color={C.accentFg} />
+        <Text style={styles.bootText}>Syncing music library...</Text>
+        <AppDialogHost />
+      </View>
+    );
+  }
 
   return (
     <NavigationContainer>
@@ -134,6 +180,7 @@ function App() {
         />
         <Stack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} />
       </Stack.Navigator>
+      <AppDialogHost />
     </NavigationContainer>
   );
 }
@@ -141,6 +188,18 @@ function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  bootContainer: {
+    flex: 1,
+    backgroundColor: C.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bootText: {
+    marginTop: 12,
+    color: C.textDim,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

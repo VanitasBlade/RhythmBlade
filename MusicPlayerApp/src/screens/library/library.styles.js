@@ -301,6 +301,46 @@ const styles = StyleSheet.create({
   },
   emptySub: {marginTop: 8, color: C.textDim, fontSize: 13, textAlign: 'center'},
   backdrop: {...StyleSheet.absoluteFillObject, zIndex: 15},
+  importProgressCard: {
+    width: '100%',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+    padding: 16,
+  },
+  importProgressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  importProgressTitle: {
+    color: C.text,
+    fontSize: 19,
+    fontWeight: '700',
+  },
+  importProgressStatus: {
+    marginTop: 10,
+    color: C.textDim,
+    fontSize: 14,
+  },
+  importProgressTrack: {
+    marginTop: 12,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: C.border,
+    overflow: 'hidden',
+  },
+  importProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: C.accent,
+  },
+  importProgressMeta: {
+    marginTop: 10,
+    color: C.textMute,
+    fontSize: 12,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(8, 5, 18, 0.78)',

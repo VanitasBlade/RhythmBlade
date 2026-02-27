@@ -754,14 +754,21 @@ export const libraryMethods = {
       if (!skipDurationHydration && resolvedPath) {
         extractedDuration = await extractEmbeddedDurationSeconds(resolvedPath);
       }
+      const embeddedTextMetadata =
+        resolvedPath && canExtractEmbeddedTextMetadata(resolvedPath)
+          ? await extractEmbeddedTextMetadata(resolvedPath)
+          : null;
       const track = {
         id: `local_${Date.now()}`,
-        title:
-          inferred.title ||
-          originalName.replace(/\.[^/.]+$/, '') ||
-          'Local Audio',
-        artist: inferred.artist || 'Unknown Artist',
-        album: '',
+        title: resolveMetadataField(
+          embeddedTextMetadata?.title,
+          inferred.title || originalName.replace(/\.[^/.]+$/, '') || 'Local Audio',
+        ),
+        artist: resolveMetadataField(
+          embeddedTextMetadata?.artist,
+          inferred.artist || 'Unknown Artist',
+        ),
+        album: resolveMetadataField(embeddedTextMetadata?.album, ''),
         url: resolvedUrl,
         localPath: resolvedPath,
         filename: originalName,

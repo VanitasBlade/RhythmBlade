@@ -1,5 +1,6 @@
 import React, {useCallback, useMemo, useState} from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Image,
@@ -44,6 +45,15 @@ const LibraryScreen = ({navigation, route}) => {
   const [loading, setLoading] = useState(true);
   const [migratingArtwork, setMigratingArtwork] = useState(false);
   const [migratingDuration, setMigratingDuration] = useState(false);
+  const [sourceImportState, setSourceImportState] = useState({
+    visible: false,
+    status: '',
+    processed: 0,
+    total: 0,
+    importedCount: 0,
+    skippedCount: 0,
+    errorCount: 0,
+  });
 
   const [tab, setTab] = useState('tracks');
   const [sortBy, setSortBy] = useState('Name');
@@ -152,6 +162,16 @@ const LibraryScreen = ({navigation, route}) => {
     );
     return {active, files};
   }, [normalizedSources]);
+
+  const importProgressFillStyle = useMemo(() => {
+    const total = Math.max(0, Number(sourceImportState.total) || 0);
+    const processed = Math.max(0, Number(sourceImportState.processed) || 0);
+    if (total <= 0) {
+      return {width: '12%'};
+    }
+    const percentage = Math.max(4, Math.min(100, Math.round((processed / total) * 100)));
+    return {width: `${percentage}%`};
+  }, [sourceImportState.processed, sourceImportState.total]);
 
   const playSong = async index => {
     const nextTrack = sortedSongs[index];
@@ -326,31 +346,55 @@ const LibraryScreen = ({navigation, route}) => {
         throw new Error('No folder selected');
       }
 
+      setSourceImportState({
+        visible: true,
+        status: 'Preparing import...',
+        processed: 0,
+        total: 0,
+        importedCount: 0,
+        skippedCount: 0,
+        errorCount: 0,
+      });
+
       const result = await storageService.importFolderAsFileSource(sourceUri, {
         recursive: true,
+        onProgress: progress => {
+          const total = Math.max(0, Number(progress?.total) || 0);
+          const processed = Math.max(0, Number(progress?.processed) || 0);
+          setSourceImportState(prev => ({
+            ...prev,
+            visible: true,
+            status:
+              progress?.status ||
+              (total > 0
+                ? `Extracting metadata... ${processed}/${total} files`
+                : 'Extracting metadata...'),
+            processed,
+            total,
+            importedCount: Math.max(
+              0,
+              Number(progress?.importedCount) || prev.importedCount,
+            ),
+            skippedCount: Math.max(
+              0,
+              Number(progress?.skippedCount) || prev.skippedCount,
+            ),
+            errorCount: Math.max(
+              0,
+              Number(progress?.errorCount) || prev.errorCount,
+            ),
+          }));
+        },
       });
       setSources(result.fileSources);
 
       await loadLibrary();
-      const migration = result.artworkMigration || {};
-      const updatedCount = Number(migration.updatedCount) || 0;
-      const extractedCount = Number(migration.extractedCount) || 0;
-      const inlineConvertedCount = Number(migration.inlineConvertedCount) || 0;
-      const durationMigration = result.durationMigration || {};
-      const durationUpdatedCount = Number(durationMigration.updatedCount) || 0;
-      const durationProcessedCount =
-        Number(durationMigration.processedCount) || 0;
       Alert.alert(
-        'Folder Imported',
-        `${result.fileCount} audio file${
-          result.fileCount === 1 ? '' : 's'
-        } scanned from ${
-          result.sourcePath
-        }.\n\nArtwork migration updated ${updatedCount} track${
-          updatedCount === 1 ? '' : 's'
-        } (${extractedCount} extracted, ${inlineConvertedCount} inline converted).\nDuration migration updated ${durationUpdatedCount} track${
-          durationUpdatedCount === 1 ? '' : 's'
-        } (processed ${durationProcessedCount}).`,
+        'Import Complete',
+        `${result.importedCount} file${
+          result.importedCount === 1 ? '' : 's'
+        } imported — album art and metadata extracted successfully.`,
+        [{text: 'OK'}],
       );
     } catch (error) {
       if (!DocumentPicker.isCancel(error)) {
@@ -359,6 +403,11 @@ const LibraryScreen = ({navigation, route}) => {
           error.message || 'Unable to add file source.',
         );
       }
+    } finally {
+      setSourceImportState(prev => ({
+        ...prev,
+        visible: false,
+      }));
     }
   };
 
@@ -789,6 +838,36 @@ const LibraryScreen = ({navigation, route}) => {
       {sortOpen ? (
         <Pressable style={styles.backdrop} onPress={() => setSortOpen(false)} />
       ) : null}
+
+      <Modal
+        visible={sourceImportState.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {}}>
+        <Pressable style={styles.modalOverlay} onPress={() => {}}>
+          <Pressable style={styles.importProgressCard} onPress={() => {}}>
+            <View style={styles.importProgressHeader}>
+              <Text style={styles.importProgressTitle}>Importing Files</Text>
+              <ActivityIndicator size="small" color={C.accentFg} />
+            </View>
+            <Text style={styles.importProgressStatus}>
+              {sourceImportState.status || 'Extracting metadata...'}
+            </Text>
+            <View style={styles.importProgressTrack}>
+              <View style={[styles.importProgressFill, importProgressFillStyle]} />
+            </View>
+            <Text style={styles.importProgressMeta}>
+              Imported {sourceImportState.importedCount}
+              {sourceImportState.skippedCount > 0
+                ? ` • Skipped ${sourceImportState.skippedCount}`
+                : ''}
+              {sourceImportState.errorCount > 0
+                ? ` • Errors ${sourceImportState.errorCount}`
+                : ''}
+            </Text>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={createOpen}
