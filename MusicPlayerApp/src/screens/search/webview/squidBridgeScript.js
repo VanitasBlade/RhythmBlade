@@ -9,9 +9,17 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
   var RESP = "bridge-response";
   var READY = "bridge-ready";
   var CHUNK = "bridge-download-chunk";
+  var ABORT = "abort";
+  var ABORT_TTL_MS = 60000;
   var captures = [];
   var blobArtifacts = [];
   var maxBlobArtifacts = 24;
+  var abortedCommands = {};
+  var searchRuntimeState = {
+    lastQuery: "",
+    lastType: "tracks",
+    lastParsedCount: 0,
+  };
 
   function send(payload) {
     try {
@@ -41,6 +49,32 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     return new Promise(function (resolve) {
       setTimeout(resolve, ms);
     });
+  }
+
+  function pruneAbortedCommands(nowTs) {
+    var current = Number(nowTs) || Date.now();
+    var ids = Object.keys(abortedCommands);
+    for (var i = 0; i < ids.length; i += 1) {
+      var id = ids[i];
+      var abortedAt = Number(abortedCommands[id]) || 0;
+      if (!abortedAt || current - abortedAt > ABORT_TTL_MS) {
+        delete abortedCommands[id];
+      }
+    }
+  }
+
+  function rememberAbortedCommand(id) {
+    var key = norm(id);
+    if (!key) return;
+    pruneAbortedCommands(Date.now());
+    abortedCommands[key] = Date.now();
+  }
+
+  function isCommandAborted(id) {
+    var key = norm(id);
+    if (!key) return false;
+    pruneAbortedCommands(Date.now());
+    return Boolean(abortedCommands[key]);
   }
 
   function visible(el) {
@@ -212,11 +246,25 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     trimBlobArtifacts();
   }
 
-  function bestBlobArtifact(startTs) {
+  function blobArtifactFingerprint(item) {
+    if (!item) return "";
+    return [
+      norm(item.url),
+      norm(item.filename),
+      String(Number(item.clickedAt || item.createdAt) || 0),
+      String(Number(item.size || (item.blob && item.blob.size) || 0) || 0),
+    ].join("|");
+  }
+
+  function bestBlobArtifact(startTs, ignoredByFingerprint) {
     var best = null;
     for (var i = 0; i < blobArtifacts.length; i += 1) {
       var item = blobArtifacts[i];
       if (!item || !item.blob) continue;
+      var fingerprint = blobArtifactFingerprint(item);
+      if (fingerprint && ignoredByFingerprint && ignoredByFingerprint[fingerprint]) {
+        continue;
+      }
       var ts = Number(item.clickedAt || item.createdAt) || 0;
       if (ts < startTs) continue;
       if (!item.filename && !isAudioMime(item.type || "")) continue;
@@ -1039,10 +1087,68 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     return merged;
   }
 
+  function resetSearchDOM() {
+    var buttonsBefore = getDownloadButtons().length;
+    var linksBefore = getTrackLinks().length;
+    var removable = [];
+
+    var buttons = getDownloadButtons();
+    for (var i = 0; i < buttons.length; i += 1) {
+      var node = cardFromButton(buttons[i]) || buttons[i];
+      if (node && removable.indexOf(node) < 0) {
+        removable.push(node);
+      }
+    }
+
+    var links = getTrackLinks();
+    for (var j = 0; j < links.length; j += 1) {
+      var parent =
+        links[j].closest(".track-row") ||
+        links[j].closest('[class*="track-row"]') ||
+        links[j].closest("li") ||
+        links[j];
+      if (parent && removable.indexOf(parent) < 0) {
+        removable.push(parent);
+      }
+    }
+
+    var removedNodes = 0;
+    for (var r = 0; r < removable.length; r += 1) {
+      var row = removable[r];
+      if (!row || !row.parentElement) continue;
+      try {
+        row.parentElement.removeChild(row);
+        removedNodes += 1;
+      } catch (_) {}
+    }
+
+    var input = inputNode();
+    if (input) {
+      setInput(input, "");
+    }
+    if (window && typeof window.scrollTo === "function") {
+      window.scrollTo(0, 0);
+    }
+
+    searchRuntimeState.lastQuery = "";
+    searchRuntimeState.lastType = "tracks";
+    searchRuntimeState.lastParsedCount = 0;
+
+    blog("Search DOM reset", {
+      removedNodes: removedNodes,
+      buttonsBefore: buttonsBefore,
+      linksBefore: linksBefore,
+      buttonsAfter: getDownloadButtons().length,
+      linksAfter: getTrackLinks().length,
+    });
+  }
+
   async function runSearch(q, type) {
     var query = norm(q);
     if (!query) return [];
     var mode = type || "tracks";
+
+    resetSearchDOM();
 
     var input = await ensureInput();
     await switchTab(mode);
@@ -1110,6 +1216,9 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
       trackLinks: getTrackLinks().length,
       noResultsText: likelyNoResults(),
     });
+    searchRuntimeState.lastQuery = query;
+    searchRuntimeState.lastType = mode;
+    searchRuntimeState.lastParsedCount = parsed.length;
     return parsed;
   }
 
@@ -1117,6 +1226,75 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     var text = norm(v);
     var match = text.match(/\/album\/(\d+)/i) || text.match(/^(\d+)$/);
     return match && match[1] ? "/album/" + match[1] : "";
+  }
+
+  function normalizeTrackPosition(value) {
+    var text = norm(value);
+    var match = text.match(/(\d+)\s*-\s*(\d+)/);
+    if (!match) return text;
+    return String(Number(match[1])) + "-" + String(Number(match[2]));
+  }
+
+  function cssAttrEscape(value) {
+    return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  }
+
+  function getAlbumRows() {
+    return Array.prototype.slice.call(
+      document.querySelectorAll(".album-page .track-row")
+    );
+  }
+
+  function readTrackPositionFromRow(row) {
+    if (!row) return "";
+    return normalizeTrackPosition(
+      (row.querySelector('[class*="track-row__number"]') || {}).textContent
+    );
+  }
+
+  function markAlbumTrackRows() {
+    var rows = getAlbumRows();
+    for (var i = 0; i < rows.length; i += 1) {
+      var row = rows[i];
+      if (!row) continue;
+      var trackPosition = readTrackPositionFromRow(row);
+      if (trackPosition) {
+        row.setAttribute("data-rb-track-position", trackPosition);
+      }
+      row.setAttribute("data-rb-track-index", String(i));
+    }
+    return rows;
+  }
+
+  function buildAlbumTrackDownloadSelector(trackPosition) {
+    var escapedPosition = cssAttrEscape(trackPosition);
+    return (
+      '.album-page .track-row[data-rb-track-position="' +
+      escapedPosition +
+      '"] button[aria-label="Download track"], ' +
+      '.album-page .track-row[data-rb-track-position="' +
+      escapedPosition +
+      '"] button[aria-label^="Cancel download"]'
+    );
+  }
+
+  function findAlbumRowByTrackPosition(trackPosition) {
+    var normalized = normalizeTrackPosition(trackPosition);
+    if (!normalized) return null;
+    markAlbumTrackRows();
+    var escaped = cssAttrEscape(normalized);
+    var direct = document.querySelector(
+      '.album-page .track-row[data-rb-track-position="' + escaped + '"]'
+    );
+    if (direct) return direct;
+
+    var rows = getAlbumRows();
+    for (var i = 0; i < rows.length; i += 1) {
+      if (normalizeTrackPosition(readTrackPositionFromRow(rows[i])) === normalized) {
+        return rows[i];
+      }
+    }
+    return null;
   }
 
   async function albumTracks(url, meta) {
@@ -1148,6 +1326,8 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     var albumArtwork = norm(
       (document.querySelector(".album-page img") || {}).src
     ) || norm(meta && meta.albumArtwork);
+
+    markAlbumTrackRows();
 
     var buttons = getDownloadButtons();
     var out = [];
@@ -1184,6 +1364,11 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
       );
       var subtitle = tags ? artist + " \u2022 " + tags : artist;
       var artwork = norm((row.querySelector("img") || {}).src) || albumArtwork || null;
+      var normalizedTrackPosition = normalizeTrackPosition(trackNumber);
+      if (normalizedTrackPosition) {
+        row.setAttribute("data-rb-track-position", normalizedTrackPosition);
+      }
+      row.setAttribute("data-rb-track-index", String(out.length));
 
       out.push({
         index: out.length,
@@ -1195,6 +1380,12 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
         duration: duration || 0,
         artwork: artwork,
         url: trackNumber ? path + "#" + trackNumber : path,
+        albumUrl: path,
+        trackPosition: normalizedTrackPosition || trackNumber || "",
+        downloadButtonSelector: normalizedTrackPosition
+          ? buildAlbumTrackDownloadSelector(normalizedTrackPosition)
+          : "",
+        sourceType: "album",
         tidalId: null,
         downloadable: true,
       });
@@ -1440,17 +1631,304 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     return null;
   }
 
-  async function waitProcessedBlob(startTs, timeoutMs) {
+  function stripExtension(value) {
+    return norm(String(value || "").replace(/\.[a-z0-9]{2,5}(?:\?.*)?$/i, ""));
+  }
+
+  function stripArtistPrefixFromFilename(value) {
+    var stem = stripExtension(value);
+    if (!stem) return "";
+    var parts = stem.split(/\s+-\s+/);
+    if (parts.length >= 2) {
+      return norm(parts.slice(1).join(" - "));
+    }
+    return stem;
+  }
+
+  function normalizeTrackTitle(value) {
+    return lower(stripExtension(value).replace(/[^a-z0-9]+/gi, " "));
+  }
+
+  function titleTokens(value) {
+    var normalized = normalizeTrackTitle(value);
+    if (!normalized) return [];
+    return normalized.split(" ").filter(Boolean);
+  }
+
+  function tokenOverlapScore(left, right) {
+    var leftTokens = titleTokens(left);
+    var rightTokens = titleTokens(right);
+    if (!leftTokens.length || !rightTokens.length) return 0;
+
+    var seen = {};
+    for (var i = 0; i < leftTokens.length; i += 1) {
+      seen[leftTokens[i]] = true;
+    }
+
+    var overlap = 0;
+    for (var j = 0; j < rightTokens.length; j += 1) {
+      if (seen[rightTokens[j]]) {
+        overlap += 1;
+      }
+    }
+    return overlap / Math.max(leftTokens.length, rightTokens.length);
+  }
+
+  function editDistance(a, b) {
+    var left = String(a || "");
+    var right = String(b || "");
+    if (!left) return right.length;
+    if (!right) return left.length;
+
+    var dp = [];
+    for (var i = 0; i <= right.length; i += 1) {
+      dp[i] = i;
+    }
+
+    for (var li = 1; li <= left.length; li += 1) {
+      var prev = dp[0];
+      dp[0] = li;
+      for (var ri = 1; ri <= right.length; ri += 1) {
+        var tmp = dp[ri];
+        var cost = left.charAt(li - 1) === right.charAt(ri - 1) ? 0 : 1;
+        dp[ri] = Math.min(
+          dp[ri] + 1,
+          dp[ri - 1] + 1,
+          prev + cost
+        );
+        prev = tmp;
+      }
+    }
+    return dp[right.length];
+  }
+
+  function fuzzyTitleMatch(actualTitle, expectedTitle, threshold) {
+    var actual = normalizeTrackTitle(actualTitle);
+    var expected = normalizeTrackTitle(expectedTitle);
+    if (!actual || !expected) {
+      return false;
+    }
+    if (actual === expected) {
+      return true;
+    }
+    if (actual.indexOf(expected) >= 0 || expected.indexOf(actual) >= 0) {
+      return true;
+    }
+
+    var overlap = tokenOverlapScore(actual, expected);
+    var distance = editDistance(actual, expected);
+    var maxLen = Math.max(actual.length, expected.length);
+    var editScore = maxLen > 0 ? 1 - distance / maxLen : 0;
+    var score = Math.max(overlap, editScore * 0.75 + overlap * 0.25);
+    return score >= (Number(threshold) || 0.7);
+  }
+
+  async function waitProcessedBlob(startTs, timeoutMs, expectedTrackTitle) {
     var deadline = Date.now() + timeoutMs;
     var best = null;
+    var expectedTitle = normalizeTrackTitle(expectedTrackTitle);
+    var ignoredByFingerprint = {};
+    var mismatchCount = 0;
     while (Date.now() < deadline) {
-      best = bestBlobArtifact(startTs);
+      best = bestBlobArtifact(startTs, ignoredByFingerprint);
       if (best && best.clickedAt > 0 && best.blob && best.blob.size > 0) {
-        return best;
+        if (!expectedTitle) {
+          return best;
+        }
+
+        var filename = norm(best.filename || "");
+        var blobTitle = normalizeTrackTitle(stripArtistPrefixFromFilename(filename));
+        var blobTitleFull = normalizeTrackTitle(filename);
+        if (
+          fuzzyTitleMatch(blobTitle, expectedTitle, 0.7) ||
+          fuzzyTitleMatch(blobTitleFull, expectedTitle, 0.7)
+        ) {
+          return best;
+        }
+
+        var fingerprint = blobArtifactFingerprint(best);
+        if (fingerprint) {
+          ignoredByFingerprint[fingerprint] = true;
+        }
+        mismatchCount += 1;
+        blog("WARN: Blob mismatch, ignoring.", {
+          expected: expectedTitle,
+          filename: filename || null,
+          parsedBlobTitle: blobTitle || null,
+        });
       }
       await sleep(140);
     }
-    return best || null;
+    if (expectedTitle && mismatchCount > 0) {
+      throw new Error("Blob filename mismatch timeout.");
+    }
+    return null;
+  }
+
+  function parseFilenameSongMeta(filename, fallbackTitle) {
+    var stem = stripExtension(filename);
+    if (!stem) {
+      return {
+        artist: "",
+        title: norm(fallbackTitle),
+      };
+    }
+
+    var parts = stem.split(/\s+-\s+/);
+    var artist = norm(parts[0] || "");
+    var tail = norm(parts[parts.length - 1] || "");
+    var title = tail;
+    var trackPosition = "";
+
+    var numberedTail = tail.match(/^(\d{1,2})\s*-\s*(\d{1,2})\s+(.+)$/);
+    if (numberedTail) {
+      trackPosition =
+        String(Number(numberedTail[1])) + "-" + String(Number(numberedTail[2]));
+      title = norm(numberedTail[3]);
+    }
+
+    if (!title) {
+      title = norm(fallbackTitle);
+    }
+
+    return {
+      artist: artist,
+      title: title,
+      trackPosition: trackPosition,
+    };
+  }
+
+  function findAlbumTrackDownloadButton(row) {
+    if (!row) return null;
+    return (
+      row.querySelector('button[aria-label="Download track"]') ||
+      row.querySelector('button[aria-label^="Cancel download"]') ||
+      null
+    );
+  }
+
+  async function albumTrackDownload(payload, context) {
+    installCapture();
+    var commandId = context && context.id ? context.id : "";
+    if (!commandId) {
+      throw new Error("Command id missing for album track download.");
+    }
+
+    var expectedTitle = norm(payload && (payload.expectedTitle || (payload.song || {}).title));
+    var trackPosition = normalizeTrackPosition(payload && payload.trackPosition);
+    if (!expectedTitle) {
+      throw new Error("Album track expected title is missing.");
+    }
+    if (!trackPosition) {
+      throw new Error("Album track position is missing.");
+    }
+
+    var albumUrl = albumPath((payload && payload.albumUrl) || window.location.pathname);
+    if (!albumUrl) {
+      throw new Error("Not on album page for album track download.");
+    }
+
+    var ready = await waitFor(function () {
+      var root = document.querySelector(".album-page");
+      return root && visible(root);
+    }, 8000, 150);
+    if (!ready) {
+      throw new Error("Album page is not ready.");
+    }
+
+    markAlbumTrackRows();
+
+    var row = findAlbumRowByTrackPosition(trackPosition);
+    if (!row) {
+      throw new Error("Album track row not found for position " + trackPosition + ".");
+    }
+
+    var button = findAlbumTrackDownloadButton(row);
+    if (!button || !visible(button)) {
+      throw new Error("Album track download button is unavailable.");
+    }
+
+    var aria = lower(button.getAttribute("aria-label"));
+    if (aria.indexOf("cancel download") >= 0) {
+      var waitForReadyButton = await waitFor(function () {
+        var nextButton = findAlbumTrackDownloadButton(row);
+        if (!nextButton || !visible(nextButton)) return null;
+        var nextLabel = lower(nextButton.getAttribute("aria-label"));
+        return nextLabel.indexOf("download track") >= 0 ? nextButton : null;
+      }, 7000, 200);
+      if (waitForReadyButton) {
+        button = waitForReadyButton;
+      }
+    }
+
+    var labelNow = lower(button.getAttribute("aria-label"));
+    if (labelNow.indexOf("download track") < 0) {
+      throw new Error("Album track button is busy: " + norm(button.getAttribute("aria-label")));
+    }
+
+    var applied = await applySetting(payload && payload.downloadSetting);
+    var rowTitle = norm(
+      (row.querySelector('[class*="track-row__title"],h3,h2,[class*="title"]') || {})
+        .textContent
+    );
+    var rowArtist = norm((row.querySelector('[class*="track-row__artist"]') || {}).textContent);
+    var rowDuration = parseDur(
+      (row.querySelector('[class*="track-row__duration"]') || {}).textContent
+    );
+    var rowArtwork = norm((row.querySelector("img") || {}).src) || norm(payload && payload.artwork);
+    var albumTitle = norm(
+      (document.querySelector(".album-page .album-title") || {}).textContent
+    ) || norm(payload && payload.album);
+
+    blog("Album track download started", {
+      trackPosition: trackPosition,
+      expectedTitle: expectedTitle,
+      rowTitle: rowTitle || null,
+    });
+
+    if (button.scrollIntoView) {
+      button.scrollIntoView({block: "center"});
+    }
+    await sleep(120);
+
+    var started = Date.now();
+    button.click();
+
+    var processedBlob = await waitProcessedBlob(
+      started,
+      /aac/i.test(lower(applied)) ? 95000 : 125000,
+      expectedTitle
+    );
+    if (!processedBlob || !processedBlob.blob || processedBlob.blob.size <= 0) {
+      throw new Error("Album track blob capture timed out.");
+    }
+
+    var filename = norm(processedBlob.filename || "");
+    var fileMeta = parseFilenameSongMeta(filename, expectedTitle);
+    if (!fuzzyTitleMatch(fileMeta.title || rowTitle, expectedTitle, 0.7)) {
+      throw new Error("Blob filename/title mismatch for album track.");
+    }
+
+    var chunkTransfer = await emitBlobChunks(commandId, processedBlob);
+    chunkTransfer.appliedSetting = applied;
+    chunkTransfer.song = {
+      title: fileMeta.title || rowTitle || expectedTitle,
+      artist: fileMeta.artist || rowArtist || norm((payload && payload.artist) || "Unknown Artist"),
+      album: albumTitle || norm(payload && payload.album),
+      subtitle:
+        (fileMeta.artist || rowArtist || norm(payload && payload.artist) || "Unknown Artist") +
+        " \u2022 " +
+        trackPosition,
+      duration: rowDuration || Number(payload && payload.duration) || 0,
+      artwork: rowArtwork || null,
+      url: albumUrl + "#" + trackPosition,
+      albumUrl: albumUrl,
+      trackPosition: trackPosition,
+      sourceType: "album",
+      tidalId: null,
+      downloadable: true,
+    };
+    return chunkTransfer;
   }
 
   async function waitCapture(startTs, timeoutMs) {
@@ -1571,8 +2049,16 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
         candidate = await findCandidate(song);
       }
     }
+    if (candidate && Number(candidate.score) <= 0) {
+      blog("Candidate score is zero. Aborting download.", {
+        targetTitle: norm(song.title),
+        matchedTitle: norm((candidate.song || {}).title),
+        score: candidate.score,
+      });
+      throw new Error("NO_MATCH_FOUND");
+    }
     if (!candidate || !candidate.button) {
-      throw new Error("Could not resolve track download button.");
+      throw new Error("NO_MATCH_FOUND");
     }
 
     if (candidate.button.scrollIntoView) {
@@ -1588,11 +2074,13 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     });
 
     var started = Date.now();
+    var expectedTrackTitle = norm((candidate.song || {}).title || song.title);
     candidate.button.click();
 
     var processedBlob = await waitProcessedBlob(
       started,
-      /aac/i.test(lower(applied)) ? 105000 : 70000
+      /aac/i.test(lower(applied)) ? 105000 : 70000,
+      expectedTrackTitle
     );
     if (processedBlob && processedBlob.blob && processedBlob.blob.size > 0) {
       blog("Processed blob artifact selected", {
@@ -1665,6 +2153,9 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
         ),
       };
     },
+    albumTrackDownload: async function (payload, context) {
+      return albumTrackDownload(payload || {}, context || {});
+    },
     download: async function (payload, context) {
       return download(payload || {}, context || {});
     },
@@ -1678,14 +2169,36 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
       return;
     }
 
-    if (!msg || !msg.id || !handlers[msg.type]) return;
+    if (!msg || typeof msg !== "object") return;
+
+    if (msg.type === ABORT) {
+      if (msg.id) {
+        rememberAbortedCommand(msg.id);
+        blog("Abort command received", {id: msg.id});
+      }
+      return;
+    }
+
+    if (!msg.id || !handlers[msg.type]) return;
+    if (isCommandAborted(msg.id)) {
+      blog("Skipping aborted command", {id: msg.id, type: msg.type});
+      return;
+    }
     blog("Received command", {id: msg.id, type: msg.type});
 
     try {
       var result = await handlers[msg.type](msg.payload || {}, {id: msg.id});
+      if (isCommandAborted(msg.id)) {
+        blog("Dropping response for aborted command", {id: msg.id, type: msg.type});
+        return;
+      }
       blog("Command success", {id: msg.id, type: msg.type});
       send({type: RESP, id: msg.id, ok: true, result: result});
     } catch (error) {
+      if (isCommandAborted(msg.id)) {
+        blog("Dropping error response for aborted command", {id: msg.id, type: msg.type});
+        return;
+      }
       blog("Command error", {
         id: msg.id,
         type: msg.type,
@@ -1709,10 +2222,9 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
 
   installCapture();
   blog("Bridge script initialized", {href: window.location.href});
-  send({type: READY});
+  send({type: READY, href: window.location.href});
 })();
 true;
 `;
 
 export default SQUID_BRIDGE_SCRIPT;
-
