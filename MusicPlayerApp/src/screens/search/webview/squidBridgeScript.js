@@ -1438,12 +1438,7 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
       return target;
     }
 
-    function readCurrentSetting() {
-      var compact = lower(
-        (settings && settings.getAttribute("aria-label")) ||
-        (settings && settings.textContent) ||
-        ""
-      ).replace(/[^a-z0-9]+/g, "");
+    function parseSettingFromCompact(compact) {
       if (!compact) return "";
       if (compact.indexOf("320") >= 0 && compact.indexOf("aac") >= 0) return "320kbps AAC";
       if (compact.indexOf("96") >= 0 && compact.indexOf("aac") >= 0) return "96kbps AAC";
@@ -1452,6 +1447,46 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
         return "Hi-Res";
       }
       return "";
+    }
+
+    function parseSettingFromText(text) {
+      return parseSettingFromCompact(lower(text || "").replace(/[^a-z0-9]+/g, ""));
+    }
+
+    function readCurrentSetting() {
+      return parseSettingFromText(
+        ((settings && settings.getAttribute("aria-label")) ||
+          (settings && settings.textContent) ||
+          "")
+      );
+    }
+
+    function findSettingsPanel() {
+      var nodes = Array.prototype.slice.call(
+        document.querySelectorAll("section,div,[role='dialog']")
+      );
+      var best = null;
+      var bestLength = Number.POSITIVE_INFINITY;
+      for (var i = 0; i < nodes.length; i += 1) {
+        if (!visible(nodes[i])) continue;
+        var text = lower(nodes[i].textContent || "");
+        if (!text) continue;
+        var hasHeader =
+          text.indexOf("streaming") >= 0 &&
+          text.indexOf("download") >= 0;
+        var hasOptions =
+          text.indexOf("hi-res") >= 0 ||
+          text.indexOf("cd lossless") >= 0 ||
+          text.indexOf("320kbps aac") >= 0 ||
+          text.indexOf("96kbps aac") >= 0;
+        if (!hasHeader || !hasOptions) continue;
+        var textLen = text.length;
+        if (!best || textLen < bestLength) {
+          best = nodes[i];
+          bestLength = textLen;
+        }
+      }
+      return best;
     }
 
     var current = readCurrentSetting();
@@ -1463,21 +1498,26 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
       return current || target;
     }
 
-    settings.click();
-    await sleep(280);
-
-    var panel = await waitFor(function () {
-      var divs = Array.prototype.slice.call(document.querySelectorAll("div"));
-      for (var i = 0; i < divs.length; i += 1) {
-        if (visible(divs[i]) && lower(divs[i].textContent).indexOf("streaming & downloads") >= 0) {
-          return divs[i];
-        }
-      }
-      return null;
-    }, 5000, 120);
+    // Reuse an already-open panel to avoid accidentally closing it by clicking the settings button again.
+    var panel = findSettingsPanel();
     if (!panel) {
-      blog("Settings panel not found; leaving setting unchanged", {target: target});
-      return target;
+      settings.click();
+      await sleep(280);
+      panel = await waitFor(findSettingsPanel, 5000, 120);
+    }
+    if (!panel) {
+      // One recovery toggle: if previous click closed/opened unexpectedly, try once more.
+      settings.click();
+      await sleep(280);
+      panel = await waitFor(findSettingsPanel, 3200, 120);
+    }
+    if (!panel) {
+      var fallbackCurrent = readCurrentSetting();
+      blog("Settings panel not found; leaving setting unchanged", {
+        target: target,
+        currentSetting: fallbackCurrent || null,
+      });
+      return fallbackCurrent || target;
     }
 
     var labels = [target];
@@ -1545,11 +1585,207 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
       }
     }
     var finalSetting = readCurrentSetting();
+    if (!finalSetting) {
+      var activeNode = panel.querySelector(
+        'button[aria-pressed="true"],[role="menuitemradio"][aria-checked="true"],[role="option"][aria-selected="true"],[aria-checked="true"]'
+      );
+      if (activeNode) {
+        finalSetting = parseSettingFromText(
+          (activeNode.textContent || "") +
+          " " +
+          ((activeNode.getAttribute && activeNode.getAttribute("aria-label")) || "")
+        );
+      }
+    }
     blog("Setting option not found in panel", {
       target: target,
       currentSetting: finalSetting || null,
     });
     return finalSetting || target;
+  }
+
+  async function applyConvertToMp3(enabled) {
+    var want = Boolean(enabled);
+
+    function findSettingsButton() {
+      var node = document.querySelector('button[aria-label^="Settings menu"]');
+      if (visible(node)) return node;
+      var candidates = Array.prototype.slice.call(document.querySelectorAll("button"));
+      for (var si = 0; si < candidates.length; si += 1) {
+        if (!visible(candidates[si])) continue;
+        var label = buttonLabel(candidates[si]);
+        if (label.indexOf("settings") >= 0) {
+          return candidates[si];
+        }
+      }
+      return null;
+    }
+
+    var settings = findSettingsButton();
+    if (!visible(settings)) {
+      blog("Settings button not visible; cannot toggle convert AAC", {want: want});
+      return false;
+    }
+
+    function findSettingsPanel() {
+      var direct = document.querySelector(".settings-menu");
+      if (visible(direct)) {
+        return direct;
+      }
+      var nodes = Array.prototype.slice.call(
+        document.querySelectorAll("section,div,[role='dialog']")
+      );
+      var best = null;
+      var bestLen = Number.POSITIVE_INFINITY;
+      for (var i = 0; i < nodes.length; i += 1) {
+        if (!visible(nodes[i])) continue;
+        var text = lower(nodes[i].textContent || "");
+        if (
+          text.indexOf("conversions") < 0 ||
+          text.indexOf("convert") < 0 ||
+          text.indexOf("aac") < 0 ||
+          text.indexOf("mp3") < 0
+        ) {
+          continue;
+        }
+        if (!best || text.length < bestLen) {
+          best = nodes[i];
+          bestLen = text.length;
+        }
+      }
+      return best;
+    }
+
+    function findConvertButton(panel) {
+      if (!panel) return null;
+      var buttons = Array.prototype.slice.call(
+        panel.querySelectorAll("button.glass-option,button[aria-pressed]")
+      );
+      for (var i = 0; i < buttons.length; i += 1) {
+        if (!visible(buttons[i])) continue;
+        var labelNode = buttons[i].querySelector('[class*="glass-option__label"]');
+        var labelText = lower((labelNode && labelNode.textContent) || buttons[i].textContent || "");
+        if (
+          labelText.indexOf("convert") >= 0 &&
+          labelText.indexOf("aac") >= 0 &&
+          labelText.indexOf("mp3") >= 0
+        ) {
+          return buttons[i];
+        }
+      }
+      return null;
+    }
+
+    function readToggleStateFromButton(btn) {
+      if (!btn) return null;
+      var pressed = btn.getAttribute("aria-pressed");
+      if (pressed === "true") return true;
+      if (pressed === "false") return false;
+      var chip = btn.querySelector('[class*="glass-option__chip"]');
+      if (chip && chip.classList && chip.classList.contains("is-active")) {
+        return true;
+      }
+      var chipText = lower((chip && chip.textContent) || "");
+      var hasOn = /\bon\b/.test(chipText);
+      var hasOff = /\boff\b/.test(chipText);
+      if (hasOn && !hasOff) return true;
+      if (hasOff && !hasOn) return false;
+      return null;
+    }
+
+    async function waitForToggleState(btn, timeoutMs) {
+      var timeout = Number(timeoutMs) || 0;
+      var deadline = Date.now() + timeout;
+      var state = readToggleStateFromButton(btn);
+      while (Date.now() < deadline && state === null) {
+        await sleep(110);
+        state = readToggleStateFromButton(btn);
+      }
+      return state;
+    }
+
+    async function ensurePanelOpen() {
+      var panel = findSettingsPanel();
+      if (panel) return panel;
+      settings.click();
+      await sleep(260);
+      return findSettingsPanel();
+    }
+
+    var attempts = 3;
+    var finalState = null;
+    var foundButton = false;
+    for (var attempt = 1; attempt <= attempts; attempt += 1) {
+      var panel = await ensurePanelOpen();
+      if (!panel) {
+        blog("Conversions section not found in settings panel", {
+          want: want,
+          attempt: attempt,
+        });
+        continue;
+      }
+
+      var convertButton = await waitFor(function () {
+        return findConvertButton(panel);
+      }, 2200, 120);
+      if (!convertButton) {
+        convertButton = findConvertButton(panel);
+      }
+      if (!convertButton) {
+        blog("Convert AAC toggle row not found", {
+          want: want,
+          attempt: attempt,
+        });
+        continue;
+      }
+      foundButton = true;
+
+      var current = readToggleStateFromButton(convertButton);
+      if (current === null) {
+        current = await waitForToggleState(convertButton, 1200);
+      }
+      blog("Convert AAC toggle state read", {
+        current: current,
+        want: want,
+        attempt: attempt,
+      });
+
+      if (current === want) {
+        finalState = current;
+        break;
+      }
+
+      convertButton.click();
+      await sleep(300);
+      panel = findSettingsPanel() || panel;
+      convertButton = findConvertButton(panel) || convertButton;
+      var afterState = await waitForToggleState(convertButton, 2600);
+      blog("Convert AAC toggle after click", {
+        afterState: afterState,
+        want: want,
+        attempt: attempt,
+      });
+      finalState = afterState;
+      if (afterState === want) {
+        break;
+      }
+    }
+
+    if (findSettingsPanel()) {
+      settings = findSettingsButton() || settings;
+      if (visible(settings)) {
+        settings.click();
+      }
+      await sleep(150);
+    }
+    var applied = foundButton && finalState === want;
+    blog("Convert AAC toggle final state", {
+      want: want,
+      finalState: finalState,
+      applied: applied,
+      foundButton: foundButton,
+    });
+    return applied;
   }
 
   function score(song, cand) {
@@ -1659,6 +1895,16 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     return lower(stripExtension(value).replace(/[^a-z0-9]+/gi, " "));
   }
 
+  function isMp3BlobArtifact(item) {
+    if (!item) return false;
+    var filename = lower(norm(item.filename || ""));
+    if (/\.mp3(\?|$)/i.test(filename)) {
+      return true;
+    }
+    var mime = lower(item.type || (item.blob && item.blob.type) || "");
+    return mime.indexOf("audio/mpeg") >= 0 || mime.indexOf("mp3") >= 0;
+  }
+
   function titleTokens(value) {
     var normalized = normalizeTrackTitle(value);
     if (!normalized) return [];
@@ -1733,15 +1979,39 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     return score >= (Number(threshold) || 0.7);
   }
 
-  async function waitProcessedBlob(startTs, timeoutMs, expectedTrackTitle) {
+  async function waitProcessedBlob(startTs, timeoutMs, expectedTrackTitle, options) {
     var deadline = Date.now() + timeoutMs;
     var best = null;
     var expectedTitle = normalizeTrackTitle(expectedTrackTitle);
+    var expectMp3 = Boolean(options && options.expectMp3);
     var ignoredByFingerprint = {};
     var mismatchCount = 0;
+    var nonMp3Count = 0;
+    var firstNonMp3At = 0;
     while (Date.now() < deadline) {
       best = bestBlobArtifact(startTs, ignoredByFingerprint);
       if (best && best.clickedAt > 0 && best.blob && best.blob.size > 0) {
+        if (expectMp3 && !isMp3BlobArtifact(best)) {
+          var nonMp3Fingerprint = blobArtifactFingerprint(best);
+          if (nonMp3Fingerprint) {
+            ignoredByFingerprint[nonMp3Fingerprint] = true;
+          }
+          nonMp3Count += 1;
+          if (!firstNonMp3At) {
+            firstNonMp3At = Date.now();
+          }
+          blog("WARN: Non-MP3 blob seen while waiting for converted MP3.", {
+            filename: norm(best.filename || "") || null,
+            mimeType: norm(best.type || (best.blob && best.blob.type) || "") || null,
+            size: Number(best.blob && best.blob.size) || 0,
+          });
+          if (Date.now() - firstNonMp3At >= 35000) {
+            throw new Error("Converted MP3 blob did not become available after AAC download.");
+          }
+          await sleep(140);
+          continue;
+        }
+
         if (!expectedTitle) {
           return best;
         }
@@ -1768,6 +2038,9 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
         });
       }
       await sleep(140);
+    }
+    if (expectMp3 && nonMp3Count > 0) {
+      throw new Error("Converted MP3 blob did not become available in time.");
     }
     if (expectedTitle && mismatchCount > 0) {
       throw new Error("Blob filename mismatch timeout.");
@@ -1877,6 +2150,18 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     }
 
     var applied = await applySetting(payload && payload.downloadSetting);
+    var expectConvertedMp3 = Boolean(payload && payload.convertToMp3Expected);
+    if (expectConvertedMp3 && /aac/i.test(lower(applied))) {
+      var convertVerifiedAlbum = await applyConvertToMp3(true);
+      blog("Album track convert AAC toggle verification", {
+        expectConvertedMp3: true,
+        appliedSetting: applied,
+        verified: convertVerifiedAlbum,
+      });
+      if (!convertVerifiedAlbum) {
+        throw new Error("Convert AAC to MP3 toggle could not be verified.");
+      }
+    }
     var rowTitle = norm(
       (row.querySelector('[class*="track-row__title"],h3,h2,[class*="title"]') || {})
         .textContent
@@ -1894,6 +2179,7 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
       trackPosition: trackPosition,
       expectedTitle: expectedTitle,
       rowTitle: rowTitle || null,
+      expectConvertedMp3: expectConvertedMp3,
     });
 
     if (button.scrollIntoView) {
@@ -1907,7 +2193,8 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     var processedBlob = await waitProcessedBlob(
       started,
       /aac/i.test(lower(applied)) ? 95000 : 125000,
-      expectedTitle
+      expectedTitle,
+      {expectMp3: expectConvertedMp3}
     );
     if (!processedBlob || !processedBlob.blob || processedBlob.blob.size <= 0) {
       throw new Error("Album track blob capture timed out.");
@@ -2047,6 +2334,18 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
 
     await ensureInput();
     var applied = await applySetting(payload && payload.downloadSetting);
+    var expectConvertedMp3 = Boolean(payload && payload.convertToMp3Expected);
+    if (expectConvertedMp3 && /aac/i.test(lower(applied))) {
+      var convertVerified = await applyConvertToMp3(true);
+      blog("Track convert AAC toggle verification", {
+        expectConvertedMp3: true,
+        appliedSetting: applied,
+        verified: convertVerified,
+      });
+      if (!convertVerified) {
+        throw new Error("Convert AAC to MP3 toggle could not be verified.");
+      }
+    }
     var candidate = await findCandidate(song);
     if (!candidate) {
       var cancelButton = findCancelButtonForSong(song);
@@ -2090,7 +2389,8 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     var processedBlob = await waitProcessedBlob(
       started,
       /aac/i.test(lower(applied)) ? 105000 : 70000,
-      expectedTrackTitle
+      expectedTrackTitle,
+      {expectMp3: expectConvertedMp3}
     );
     if (processedBlob && processedBlob.blob && processedBlob.blob.size > 0) {
       blog("Processed blob artifact selected", {
@@ -2168,6 +2468,10 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     },
     download: async function (payload, context) {
       return download(payload || {}, context || {});
+    },
+    toggleConvertToMp3: async function (payload) {
+      var enabled = await applyConvertToMp3(Boolean(payload && payload.enabled));
+      return { enabled: enabled };
     },
   };
 

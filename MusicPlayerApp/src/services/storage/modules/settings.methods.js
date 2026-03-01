@@ -22,6 +22,7 @@ export const settingsMethods = {
       autoDownload: false,
       theme: 'dark',
       downloadSetting: 'Hi-Res',
+      convertAacToMp3: false,
       fileSources: this.buildDefaultFileSources(),
     };
   },
@@ -132,7 +133,7 @@ export const settingsMethods = {
     }
 
     const nextSources = sources.map(source =>
-      source.id === targetId ? {...source, on: !source.on} : source,
+      source.id === targetId ? { ...source, on: !source.on } : source,
     );
     return this.saveFileSources(nextSources);
   },

@@ -218,6 +218,30 @@ function extensionFromFilenameOrMime(filename = '', mimeType = '') {
   return '.m4a';
 }
 
+function isAacDownloadSetting(setting = '') {
+  const normalized = normalizeDownloadSetting(setting);
+  return normalized === '320kbps AAC' || normalized === '96kbps AAC';
+}
+
+function isLikelyMp3Format(extension = '', mimeType = '') {
+  const ext = String(extension || '').trim().toLowerCase();
+  const mime = String(mimeType || '').trim().toLowerCase();
+  return ext === '.mp3' || mime.includes('audio/mpeg') || mime.includes('mp3');
+}
+
+function isConvertToMp3PipelineError(message = '') {
+  const text = String(message || '')
+    .trim()
+    .toLowerCase();
+  return (
+    text.includes('converted mp3 blob did not become available') ||
+    text.includes('aac to mp3 conversion is enabled, but the website returned') ||
+    text.includes('convert aac to mp3 toggle could not be verified') ||
+    text.includes('aac to mp3 conversion did not apply in webview settings') ||
+    text.includes('unable to enable aac to mp3 conversion before download')
+  );
+}
+
 function base64ByteSize(value = '') {
   const input = String(value || '').trim();
   if (!input) {
@@ -811,9 +835,10 @@ function useSquidWebViewDownloader() {
   }, []);
 
   const queueDownloadJob = useCallback(
-    (song, index, downloadSetting) => {
+    (song, index, downloadSetting, convertAacToMp3Enabled = false) => {
       const requestSong = normalizeSong(song);
       const resolvedDownloadSetting = normalizeDownloadSetting(downloadSetting);
+      const resolvedConvertAacToMp3Enabled = Boolean(convertAacToMp3Enabled);
       const createdAt = Date.now();
       const id = `${createdAt}_${Math.random().toString(36).slice(2, 8)}`;
       const requestIndex = Number.isInteger(index)
@@ -842,6 +867,7 @@ function useSquidWebViewDownloader() {
           index: requestIndex,
           song: requestSong,
           downloadSetting: resolvedDownloadSetting,
+          convertAacToMp3Enabled: resolvedConvertAacToMp3Enabled,
         },
         createdAt,
         updatedAt: createdAt,
@@ -896,6 +922,7 @@ function useSquidWebViewDownloader() {
       let destinationPath = '';
       let finalFileSize = 0;
       let attemptError = null;
+      let fallbackToAacSource = false;
 
       for (
         let attempt = 1;
@@ -904,6 +931,18 @@ function useSquidWebViewDownloader() {
       ) {
         let bridgeDownload = null;
         let downloadResponse = null;
+        const resolvedDownloadSetting = normalizeDownloadSetting(
+          job.downloadSetting || DEFAULT_DOWNLOAD_SETTING,
+        );
+        const requestedConvertToMp3 = Boolean(
+          job?.request?.convertAacToMp3Enabled,
+        );
+        const requiresConvertSync = isAacDownloadSetting(
+          resolvedDownloadSetting,
+        );
+        const targetConvertToMp3 =
+          requiresConvertSync && requestedConvertToMp3 && !fallbackToAacSource;
+        const expectMp3Blob = targetConvertToMp3;
 
         try {
           assertJobActive(jobId);
@@ -914,9 +953,67 @@ function useSquidWebViewDownloader() {
             error: null,
           });
 
-          const resolvedDownloadSetting = normalizeDownloadSetting(
-            job.downloadSetting || DEFAULT_DOWNLOAD_SETTING,
-          );
+          if (requiresConvertSync) {
+            let convertSyncResult = null;
+            try {
+              convertSyncResult = await postBridgeCommand(
+                'toggleConvertToMp3',
+                { enabled: targetConvertToMp3 },
+                16000,
+                { jobId },
+              );
+            } catch (error) {
+              if (targetConvertToMp3) {
+                throw new Error(
+                  'Unable to enable AAC to MP3 conversion before download.',
+                );
+              }
+              log(
+                'Could not disable AAC to MP3 conversion before download. Continuing.',
+                {
+                  jobId,
+                  attempt,
+                  error: error?.message || String(error),
+                },
+              );
+            }
+
+            const appliedConvertToMp3 = Boolean(convertSyncResult?.enabled);
+            if (targetConvertToMp3 && !appliedConvertToMp3) {
+              throw new Error(
+                'AAC to MP3 conversion did not apply in webview settings.',
+              );
+            }
+
+            if (!targetConvertToMp3 && appliedConvertToMp3) {
+              log(
+                'AAC to MP3 conversion remained enabled when disabling was requested.',
+                {
+                  jobId,
+                  attempt,
+                },
+              );
+            } else {
+              log('Synced AAC to MP3 conversion state for job.', {
+                jobId,
+                attempt,
+                requested: targetConvertToMp3,
+                applied: appliedConvertToMp3,
+                setting: resolvedDownloadSetting,
+              });
+            }
+
+            if (requestedConvertToMp3 && fallbackToAacSource) {
+              log(
+                'WebView MP3 conversion fallback active. Proceeding with AAC source download.',
+                {
+                  jobId,
+                  attempt,
+                  setting: resolvedDownloadSetting,
+                },
+              );
+            }
+          }
 
           if (directAlbumJob) {
             const targetAlbumUrl = await ensureAlbumDownloadPage(albumJobUrl);
@@ -932,6 +1029,7 @@ function useSquidWebViewDownloader() {
                 albumUrl: targetAlbumUrl,
                 song: requestSong,
                 downloadSetting: resolvedDownloadSetting,
+                convertToMp3Expected: expectMp3Blob,
                 attempt,
               },
               130000,
@@ -943,6 +1041,7 @@ function useSquidWebViewDownloader() {
               {
                 song: requestSong,
                 downloadSetting: resolvedDownloadSetting,
+                convertToMp3Expected: expectMp3Blob,
                 attempt,
               },
               130000,
@@ -951,6 +1050,14 @@ function useSquidWebViewDownloader() {
           }
 
           assertJobActive(jobId);
+          const appliedDownloadSetting = normalizeDownloadSetting(
+            bridgeDownload?.appliedSetting || resolvedDownloadSetting,
+          );
+          if (appliedDownloadSetting !== resolvedDownloadSetting) {
+            throw new Error(
+              `Download quality mismatch. Requested ${resolvedDownloadSetting}, but webview applied ${appliedDownloadSetting}.`,
+            );
+          }
 
           resolvedSong = normalizeSong({
             ...requestSong,
@@ -978,6 +1085,15 @@ function useSquidWebViewDownloader() {
               filenameFromBridge,
               chunkTransfer?.mimeType,
             );
+            if (
+              requiresConvertSync &&
+              expectMp3Blob &&
+              !isLikelyMp3Format(extension, chunkTransfer?.mimeType)
+            ) {
+              throw new Error(
+                `AAC to MP3 conversion is enabled, but the website returned ${extension || String(chunkTransfer?.mimeType || 'an unknown format')}.`,
+              );
+            }
             const filenameStemRaw = filenameFromBridge
               ? filenameFromBridge.replace(/\.[^/.]+$/, '')
               : `${resolvedSong.artist} - ${resolvedSong.title}`;
@@ -1059,6 +1175,15 @@ function useSquidWebViewDownloader() {
             }
 
             const extension = normalizeMediaExtension(mediaUrl);
+            if (
+              requiresConvertSync &&
+              expectMp3Blob &&
+              !isLikelyMp3Format(extension, bridgeDownload?.contentType)
+            ) {
+              throw new Error(
+                `AAC to MP3 conversion is enabled, but the website returned ${extension || String(bridgeDownload?.contentType || 'an unknown format')}.`,
+              );
+            }
             const baseName = sanitizeFileSegment(
               `${resolvedSong.artist} - ${resolvedSong.title}`,
             );
@@ -1190,6 +1315,28 @@ function useSquidWebViewDownloader() {
           }
 
           const errorMessage = error?.message || String(error);
+          const shouldFallbackToAac =
+            requiresConvertSync &&
+            requestedConvertToMp3 &&
+            !fallbackToAacSource &&
+            isConvertToMp3PipelineError(errorMessage);
+
+          if (shouldFallbackToAac) {
+            fallbackToAacSource = true;
+            if (attempt >= MAX_NATIVE_DOWNLOAD_ATTEMPTS) {
+              throw error;
+            }
+            log(
+              'WebView MP3 conversion was unavailable. Falling back to AAC source download.',
+              {
+                jobId,
+                attempt,
+                error: errorMessage,
+                nextAttempt: attempt + 1,
+              },
+            );
+            continue;
+          }
 
           if (
             errorMessage === CANCELLED_ERROR ||
@@ -1608,8 +1755,18 @@ function useSquidWebViewDownloader() {
   );
 
   const startDownload = useCallback(
-    async (song, index = null, downloadSetting = DEFAULT_DOWNLOAD_SETTING) => {
-      const queued = queueDownloadJob(song, index, downloadSetting);
+    async (
+      song,
+      index = null,
+      downloadSetting = DEFAULT_DOWNLOAD_SETTING,
+      convertAacToMp3Enabled = false,
+    ) => {
+      const queued = queueDownloadJob(
+        song,
+        index,
+        downloadSetting,
+        convertAacToMp3Enabled,
+      );
       log('Queued download job.', {
         jobId: queued?.id,
         title: queued?.title,
@@ -1631,6 +1788,7 @@ function useSquidWebViewDownloader() {
       jobId,
       fallbackSong = null,
       downloadSetting = DEFAULT_DOWNLOAD_SETTING,
+      convertAacToMp3Enabled = false,
     ) => {
       const job = jobsRef.current.get(jobId);
       if (!job) {
@@ -1653,6 +1811,9 @@ function useSquidWebViewDownloader() {
       const resolvedRetrySetting = normalizeDownloadSetting(
         downloadSetting || job.downloadSetting,
       );
+      const resolvedRetryConvertAacToMp3Enabled = Boolean(
+        convertAacToMp3Enabled,
+      );
 
       cancelledJobsRef.current.delete(jobId);
       patchJob(jobId, {
@@ -1667,6 +1828,7 @@ function useSquidWebViewDownloader() {
           index: job.requestIndex,
           song: requestSong,
           downloadSetting: resolvedRetrySetting,
+          convertAacToMp3Enabled: resolvedRetryConvertAacToMp3Enabled,
         },
         downloadSetting: resolvedRetrySetting,
       });
@@ -1761,6 +1923,27 @@ function useSquidWebViewDownloader() {
     [bootstrapBridge, log],
   );
 
+  const syncConvertToMp3 = useCallback(
+    async (enabled) => {
+      try {
+        await bootstrapBridge();
+        const result = await sendBridgeCommandRaw(
+          'toggleConvertToMp3',
+          { enabled: Boolean(enabled) },
+          12000,
+        );
+        log('Synced convert AAC to MP3 toggle.', { enabled: Boolean(enabled), result });
+        return Boolean(result?.enabled);
+      } catch (error) {
+        log('Failed to sync convert AAC to MP3 toggle.', {
+          error: error?.message || String(error),
+        });
+        return Boolean(enabled);
+      }
+    },
+    [bootstrapBridge, log, sendBridgeCommandRaw],
+  );
+
   const webViewProps = useMemo(
     () => ({
       source: { uri: SQUID_WEB_URL },
@@ -1802,6 +1985,7 @@ function useSquidWebViewDownloader() {
     getDownloadJobs,
     retryDownload,
     cancelDownload,
+    syncConvertToMp3,
   };
 }
 

@@ -52,6 +52,7 @@ const SearchScreen = () => {
   const [albumTracks, setAlbumTracks] = useState([]);
   const [albumTracksLoading, setAlbumTracksLoading] = useState(false);
   const [albumQueueingAll, setAlbumQueueingAll] = useState(false);
+  const [convertAacToMp3, setConvertAacToMp3] = useState(false);
 
   const mountedRef = useRef(true);
   const downloadSettingRef = useRef(DEFAULT_DOWNLOAD_SETTING);
@@ -67,6 +68,7 @@ const SearchScreen = () => {
     getDownloadJobs: getDownloadJobsFromWebView,
     retryDownload: retryDownloadFromWebView,
     cancelDownload: cancelDownloadFromWebView,
+    syncConvertToMp3: syncConvertToMp3FromWebView,
   } = useSquidWebViewDownloader();
 
   const currentOptionShortLabel = useMemo(
@@ -171,6 +173,7 @@ const SearchScreen = () => {
           applyDownloadSetting(
             settings?.downloadSetting || DEFAULT_DOWNLOAD_SETTING,
           );
+          setConvertAacToMp3(Boolean(settings?.convertAacToMp3));
         }
         await refreshQueue();
       };
@@ -241,6 +244,23 @@ const SearchScreen = () => {
       downloadSetting: normalized,
     });
   }, [applyDownloadSetting]);
+
+  const isAacQuality = useMemo(
+    () =>
+      downloadSetting === '320kbps AAC' || downloadSetting === '96kbps AAC',
+    [downloadSetting],
+  );
+
+  const toggleConvertAacToMp3 = useCallback(async (nextValue) => {
+    const enabled = Boolean(nextValue);
+    setConvertAacToMp3(enabled);
+    const settings = await storageService.getSettings();
+    await storageService.saveSettings({
+      ...settings,
+      convertAacToMp3: enabled,
+    });
+    syncConvertToMp3FromWebView(enabled).catch(() => { });
+  }, [syncConvertToMp3FromWebView]);
 
   const toggleBridgeEnabled = useCallback(() => {
     if (!bridgeEnabled) {
@@ -379,6 +399,7 @@ const SearchScreen = () => {
           item,
           resolvedIndex,
           selectedSetting,
+          convertAacToMp3,
         );
         if (mountedRef.current) {
           setQueue(prev => {
@@ -408,7 +429,7 @@ const SearchScreen = () => {
         }
       }
     },
-    [bridgeEnabled, queueByTrackKey, startDownloadFromWebView],
+    [bridgeEnabled, convertAacToMp3, queueByTrackKey, startDownloadFromWebView],
   );
 
   const openAlbum = useCallback(async album => {
@@ -535,6 +556,9 @@ const SearchScreen = () => {
           normalizeDownloadSetting(
             job.downloadSetting || downloadSettingRef.current,
           ),
+          typeof job?.request?.convertAacToMp3Enabled === 'boolean'
+            ? job.request.convertAacToMp3Enabled
+            : convertAacToMp3,
         );
         if (mountedRef.current && retriedJob) {
           setQueue(prev => {
@@ -560,7 +584,7 @@ const SearchScreen = () => {
         }
       }
     },
-    [bridgeEnabled, retryDownloadFromWebView, retryingJobs],
+    [bridgeEnabled, convertAacToMp3, retryDownloadFromWebView, retryingJobs],
   );
 
   const cancelQueueItem = useCallback(
@@ -993,6 +1017,36 @@ const SearchScreen = () => {
                 </TouchableOpacity>
               );
             })}
+            <View style={styles.conversionDivider} />
+            <Text style={styles.conversionSectionTitle}>Conversions</Text>
+            <View
+              style={[
+                styles.conversionRow,
+                !isAacQuality && styles.conversionRowDisabled,
+              ]}>
+              <View style={styles.optionTextWrap}>
+                <Text style={styles.conversionLabel}>Convert AAC to MP3</Text>
+                <Text style={styles.conversionDescription}>
+                  Applies to 320kbps and 96kbps AAC downloads
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.conversionToggle,
+                  convertAacToMp3 && styles.conversionToggleOn,
+                ]}
+                onPress={() => isAacQuality && toggleConvertAacToMp3(!convertAacToMp3)}
+                disabled={!isAacQuality}
+                activeOpacity={0.7}>
+                <Text
+                  style={[
+                    styles.conversionToggleText,
+                    convertAacToMp3 && styles.conversionToggleTextOn,
+                  ]}>
+                  {convertAacToMp3 ? 'ON' : 'OFF'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </TouchableOpacity>
       </Modal>

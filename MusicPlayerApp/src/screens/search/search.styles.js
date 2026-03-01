@@ -1,5 +1,5 @@
-import {StyleSheet} from 'react-native';
-import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
+import { StyleSheet } from 'react-native';
+import { MUSIC_HOME_THEME as C } from '../../theme/musicHomeTheme';
 
 const styles = StyleSheet.create({
   container: {
@@ -583,6 +583,42 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   optionSubtitle: {
+    color: C.textMute,
+    fontSize: 10,
+    marginTop: 1,
+  },
+  conversionDivider: {
+    height: 1,
+    backgroundColor: C.borderDim,
+    marginVertical: 6,
+    marginHorizontal: 12,
+  },
+  conversionSectionTitle: {
+    color: C.textDim,
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    paddingHorizontal: 12,
+    paddingTop: 2,
+    paddingBottom: 5,
+  },
+  conversionRow: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  conversionRowDisabled: {
+    opacity: 0.4,
+  },
+  conversionLabel: {
+    color: C.text,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  conversionDescription: {
     color: C.textMute,
     fontSize: 10,
     marginTop: 1,
