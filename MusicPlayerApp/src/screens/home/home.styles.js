@@ -71,6 +71,23 @@ const styles = StyleSheet.create({
     color: C.text,
     fontSize: 14,
   },
+  syncBanner: {
+    marginBottom: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 8,
+    backgroundColor: C.bgCard,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  syncBannerText: {
+    marginLeft: 8,
+    color: C.textDim,
+    fontSize: 12,
+    fontWeight: '600',
+  },
   quickActionsRow: {
     flexDirection: 'row',
     marginBottom: 10,

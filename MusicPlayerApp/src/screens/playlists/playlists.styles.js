@@ -1,5 +1,6 @@
-import {StyleSheet} from 'react-native';
-import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
+import { StyleSheet } from 'react-native';
+import { MUSIC_HOME_THEME as C } from '../../theme/musicHomeTheme';
+import { createEmptyStateStyles, createModalStyles } from '../../theme/sharedStyles';
 
 const styles = StyleSheet.create({
   container: {
@@ -143,64 +144,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emptyContainer: {
-    paddingTop: 86,
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  emptyTitle: {
-    marginTop: 12,
-    color: '#f0eaff',
-    fontSize: 19,
-    fontWeight: '700',
-  },
-  emptySubtitle: {
-    marginTop: 8,
-    color: C.textDim,
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(8, 5, 18, 0.78)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  modalCard: {
-    width: '100%',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.bgCard,
-    padding: 16,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  modalTitle: {
-    color: C.text,
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 8,
-    backgroundColor: C.bg,
-    color: C.text,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 10,
-    fontSize: 14,
-  },
-  modalTextArea: {
-    minHeight: 90,
-    textAlignVertical: 'top',
-  },
   createModalButton: {
     marginTop: 2,
     borderRadius: 8,
@@ -216,4 +159,6 @@ const styles = StyleSheet.create({
   },
 });
 
-export default styles;
+const _modal = createModalStyles();
+const _empty = createEmptyStateStyles();
+export default { ...styles, ..._modal, ..._empty };

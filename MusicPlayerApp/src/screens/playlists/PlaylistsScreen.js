@@ -1,23 +1,26 @@
-import React, {useCallback, useMemo, useState} from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
+  Alert,
   FlatList,
-  Image,
   Modal,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import {useFocusEffect} from '@react-navigation/native';
 
 import playbackService from '../../services/playback/PlaybackService';
 import storageService from '../../services/storage/StorageService';
-import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
+import { MUSIC_HOME_THEME as C } from '../../theme/musicHomeTheme';
+import PlaylistCard from './PlaylistCard';
 import styles from './playlists.styles';
 
-const PlaylistsScreen = ({navigation}) => {
+const PLAYLIST_ITEM_HEIGHT = 96;
+const idKeyExtractor = item => item.id;
+
+const PlaylistsScreen = ({ navigation }) => {
   const [playlists, setPlaylists] = useState([]);
   const [search, setSearch] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
@@ -52,7 +55,7 @@ const PlaylistsScreen = ({navigation}) => {
     });
   }, [playlists, search]);
 
-  const createPlaylist = async () => {
+  const createPlaylist = useCallback(async () => {
     const name = newPlaylistName.trim();
     if (!name) {
       Alert.alert('Error', 'Please enter a playlist name');
@@ -71,170 +74,118 @@ const PlaylistsScreen = ({navigation}) => {
         error.message || 'Could not create playlist',
       );
     }
-  };
+  }, [newPlaylistName, newPlaylistDesc, loadPlaylists]);
 
-  const deletePlaylist = playlist => {
-    if (storageService.isFavoritesPlaylist(playlist)) {
-      Alert.alert(
-        'Protected Playlist',
-        'favorites is a default playlist and cannot be deleted.',
-      );
-      return;
-    }
+  const deletePlaylist = useCallback(
+    playlist => {
+      if (storageService.isFavoritesPlaylist(playlist)) {
+        Alert.alert(
+          'Protected Playlist',
+          'favorites is a default playlist and cannot be deleted.',
+        );
+        return;
+      }
 
-    Alert.alert('Delete Playlist', `Delete "${playlist.name}"?`, [
-      {text: 'Cancel', style: 'cancel'},
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await storageService.deletePlaylist(playlist.id);
-            await loadPlaylists();
-          } catch (error) {
-            Alert.alert('Error', error.message || 'Failed to delete playlist');
-          }
+      Alert.alert('Delete Playlist', `Delete "${playlist.name}"?`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await storageService.deletePlaylist(playlist.id);
+              await loadPlaylists();
+            } catch (error) {
+              Alert.alert(
+                'Error',
+                error.message || 'Failed to delete playlist',
+              );
+            }
+          },
         },
-      },
-    ]);
-  };
-
-  const openPlaylist = playlist => {
-    navigation.navigate('PlaylistDetail', {playlist});
-  };
-
-  const playPlaylist = async playlist => {
-    if (playlist.songs.length === 0) {
-      Alert.alert('Empty Playlist', 'This playlist has no songs yet.');
-      return;
-    }
-
-    const nextTrack = playlist.songs[0];
-
-    try {
-      await playbackService.playSongs(playlist.songs, {startIndex: 0});
-      navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
-    } catch (error) {
-      console.error('Error playing playlist:', error);
-      Alert.alert(
-        'Playback Error',
-        error.message || 'Could not play songs from this playlist.',
-      );
-    }
-  };
-
-  const renderHeader = () => (
-    <View>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Playlists</Text>
-          <Text style={styles.headerSubtitle}>
-            {playlists.length} collections
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.createButton}
-          onPress={() => setModalVisible(true)}>
-          <Icon name="plus" size={20} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.searchWrap}>
-        <Icon name="magnify" size={18} color={C.textMute} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search playlists"
-          placeholderTextColor={C.textMute}
-          value={search}
-          onChangeText={setSearch}
-        />
-      </View>
-    </View>
+      ]);
+    },
+    [loadPlaylists],
   );
 
-  const renderPlaylistItem = ({item}) => {
-    const artworks = item.songs
-      .filter(song => song.artwork)
-      .slice(0, 4)
-      .map(song => song.artwork);
-    const isFavorites = storageService.isFavoritesPlaylist(item);
+  const openPlaylist = useCallback(
+    playlist => {
+      navigation.navigate('PlaylistDetail', { playlist });
+    },
+    [navigation],
+  );
 
-    return (
-      <View style={styles.playlistCard}>
-        <TouchableOpacity
-          style={styles.playlistMain}
-          onPress={() => openPlaylist(item)}
-          onLongPress={() => deletePlaylist(item)}>
-          <View style={styles.playlistArtwork}>
-            {artworks.length > 0 ? (
-              <View style={styles.artworkGrid}>
-                {artworks.map((artwork, index) => (
-                  <Image
-                    key={`${item.id}-${index}`}
-                    source={{uri: artwork}}
-                    style={styles.gridImage}
-                  />
-                ))}
-                {artworks.length < 4
-                  ? Array.from({length: 4 - artworks.length}).map(
-                      (_, index) => (
-                        <View
-                          key={`empty-${item.id}-${index}`}
-                          style={styles.gridImageEmpty}>
-                          <Icon
-                            name="music-note"
-                            size={16}
-                            color={C.textMute}
-                          />
-                        </View>
-                      ),
-                    )
-                  : null}
-              </View>
-            ) : (
-              <View style={styles.placeholderArtwork}>
-                <Icon
-                  name={isFavorites ? 'heart' : 'playlist-music'}
-                  size={30}
-                  color={isFavorites ? '#f7a8cf' : C.textMute}
-                />
-              </View>
-            )}
-          </View>
+  const playPlaylist = useCallback(
+    async playlist => {
+      if (playlist.songs.length === 0) {
+        Alert.alert('Empty Playlist', 'This playlist has no songs yet.');
+        return;
+      }
 
-          <View style={styles.playlistMeta}>
-            <View style={styles.nameRow}>
-              <Text style={styles.playlistName} numberOfLines={1}>
-                {item.name}
-              </Text>
-              {isFavorites ? (
-                <View style={styles.favoriteBadge}>
-                  <Text style={styles.favoriteBadgeText}>Default</Text>
-                </View>
-              ) : null}
-            </View>
-            <Text style={styles.playlistCount}>
-              {item.songs.length} {item.songs.length === 1 ? 'song' : 'songs'}
+      const nextTrack = playlist.songs[0];
+
+      try {
+        await playbackService.playSongs(playlist.songs, { startIndex: 0 });
+        navigation.navigate('NowPlaying', { optimisticTrack: nextTrack });
+      } catch (error) {
+        console.error('Error playing playlist:', error);
+        Alert.alert(
+          'Playback Error',
+          error.message || 'Could not play songs from this playlist.',
+        );
+      }
+    },
+    [navigation],
+  );
+
+  const listHeader = useMemo(
+    () => (
+      <View>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.headerTitle}>Playlists</Text>
+            <Text style={styles.headerSubtitle}>
+              {playlists.length} collections
             </Text>
-            {!!item.description && (
-              <Text style={styles.playlistDesc} numberOfLines={2}>
-                {item.description}
-              </Text>
-            )}
           </View>
-        </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.playIconButton}
-          onPress={() => playPlaylist(item)}>
-          <Icon name="play-circle" size={36} color={C.accentFg} />
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.createButton}
+            onPress={() => setModalVisible(true)}>
+            <Icon name="plus" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.searchWrap}>
+          <Icon name="magnify" size={18} color={C.textMute} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search playlists"
+            placeholderTextColor={C.textMute}
+            value={search}
+            onChangeText={setSearch}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+        </View>
       </View>
-    );
-  };
+    ),
+    [playlists.length, search],
+  );
 
-  const renderEmpty = () => {
+  const renderPlaylistItem = useCallback(
+    ({ item }) => (
+      <PlaylistCard
+        item={item}
+        onOpen={openPlaylist}
+        onDelete={deletePlaylist}
+        onPlay={playPlaylist}
+      />
+    ),
+    [openPlaylist, deletePlaylist, playPlaylist],
+  );
+
+  const renderEmpty = useCallback(() => {
     const hasSearch = search.trim().length > 0;
     return (
       <View style={styles.emptyContainer}>
@@ -253,17 +204,31 @@ const PlaylistsScreen = ({navigation}) => {
         </Text>
       </View>
     );
-  };
+  }, [search]);
+
+  const getItemLayout = useCallback(
+    (_, index) => ({
+      length: PLAYLIST_ITEM_HEIGHT,
+      offset: PLAYLIST_ITEM_HEIGHT * index,
+      index,
+    }),
+    [],
+  );
 
   return (
     <View style={styles.container}>
       <FlatList
         data={filteredPlaylists}
         renderItem={renderPlaylistItem}
-        keyExtractor={item => item.id}
+        keyExtractor={idKeyExtractor}
         contentContainerStyle={styles.listContent}
-        ListHeaderComponent={renderHeader}
+        ListHeaderComponent={listHeader}
         ListEmptyComponent={renderEmpty}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={8}
+        windowSize={10}
+        initialNumToRender={10}
+        getItemLayout={getItemLayout}
       />
 
       <Modal

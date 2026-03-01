@@ -1,4 +1,4 @@
-import {useCallback, useMemo, useRef} from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import RNFS from 'react-native-fs';
 
 import {
@@ -11,6 +11,7 @@ import {
   toFileUriFromPath,
 } from '../../services/storage/storage.helpers';
 import {
+  ACTIVE_QUEUE_STATUSES,
   DEFAULT_DOWNLOAD_SETTING,
   normalizeDownloadSetting,
 } from './search.constants';
@@ -18,7 +19,7 @@ import SQUID_BRIDGE_SCRIPT from './webview/squidBridgeScript';
 
 const SQUID_WEB_URL = 'https://tidal.squid.wtf/';
 const MAX_STORED_JOBS = 120;
-const ACTIVE_STATUSES = new Set(['queued', 'preparing', 'downloading']);
+const ACTIVE_STATUSES = ACTIVE_QUEUE_STATUSES;
 const CANCELLED_ERROR = '__RB_DOWNLOAD_CANCELLED__';
 const BRIDGE_BOOTSTRAP_TIMEOUT_MS = 25000;
 const BRIDGE_BOOTSTRAP_RETRY_MS = 1200;
@@ -31,9 +32,7 @@ const DUPLICATE_LOAD_DEBOUNCE_MS = 200;
 const MAX_ALBUM_TRACK_ATTEMPTS = 2;
 const NO_MATCH_FOUND_ERROR = 'NO_MATCH_FOUND';
 
-function now() {
-  return Date.now();
-}
+// now() wrapper removed — use Date.now() directly
 
 function sleep(ms) {
   const delay = Math.max(0, Number(ms) || 0);
@@ -173,10 +172,10 @@ function normalizeResultItem(item, index, fallbackType = 'track') {
     downloadable: normalized.downloadable !== false,
     url: normalized.url,
     tidalId: normalized.tidalId,
-    ...(trackPosition ? {trackPosition} : null),
-    ...(albumUrl ? {albumUrl} : null),
-    ...(downloadButtonSelector ? {downloadButtonSelector} : null),
-    ...(sourceType ? {sourceType} : null),
+    ...(trackPosition ? { trackPosition } : null),
+    ...(albumUrl ? { albumUrl } : null),
+    ...(downloadButtonSelector ? { downloadButtonSelector } : null),
+    ...(sourceType ? { sourceType } : null),
   };
 }
 
@@ -234,8 +233,8 @@ function cloneJob(job) {
   }
   return {
     ...job,
-    song: job.song ? {...job.song} : null,
-    request: job.request ? {...job.request, song: {...job.request.song}} : null,
+    song: job.song ? { ...job.song } : null,
+    request: job.request ? { ...job.request, song: { ...job.request.song } } : null,
   };
 }
 
@@ -267,7 +266,7 @@ function normalizeHeaderMap(value) {
 function buildNativeDownloadHeaders(bridgeDownload) {
   const requestHeaders = normalizeHeaderMap(bridgeDownload?.requestHeaders);
   const fallbackHeaders = normalizeHeaderMap(bridgeDownload?.headers);
-  const merged = {...fallbackHeaders, ...requestHeaders};
+  const merged = { ...fallbackHeaders, ...requestHeaders };
   const referer =
     String(bridgeDownload?.referer || SQUID_WEB_URL).trim() || SQUID_WEB_URL;
   const userAgent = String(bridgeDownload?.userAgent || '').trim();
@@ -304,11 +303,15 @@ function useSquidWebViewDownloader() {
   const processingRef = useRef(false);
   const activeNativeDownloadRef = useRef(null);
   const cancelledJobsRef = useRef(new Set());
-  const lastLoadEndRef = useRef({url: '', timestamp: 0});
+  const lastLoadEndRef = useRef({ url: '', timestamp: 0 });
   const pendingAlbumUrlRef = useRef('');
   const activeAlbumUrlRef = useRef('');
 
+  // Logging is __DEV__-gated to suppress output in production builds.
   const log = useCallback((message, context = null) => {
+    if (!__DEV__) {
+      return;
+    }
     const timestamp = new Date().toISOString();
     if (context === null || typeof context === 'undefined') {
       console.log(`[SquidWV ${timestamp}] ${message}`);
@@ -355,7 +358,7 @@ function useSquidWebViewDownloader() {
             id: commandId,
           }),
         );
-        const context = {id: commandId};
+        const context = { id: commandId };
         if (reason) {
           context.reason = reason;
         }
@@ -411,7 +414,7 @@ function useSquidWebViewDownloader() {
         message,
       });
       entries.forEach(([id]) => {
-        rejectPendingCommand(id, message, {reason: 'bridge-reset'});
+        rejectPendingCommand(id, message, { reason: 'bridge-reset' });
       });
     },
     [log, rejectPendingCommand],
@@ -439,10 +442,10 @@ function useSquidWebViewDownloader() {
         return Promise.resolve();
       }
 
-      log('Waiting for bridge-ready event.', {timeoutMs});
+      log('Waiting for bridge-ready event.', { timeoutMs });
       return new Promise((resolve, reject) => {
         const timeoutId = setTimeout(() => {
-          log('Timed out waiting for bridge-ready event.', {timeoutMs});
+          log('Timed out waiting for bridge-ready event.', { timeoutMs });
           reject(new Error('Hidden webview bridge is not ready.'));
         }, timeoutMs);
 
@@ -476,8 +479,8 @@ function useSquidWebViewDownloader() {
         throw new Error('Hidden webview is unavailable.');
       }
 
-      const id = `cmd_${now()}_${commandCounterRef.current++}`;
-      const body = JSON.stringify({id, type, payload});
+      const id = `cmd_${Date.now()}_${commandCounterRef.current++}`;
+      const body = JSON.stringify({ id, type, payload });
       const jobId = String(options?.jobId || '').trim();
       if (jobId) {
         registerCommandTracking(id, jobId);
@@ -501,13 +504,13 @@ function useSquidWebViewDownloader() {
           pendingRequestsRef.current.delete(id);
           unlinkCommandTracking(id);
           sendBridgeAbort(id, 'command-timeout');
-          log('Bridge command timed out.', {id, type, timeoutMs});
+          log('Bridge command timed out.', { id, type, timeoutMs });
           pending.reject(new Error(`Webview command timed out: ${type}`));
         }, timeoutMs);
 
         pendingRequestsRef.current.set(id, {
           resolve: result => {
-            log('Bridge command resolved.', {id, type});
+            log('Bridge command resolved.', { id, type });
             resolve(result);
           },
           reject: error => {
@@ -524,7 +527,7 @@ function useSquidWebViewDownloader() {
           jobId: jobId || null,
         });
 
-        log('Posting bridge command.', {id, type});
+        log('Posting bridge command.', { id, type });
         webView.postMessage(body);
       });
     },
@@ -544,11 +547,12 @@ function useSquidWebViewDownloader() {
       }
 
       bridgeBootstrappingRef.current = true;
-      const startedAt = now();
+      const startedAt = Date.now();
       let attempt = 0;
+      let hasInjectedOnce = false;
 
       try {
-        while (now() - startedAt < timeoutMs) {
+        while (Date.now() - startedAt < timeoutMs) {
           if (bridgeReadyRef.current) {
             return;
           }
@@ -556,27 +560,19 @@ function useSquidWebViewDownloader() {
           attempt += 1;
           const webView = webViewRef.current;
           if (!webView) {
-            log('Bootstrap attempt skipped: webview ref is null.', {attempt});
+            log('Bootstrap attempt skipped: webview ref is null.', { attempt });
             await new Promise(resolve =>
               setTimeout(resolve, BRIDGE_BOOTSTRAP_RETRY_MS),
             );
             continue;
           }
 
-          log('Bootstrap attempt started.', {attempt});
-          try {
-            webView.injectJavaScript(SQUID_BRIDGE_SCRIPT);
-          } catch (error) {
-            log('Bridge script injection failed.', {
-              attempt,
-              error: error?.message || String(error),
-            });
-          }
-
+          // Ping first — only inject if the ping fails and this is the first retry.
+          log('Bootstrap attempt started.', { attempt });
           try {
             await sendBridgeCommandRaw(
               'ping',
-              {attempt},
+              { attempt },
               BRIDGE_PING_TIMEOUT_MS,
             );
             markBridgeReady();
@@ -586,6 +582,20 @@ function useSquidWebViewDownloader() {
               attempt,
               error: error?.message || String(error),
             });
+          }
+
+          // Re-inject the bridge script once after the first failed ping.
+          // Subsequent retries are ping-only to avoid the duplicate injection problem.
+          if (!hasInjectedOnce) {
+            try {
+              webView.injectJavaScript(SQUID_BRIDGE_SCRIPT);
+              hasInjectedOnce = true;
+            } catch (error) {
+              log('Bridge script injection failed.', {
+                attempt,
+                error: error?.message || String(error),
+              });
+            }
           }
 
           await new Promise(resolve =>
@@ -684,7 +694,7 @@ function useSquidWebViewDownloader() {
       if (parsed.ok) {
         const result =
           parsed.result && typeof parsed.result === 'object'
-            ? {...parsed.result}
+            ? { ...parsed.result }
             : parsed.result;
 
         if (
@@ -772,7 +782,7 @@ function useSquidWebViewDownloader() {
 
     const previousProgress = Number(job.progress) || 0;
     Object.assign(job, patch);
-    job.updatedAt = now();
+    job.updatedAt = Date.now();
 
     if (typeof patch.progress === 'number') {
       const clamped = clampProgress(patch.progress, previousProgress);
@@ -804,13 +814,13 @@ function useSquidWebViewDownloader() {
     (song, index, downloadSetting) => {
       const requestSong = normalizeSong(song);
       const resolvedDownloadSetting = normalizeDownloadSetting(downloadSetting);
-      const createdAt = now();
+      const createdAt = Date.now();
       const id = `${createdAt}_${Math.random().toString(36).slice(2, 8)}`;
       const requestIndex = Number.isInteger(index)
         ? index
         : Number.isInteger(song?.index)
-        ? song.index
-        : null;
+          ? song.index
+          : null;
 
       const job = {
         id,
@@ -866,9 +876,9 @@ function useSquidWebViewDownloader() {
         mode: directAlbumJob ? 'album-direct' : 'search',
         ...(directAlbumJob
           ? {
-              albumUrl: albumJobUrl || null,
-              trackPosition: albumTrackPosition || null,
-            }
+            albumUrl: albumJobUrl || null,
+            trackPosition: albumTrackPosition || null,
+          }
           : null),
       });
 
@@ -925,7 +935,7 @@ function useSquidWebViewDownloader() {
                 attempt,
               },
               130000,
-              {jobId},
+              { jobId },
             );
           } else {
             bridgeDownload = await postBridgeCommand(
@@ -936,7 +946,7 @@ function useSquidWebViewDownloader() {
                 attempt,
               },
               130000,
-              {jobId},
+              { jobId },
             );
           }
 
@@ -976,7 +986,7 @@ function useSquidWebViewDownloader() {
               sanitizeFileSegment(
                 `${resolvedSong.artist} - ${resolvedSong.title}`,
               ) ||
-              `Track_${now()}`;
+              `Track_${Date.now()}`;
             const preferredPath = `${destinationDir}/${filenameStem}${extension}`;
             destinationPath = await storageService.ensureUniquePath(
               preferredPath,
@@ -1052,7 +1062,7 @@ function useSquidWebViewDownloader() {
             const baseName = sanitizeFileSegment(
               `${resolvedSong.artist} - ${resolvedSong.title}`,
             );
-            const filenameBase = baseName || `Track_${now()}`;
+            const filenameBase = baseName || `Track_${Date.now()}`;
             const preferredPath = `${destinationDir}/${filenameBase}${extension}`;
             destinationPath = await storageService.ensureUniquePath(
               preferredPath,
@@ -1110,14 +1120,14 @@ function useSquidWebViewDownloader() {
                 patchJob(jobId, {
                   status: 'downloading',
                   phase: 'downloading',
-                  ...(typeof progress === 'number' ? {progress} : null),
+                  ...(typeof progress === 'number' ? { progress } : null),
                   downloadedBytes: written,
                   totalBytes: total || null,
                 });
               },
             });
 
-            activeNativeDownloadRef.current = {jobId, taskId: task.jobId};
+            activeNativeDownloadRef.current = { jobId, taskId: task.jobId };
             try {
               downloadResponse = await task.promise;
             } finally {
@@ -1136,8 +1146,7 @@ function useSquidWebViewDownloader() {
               downloadResponse.statusCode >= 300
             ) {
               throw new Error(
-                `Native file download failed (${
-                  downloadResponse?.statusCode || 'unknown'
+                `Native file download failed (${downloadResponse?.statusCode || 'unknown'
                 }).`,
               );
             }
@@ -1173,7 +1182,7 @@ function useSquidWebViewDownloader() {
           attemptError = error;
 
           if (destinationPath) {
-            await RNFS.unlink(destinationPath).catch(() => {});
+            await RNFS.unlink(destinationPath).catch(() => { });
           }
 
           if (cancelledJobsRef.current.has(jobId)) {
@@ -1236,7 +1245,7 @@ function useSquidWebViewDownloader() {
       const localSong = {
         ...resolvedSong,
         artwork: embeddedArtwork || resolvedSong.artwork || null,
-        id: `squid_${now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: `squid_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         sourceSongId: null,
         filename,
         sourceFilename: filename,
@@ -1266,7 +1275,7 @@ function useSquidWebViewDownloader() {
           downloadable: true,
         },
       });
-      log('Download job completed.', {jobId, filename});
+      log('Download job completed.', { jobId, filename });
     },
     [
       assertJobActive,
@@ -1324,7 +1333,7 @@ function useSquidWebViewDownloader() {
 
   const searchSongs = useCallback(
     async (query, searchType = 'tracks') => {
-      log('Starting search.', {query, searchType});
+      log('Starting search.', { query, searchType });
       await bootstrapBridge();
 
       const expectedHomeHref = normalizeComparableUrl(SQUID_WEB_URL);
@@ -1333,7 +1342,7 @@ function useSquidWebViewDownloader() {
       try {
         const ping = await sendBridgeCommandRaw(
           'ping',
-          {reason: 'search-home-check'},
+          { reason: 'search-home-check' },
           BRIDGE_PING_TIMEOUT_MS,
         );
         currentHref = String(ping?.href || '').trim();
@@ -1364,18 +1373,18 @@ function useSquidWebViewDownloader() {
         );
 
         const timeoutMs = 30000;
-        const startedAt = now();
+        const startedAt = Date.now();
         let homeReady = false;
 
-        while (now() - startedAt < timeoutMs) {
-          const remainingMs = timeoutMs - (now() - startedAt);
+        while (Date.now() - startedAt < timeoutMs) {
+          const remainingMs = timeoutMs - (Date.now() - startedAt);
           const waitMs = Math.max(1200, Math.min(7000, remainingMs));
           await waitForBridgeReady(waitMs);
 
           try {
             const ping = await sendBridgeCommandRaw(
               'ping',
-              {reason: 'search-home-wait'},
+              { reason: 'search-home-wait' },
               BRIDGE_PING_TIMEOUT_MS,
             );
             currentHref = String(ping?.href || '').trim();
@@ -1409,7 +1418,7 @@ function useSquidWebViewDownloader() {
       );
 
       const items = Array.isArray(response?.items) ? response.items : [];
-      log('Search completed.', {query, searchType, count: items.length});
+      log('Search completed.', { query, searchType, count: items.length });
       return items.map((item, index) =>
         normalizeResultItem(item, index, searchType),
       );
@@ -1448,9 +1457,9 @@ function useSquidWebViewDownloader() {
         throw new Error('Invalid target URL.');
       }
 
-      const startedAt = now();
-      while (now() - startedAt < timeoutMs) {
-        const remainingMs = timeoutMs - (now() - startedAt);
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < timeoutMs) {
+        const remainingMs = timeoutMs - (Date.now() - startedAt);
         const waitMs = Math.max(1200, Math.min(8000, remainingMs));
         await waitForBridgeReady(waitMs);
 
@@ -1458,7 +1467,7 @@ function useSquidWebViewDownloader() {
         try {
           ping = await sendBridgeCommandRaw(
             'ping',
-            {reason: 'album-href-check'},
+            { reason: 'album-href-check' },
             BRIDGE_PING_TIMEOUT_MS,
           );
         } catch (_) {
@@ -1606,7 +1615,7 @@ function useSquidWebViewDownloader() {
         title: queued?.title,
         artist: queued?.artist,
       });
-      processQueue().catch(() => {});
+      processQueue().catch(() => { });
       return queued;
     },
     [log, processQueue, queueDownloadJob],
@@ -1633,13 +1642,13 @@ function useSquidWebViewDownloader() {
 
       const requestSong = normalizeSong(
         job?.request?.song ||
-          fallbackSong || {
-            title: job.title,
-            artist: job.artist,
-            album: job.album,
-            artwork: job.artwork,
-            duration: job.duration,
-          },
+        fallbackSong || {
+          title: job.title,
+          artist: job.artist,
+          album: job.album,
+          artwork: job.artwork,
+          duration: job.duration,
+        },
       );
       const resolvedRetrySetting = normalizeDownloadSetting(
         downloadSetting || job.downloadSetting,
@@ -1662,8 +1671,8 @@ function useSquidWebViewDownloader() {
         downloadSetting: resolvedRetrySetting,
       });
 
-      log('Retry queued for job.', {jobId});
-      processQueue().catch(() => {});
+      log('Retry queued for job.', { jobId });
+      processQueue().catch(() => { });
       return cloneJob(jobsRef.current.get(jobId));
     },
     [log, patchJob, processQueue],
@@ -1698,7 +1707,7 @@ function useSquidWebViewDownloader() {
       }
 
       jobsRef.current.delete(jobId);
-      log('Cancelled download job.', {jobId});
+      log('Cancelled download job.', { jobId });
       return true;
     },
     [log, rejectPendingCommand],
@@ -1708,11 +1717,11 @@ function useSquidWebViewDownloader() {
     event => {
       const rawUrl = String(event?.nativeEvent?.url || '').trim();
       const comparableUrl = normalizeComparableUrl(rawUrl);
-      const timestamp = now();
+      const timestamp = Date.now();
       const lastLoadEnd = lastLoadEndRef.current;
       const deltaMs = timestamp - Number(lastLoadEnd?.timestamp || 0);
 
-      log('WebView onLoadStart.', {url: rawUrl || null});
+      log('WebView onLoadStart.', { url: rawUrl || null });
 
       if (
         comparableUrl &&
@@ -1739,10 +1748,10 @@ function useSquidWebViewDownloader() {
       const comparableUrl = normalizeComparableUrl(rawUrl);
       lastLoadEndRef.current = {
         url: comparableUrl,
-        timestamp: now(),
+        timestamp: Date.now(),
       };
 
-      log('WebView onLoadEnd.', {url: rawUrl || null});
+      log('WebView onLoadEnd.', { url: rawUrl || null });
       bootstrapBridge(10000).catch(error => {
         log('Bootstrap after onLoadEnd failed.', {
           error: error?.message || String(error),
@@ -1754,7 +1763,7 @@ function useSquidWebViewDownloader() {
 
   const webViewProps = useMemo(
     () => ({
-      source: {uri: SQUID_WEB_URL},
+      source: { uri: SQUID_WEB_URL },
       originWhitelist: ['*'],
       javaScriptEnabled: true,
       domStorageEnabled: true,

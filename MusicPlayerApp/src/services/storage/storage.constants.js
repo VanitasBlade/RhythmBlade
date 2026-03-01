@@ -3,6 +3,7 @@ export const STORAGE_KEYS = {
   PLAYLISTS: '@playlists',
   ALBUMS: '@albums',
   SETTINGS: '@settings',
+  LAST_LIBRARY_SYNC_AT: '@library_last_synced_at',
 };
 
 export const DEFAULT_AUDIO_EXTENSION = '.flac';

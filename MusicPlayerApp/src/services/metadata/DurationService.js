@@ -44,7 +44,7 @@ export function canExtractEmbeddedDuration(trackOrPath) {
   return Boolean(filePath && resolveExtractor(filePath));
 }
 
-export async function extractEmbeddedDurationSeconds(trackOrPath) {
+export async function extractEmbeddedDurationSeconds(trackOrPath, options = {}) {
   const filePath = normalizeFilePath(trackOrPath);
   const extractor = resolveExtractor(filePath);
   if (!filePath || !extractor) {
@@ -62,7 +62,7 @@ export async function extractEmbeddedDurationSeconds(trackOrPath) {
   }
 
   const task = (async () => {
-    const extracted = await extractor(filePath);
+    const extracted = await extractor(filePath, options);
     const duration = normalizeDuration(extracted);
     if (!duration) {
       durationCache.set(filePath, NO_DURATION);

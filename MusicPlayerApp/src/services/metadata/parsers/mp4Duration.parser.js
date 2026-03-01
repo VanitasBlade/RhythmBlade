@@ -126,6 +126,10 @@ export async function extractMp4DurationSeconds(filePath, options = {}) {
   const scanWindows = Array.isArray(options.scanWindows)
     ? options.scanWindows
     : DEFAULT_MP4_DURATION_SCAN_WINDOWS;
+  const readProbe =
+    options.readProbe && typeof options.readProbe === 'object'
+      ? options.readProbe
+      : null;
   const inspectedChunks = new Set();
 
   for (const requestedWindow of scanWindows) {
@@ -146,6 +150,9 @@ export async function extractMp4DurationSeconds(filePath, options = {}) {
         continue;
       }
       inspectedChunks.add(key);
+      if (readProbe && offset > 0) {
+        readProbe.requiredSeek = true;
+      }
 
       const chunkBytes = await readChunkAsBuffer(filePath, length, offset);
       if (!chunkBytes) {

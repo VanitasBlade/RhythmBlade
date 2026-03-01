@@ -1,7 +1,8 @@
-import {Dimensions, Platform, StatusBar, StyleSheet} from 'react-native';
-import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
+import { Dimensions, Platform, StatusBar, StyleSheet } from 'react-native';
+import { MUSIC_HOME_THEME as C } from '../../theme/musicHomeTheme';
+import { createModalStyles } from '../../theme/sharedStyles';
 
-const {width} = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 const topInset = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
 const headerTopPadding = topInset + (Platform.OS === 'ios' ? 46 : 16);
 const menuTop = headerTopPadding + 42;
@@ -30,7 +31,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerSpacer: {width: 36, height: 36},
+  headerSpacer: { width: 36, height: 36 },
   artworkContainer: {
     alignItems: 'center',
     marginVertical: 40,
@@ -139,32 +140,7 @@ const styles = StyleSheet.create({
   menuOptionTextDanger: {
     color: '#f57f86',
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(8, 5, 18, 0.78)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  modalCard: {
-    width: '100%',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.bgCard,
-    padding: 16,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  modalTitle: {
-    color: C.text,
-    fontSize: 21,
-    fontWeight: '700',
-  },
+
   detailRow: {
     paddingVertical: 8,
     borderTopWidth: 1,
@@ -182,7 +158,7 @@ const styles = StyleSheet.create({
   },
   queueOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(8, 5, 18, 0.78)',
+    backgroundColor: C.modalOverlayBg,
     justifyContent: 'flex-end',
   },
   queueCard: {
@@ -280,4 +256,5 @@ const styles = StyleSheet.create({
   },
 });
 
-export default styles;
+const _modal = createModalStyles();
+export default { ...styles, ..._modal };

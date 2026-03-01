@@ -12,6 +12,7 @@ export const MUSIC_HOME_THEME = {
   textDim: '#8075a0',
   textMute: '#4a4268',
   textDeep: '#3d3560',
+  modalOverlayBg: 'rgba(8, 5, 18, 0.78)',
 };
 
 export const MUSIC_HOME_ART_COLORS = {

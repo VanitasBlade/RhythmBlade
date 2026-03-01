@@ -1,31 +1,38 @@
-import React, {useEffect, useState} from 'react';
-import {ActivityIndicator, Alert, StatusBar, StyleSheet, Text, View} from 'react-native';
-import {NavigationContainer} from '@react-navigation/native';
-import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
-import {createNativeStackNavigator} from '@react-navigation/native-stack';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import TrackPlayer from 'react-native-track-player';
-import {MUSIC_HOME_THEME as C} from './src/theme/musicHomeTheme';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { MUSIC_HOME_THEME as C } from './src/theme/musicHomeTheme';
 
 // Services
+import networkService from './src/services/network/NetworkService';
 import playbackService, {
   PlaybackServiceHandler,
 } from './src/services/playback/PlaybackService';
-import networkService from './src/services/network/NetworkService';
 import storageService from './src/services/storage/StorageService';
 import appDialogService from './src/services/ui/AppDialogService';
 
 // Screens
 import HomeScreen from './src/screens/home/HomeScreen';
-import SearchScreen from './src/screens/search/SearchScreen';
 import LibraryScreen from './src/screens/library/LibraryScreen';
-import SettingsScreen from './src/screens/settings/SettingsScreen';
-import PlaylistDetailScreen from './src/screens/playlistDetail/PlaylistDetailScreen';
 import NowPlayingScreen from './src/screens/nowPlaying/NowPlayingScreen';
+import PlaylistDetailScreen from './src/screens/playlistDetail/PlaylistDetailScreen';
+import SearchScreen from './src/screens/search/SearchScreen';
+import SettingsScreen from './src/screens/settings/SettingsScreen';
 
 // Components
-import MiniPlayer from './src/components/MiniPlayer';
 import AppDialogHost from './src/components/AppDialogHost';
+import MiniPlayer from './src/components/MiniPlayer';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -48,13 +55,13 @@ const TAB_SCREEN_OPTIONS = {
 
 const STACK_SCREEN_OPTIONS = {
   headerShown: false,
-  cardStyle: {backgroundColor: C.bg},
+  cardStyle: { backgroundColor: C.bg },
 };
 
 const createTabIcon =
   iconName =>
-  ({color, size}) =>
-    <Icon name={iconName} size={size} color={color} />;
+    ({ color, size }) =>
+      <Icon name={iconName} size={size} color={color} />;
 
 const tabIcons = {
   Home: createTabIcon('home'),
@@ -130,27 +137,39 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     const initializeApp = async () => {
       try {
-        await playbackService.initialize();
+        await Promise.all([
+          playbackService.initialize(),
+          storageService.getLocalLibrary(),
+        ]);
         networkService.initialize();
-
-        await storageService.syncEnabledFileSourcesToLibrary({
-          recursive: true,
-          promptForPermission: true,
-          migrateArtwork: true,
-          migrateDuration: true,
-        });
       } catch (error) {
         console.error('App bootstrap failed:', error);
       } finally {
-        setBootstrapping(false);
+        if (!cancelled) {
+          setBootstrapping(false);
+        }
+      }
+
+      if (!cancelled) {
+        storageService
+          .runLibrarySyncInBackground({
+            recursive: true,
+            promptForPermission: true,
+            readEmbeddedTextMetadata: true,
+          })
+          .catch(error => {
+            console.error('Background library sync failed:', error);
+          });
       }
     };
 
     initializeApp();
 
     return () => {
+      cancelled = true;
       networkService.cleanup();
     };
   }, []);
@@ -160,7 +179,7 @@ function App() {
       <View style={styles.bootContainer}>
         <StatusBar barStyle="light-content" backgroundColor={C.bg} />
         <ActivityIndicator size="small" color={C.accentFg} />
-        <Text style={styles.bootText}>Syncing music library...</Text>
+        <Text style={styles.bootText}>Loading your library...</Text>
         <AppDialogHost />
       </View>
     );

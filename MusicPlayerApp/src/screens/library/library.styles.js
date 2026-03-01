@@ -1,8 +1,9 @@
-import {StyleSheet} from 'react-native';
-import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
+import { StyleSheet } from 'react-native';
+import { MUSIC_HOME_THEME as C } from '../../theme/musicHomeTheme';
+import { createEmptyStateStyles, createModalStyles } from '../../theme/sharedStyles';
 
 const styles = StyleSheet.create({
-  container: {flex: 1, backgroundColor: C.bg},
+  container: { flex: 1, backgroundColor: C.bg },
   header: {
     paddingTop: 40,
     paddingHorizontal: 16,
@@ -12,7 +13,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: C.borderDim,
   },
-  backBtn: {marginRight: 8, paddingRight: 4, paddingVertical: 2},
+  backBtn: { marginRight: 8, paddingRight: 4, paddingVertical: 2 },
   headerTitle: {
     color: '#e8e2f8',
     fontSize: 40,
@@ -25,16 +26,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: C.borderDim,
   },
-  subTabBtn: {flex: 1, alignItems: 'center', paddingVertical: 11},
-  subTabText: {fontSize: 18, color: C.textMute, fontWeight: '500'},
-  subTabTextActive: {color: C.text, fontWeight: '700'},
+  subTabBtn: { flex: 1, alignItems: 'center', paddingVertical: 11 },
+  subTabText: { fontSize: 18, color: C.textMute, fontWeight: '500' },
+  subTabTextActive: { color: C.text, fontWeight: '700' },
   subTabLine: {
     marginTop: 9,
     width: '54%',
     height: 2,
     backgroundColor: C.accent,
   },
-  panel: {flex: 1},
+  panel: { flex: 1 },
   controlsRow: {
     paddingTop: 12,
     paddingHorizontal: 16,
@@ -75,7 +76,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: C.accentFg,
   },
-  sortWrap: {marginLeft: 'auto', position: 'relative', zIndex: 20},
+  sortWrap: { marginLeft: 'auto', position: 'relative', zIndex: 20 },
   sortBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -103,18 +104,18 @@ const styles = StyleSheet.create({
     backgroundColor: C.bgCard,
     overflow: 'hidden',
   },
-  sortOption: {paddingHorizontal: 12, paddingVertical: 9},
-  sortOptionActive: {backgroundColor: '#211840'},
-  sortOptionText: {color: C.textDim, fontSize: 12, fontWeight: '600'},
-  sortOptionTextActive: {color: C.accentFg},
-  disabled: {opacity: 0.5},
+  sortOption: { paddingHorizontal: 12, paddingVertical: 9 },
+  sortOptionActive: { backgroundColor: '#211840' },
+  sortOptionText: { color: C.textDim, fontSize: 12, fontWeight: '600' },
+  sortOptionTextActive: { color: C.accentFg },
+  disabled: { opacity: 0.5 },
   metaText: {
     color: C.textDeep,
     fontSize: 14,
     paddingHorizontal: 16,
     paddingBottom: 8,
   },
-  listContent: {paddingHorizontal: 16, paddingBottom: 180},
+  listContent: { paddingHorizontal: 16, paddingBottom: 180 },
   trackCard: {
     minHeight: 64,
     borderWidth: 1,
@@ -132,16 +133,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  trackArtwork: {width: 64, height: 64},
+  trackArtwork: { width: 64, height: 64 },
   trackFallback: {
     width: 64,
     height: 64,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  trackMeta: {flex: 1, paddingHorizontal: 10},
-  trackTitle: {color: C.text, fontSize: 14, fontWeight: '700'},
-  trackArtist: {marginTop: 2, color: C.textMute, fontSize: 12},
+  trackMeta: { flex: 1, paddingHorizontal: 10 },
+  trackTitle: { color: C.text, fontSize: 14, fontWeight: '700' },
+  trackArtist: { marginTop: 2, color: C.textMute, fontSize: 12 },
   trackRight: {
     width: 58,
     minHeight: 64,
@@ -149,7 +150,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingRight: 8,
   },
-  trackDuration: {color: C.textDeep, fontSize: 11, marginBottom: 2},
+  trackDuration: { color: C.textDeep, fontSize: 11, marginBottom: 2 },
   dotBtn: {
     width: 28,
     height: 28,
@@ -175,7 +176,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 10,
   },
-  searchInput: {flex: 1, marginLeft: 8, color: C.text, fontSize: 14},
+  searchInput: { flex: 1, marginLeft: 8, color: C.text, fontSize: 14 },
   addPlaylistBtn: {
     width: 42,
     height: 42,
@@ -185,8 +186,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  playlistRow: {flexDirection: 'row', marginBottom: 14, gap: 10},
-  playlistCard: {flex: 1},
+  playlistRow: { flexDirection: 'row', marginBottom: 14, gap: 10 },
+  playlistCard: { flex: 1 },
   playlistCover: {
     height: 124,
     borderRadius: 8,
@@ -201,8 +202,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  playlistCount: {marginTop: 2, color: C.textMute, fontSize: 14},
-  filesHeader: {paddingTop: 14, paddingHorizontal: 16, paddingBottom: 8},
+  playlistCount: { marginTop: 2, color: C.textMute, fontSize: 14 },
+  filesHeader: { paddingTop: 14, paddingHorizontal: 16, paddingBottom: 8 },
   filesLabel: {
     color: C.textDim,
     fontSize: 22,
@@ -219,13 +220,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     overflow: 'hidden',
   },
-  sourceCardDisabled: {borderColor: C.borderDim, backgroundColor: '#16102a'},
-  sourceAccent: {width: 3},
-  sourceAccentOn: {backgroundColor: C.accent},
-  sourceAccentOff: {backgroundColor: C.border},
-  sourceBody: {flex: 1, paddingHorizontal: 12, paddingVertical: 10},
-  sourceTop: {flexDirection: 'row', alignItems: 'center', marginBottom: 7},
-  sourcePathWrap: {flex: 1, flexDirection: 'row', alignItems: 'center'},
+  sourceCardDisabled: { borderColor: C.borderDim, backgroundColor: '#16102a' },
+  sourceAccent: { width: 3 },
+  sourceAccentOn: { backgroundColor: C.accent },
+  sourceAccentOff: { backgroundColor: C.border },
+  sourceBody: { flex: 1, paddingHorizontal: 12, paddingVertical: 10 },
+  sourceTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 7 },
+  sourcePathWrap: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   sourcePath: {
     marginLeft: 8,
     color: C.text,
@@ -233,7 +234,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     flex: 1,
   },
-  sourcePathDisabled: {color: C.textMute},
+  sourcePathDisabled: { color: C.textMute },
   toggleTrack: {
     width: 36,
     height: 21,
@@ -242,7 +243,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 2,
   },
-  toggleTrackOn: {backgroundColor: C.accent},
+  toggleTrackOn: { backgroundColor: C.accent },
   toggleThumb: {
     width: 16,
     height: 16,
@@ -250,23 +251,23 @@ const styles = StyleSheet.create({
     backgroundColor: C.textMute,
     alignSelf: 'flex-start',
   },
-  toggleThumbOn: {alignSelf: 'flex-end', backgroundColor: '#fff'},
+  toggleThumbOn: { alignSelf: 'flex-end', backgroundColor: '#fff' },
   sourceBottom: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  sourceCountWrap: {flexDirection: 'row', alignItems: 'center'},
-  sourceCount: {marginLeft: 6, color: C.textDim, fontSize: 14},
-  formatWrap: {flexDirection: 'row', gap: 4},
+  sourceCountWrap: { flexDirection: 'row', alignItems: 'center' },
+  sourceCount: { marginLeft: 6, color: C.textDim, fontSize: 14 },
+  formatWrap: { flexDirection: 'row', gap: 4 },
   fmtChip: {
     borderRadius: 4,
     backgroundColor: C.border,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
-  fmtText: {color: C.accentFg, fontSize: 11, fontWeight: '800'},
-  fmtTextOff: {color: C.textDeep},
+  fmtText: { color: C.accentFg, fontSize: 11, fontWeight: '800' },
+  fmtTextOff: { color: C.textDeep },
   addSourceBtn: {
     marginTop: 2,
     borderRadius: 8,
@@ -277,7 +278,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  addSourceText: {color: C.textMute, fontSize: 16, fontWeight: '500'},
+  addSourceText: { color: C.textMute, fontSize: 16, fontWeight: '500' },
   migrateArtworkBtn: {
     marginTop: 10,
     borderRadius: 8,
@@ -290,8 +291,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
   },
-  migrateArtworkText: {color: C.accentFg, fontSize: 14, fontWeight: '700'},
-  emptyState: {paddingTop: 90, alignItems: 'center', paddingHorizontal: 24},
+  migrateArtworkText: { color: C.accentFg, fontSize: 14, fontWeight: '700' },
+  emptyState: { paddingTop: 90, alignItems: 'center', paddingHorizontal: 24 },
   emptyTitle: {
     marginTop: 12,
     color: '#f0eaff',
@@ -299,8 +300,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
-  emptySub: {marginTop: 8, color: C.textDim, fontSize: 13, textAlign: 'center'},
-  backdrop: {...StyleSheet.absoluteFillObject, zIndex: 15},
+  emptySub: { marginTop: 8, color: C.textDim, fontSize: 13, textAlign: 'center' },
+  backdrop: { ...StyleSheet.absoluteFillObject, zIndex: 15 },
   importProgressCard: {
     width: '100%',
     borderRadius: 12,
@@ -341,40 +342,6 @@ const styles = StyleSheet.create({
     color: C.textMute,
     fontSize: 12,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(8, 5, 18, 0.78)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  modalCard: {
-    width: '100%',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.bgCard,
-    padding: 16,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  modalTitle: {color: C.text, fontSize: 21, fontWeight: '700'},
-  modalInput: {
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 8,
-    backgroundColor: C.bg,
-    color: C.text,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 10,
-    fontSize: 14,
-  },
-  modalTextArea: {minHeight: 90, textAlignVertical: 'top'},
   modalCreateBtn: {
     marginTop: 2,
     borderRadius: 8,
@@ -383,7 +350,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 11,
   },
-  modalCreateText: {color: '#fff', fontSize: 14, fontWeight: '700'},
+  modalCreateText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });
 
-export default styles;
+const _modal = createModalStyles();
+const _empty = createEmptyStateStyles();
+export default { ...styles, ..._modal, ..._empty };

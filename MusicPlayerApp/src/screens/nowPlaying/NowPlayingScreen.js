@@ -1,4 +1,5 @@
-import React, {useCallback, useEffect, useState} from 'react';
+import Slider from '@react-native-community/slider';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -9,31 +10,34 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import Slider from '@react-native-community/slider';
 import TrackPlayer, {
-  State,
   RepeatMode,
+  State,
   useActiveTrack,
   usePlaybackState,
   useProgress,
 } from 'react-native-track-player';
-import {
-  MUSIC_HOME_ART_COLORS,
-  MUSIC_HOME_THEME as C,
-} from '../../theme/musicHomeTheme';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import playbackService from '../../services/playback/PlaybackService';
 import storageService from '../../services/storage/StorageService';
+import {
+  MUSIC_HOME_THEME as C,
+  MUSIC_HOME_ART_COLORS,
+} from '../../theme/musicHomeTheme';
+import { formatTime } from '../../utils/formatTime';
 import styles from './nowPlaying.styles';
 
-const NowPlayingScreen = ({navigation, route}) => {
+const noop = () => { };
+const queueKeyExtractor = (item, index) =>
+  String(item.id || item.url || `queue-${index}`);
+
+const NowPlayingScreen = ({ navigation, route }) => {
   const playbackState = usePlaybackState();
-  const progress = useProgress();
+  const progress = useProgress(250);
   const track = useActiveTrack();
   const optimisticTrack = route?.params?.optimisticTrack || null;
   const displayTrack = track || optimisticTrack;
   const [repeatMode, setRepeatMode] = useState(RepeatMode.Off);
-  const [isShuffling, setIsShuffling] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
@@ -43,27 +47,29 @@ const NowPlayingScreen = ({navigation, route}) => {
 
   const isPlaying = playbackState.state === State.Playing;
 
-  const togglePlayback = async () => {
+  const togglePlayback = useCallback(async () => {
     if (isPlaying) {
       await playbackService.pause();
     } else {
       await playbackService.play();
     }
-  };
+  }, [isPlaying]);
 
-  const skipToNext = async () => {
-    await playbackService.skipToNext();
-  };
+  const skipToNext = useCallback(
+    async () => playbackService.skipToNext(),
+    [],
+  );
 
-  const skipToPrevious = async () => {
-    await playbackService.skipToPrevious();
-  };
+  const skipToPrevious = useCallback(
+    async () => playbackService.skipToPrevious(),
+    [],
+  );
 
-  const onSeek = async value => {
+  const onSeek = useCallback(async value => {
     await playbackService.seekTo(value);
-  };
+  }, []);
 
-  const toggleRepeat = async () => {
+  const toggleRepeat = useCallback(async () => {
     let newMode;
     switch (repeatMode) {
       case RepeatMode.Off:
@@ -80,28 +86,16 @@ const NowPlayingScreen = ({navigation, route}) => {
     }
     setRepeatMode(newMode);
     await playbackService.setRepeatMode(newMode);
-  };
+  }, [repeatMode]);
 
-  const getRepeatIcon = () => {
-    switch (repeatMode) {
-      case RepeatMode.Track:
-        return 'repeat-once';
-      case RepeatMode.Queue:
-        return 'repeat';
-      default:
-        return 'repeat';
-    }
-  };
-
-  const getRepeatColor = () => {
-    return repeatMode !== RepeatMode.Off ? C.accentFg : C.textDeep;
-  };
-
-  const formatTime = seconds => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-  };
+  const repeatIcon = useMemo(
+    () => (repeatMode === RepeatMode.Track ? 'repeat-once' : 'repeat'),
+    [repeatMode],
+  );
+  const repeatColor = useMemo(
+    () => (repeatMode !== RepeatMode.Off ? C.accentFg : C.textDeep),
+    [repeatMode],
+  );
 
   const refreshFavoriteState = useCallback(async () => {
     if (!displayTrack?.id) {
@@ -121,7 +115,7 @@ const NowPlayingScreen = ({navigation, route}) => {
     refreshFavoriteState();
   }, [refreshFavoriteState]);
 
-  const toggleFavorite = async () => {
+  const toggleFavorite = useCallback(async () => {
     if (!displayTrack?.id) {
       return;
     }
@@ -132,9 +126,9 @@ const NowPlayingScreen = ({navigation, route}) => {
       console.error('Error toggling favorite:', error);
       Alert.alert('Error', 'Could not update favorites.');
     }
-  };
+  }, [displayTrack]);
 
-  const openQueueView = async () => {
+  const openQueueView = useCallback(async () => {
     setMenuOpen(false);
     try {
       const [queue, index] = await Promise.all([
@@ -150,9 +144,9 @@ const NowPlayingScreen = ({navigation, route}) => {
       console.error('Error loading queue:', error);
       Alert.alert('Error', 'Could not open the queue.');
     }
-  };
+  }, []);
 
-  const playQueuedTrack = async index => {
+  const playQueuedTrack = useCallback(async index => {
     try {
       await playbackService.skipTo(index);
       setActiveQueueIndex(index);
@@ -161,14 +155,14 @@ const NowPlayingScreen = ({navigation, route}) => {
       console.error('Error switching queue track:', error);
       Alert.alert('Error', 'Could not play this track.');
     }
-  };
+  }, []);
 
-  const openTrackDetails = () => {
+  const openTrackDetails = useCallback(() => {
     setMenuOpen(false);
     setDetailsOpen(true);
-  };
+  }, []);
 
-  const deleteCurrentTrack = () => {
+  const deleteCurrentTrack = useCallback(() => {
     if (!displayTrack) {
       return;
     }
@@ -178,7 +172,7 @@ const NowPlayingScreen = ({navigation, route}) => {
       'Delete Track',
       `Delete "${displayTrack.title || 'this track'}" from your library?`,
       [
-        {text: 'Cancel', style: 'cancel'},
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
@@ -207,59 +201,74 @@ const NowPlayingScreen = ({navigation, route}) => {
         },
       ],
     );
-  };
+  }, [displayTrack, navigation]);
 
-  const detailRows = [
-    {label: 'Title', value: displayTrack?.title || 'Unknown'},
-    {label: 'Artist', value: displayTrack?.artist || 'Unknown'},
-    {label: 'Album', value: displayTrack?.album || 'Unknown'},
-    {
-      label: 'Duration',
-      value: formatTime(displayTrack?.duration || progress.duration || 0),
-    },
-    {
-      label: 'Source',
-      value: displayTrack?.localPath || displayTrack?.url || 'Unknown',
-    },
-  ];
+  const detailRows = useMemo(
+    () => [
+      { label: 'Title', value: displayTrack?.title || 'Unknown' },
+      { label: 'Artist', value: displayTrack?.artist || 'Unknown' },
+      { label: 'Album', value: displayTrack?.album || 'Unknown' },
+      {
+        label: 'Duration',
+        value: formatTime(
+          displayTrack?.duration || progress.duration || 0,
+        ),
+      },
+      {
+        label: 'Source',
+        value: displayTrack?.localPath || displayTrack?.url || 'Unknown',
+      },
+    ],
+    [displayTrack, progress.duration],
+  );
 
-  const renderQueueItem = ({item, index}) => {
-    const isActive = index === activeQueueIndex;
-    const fallbackColor =
-      MUSIC_HOME_ART_COLORS.purple || MUSIC_HOME_ART_COLORS.indigo || C.bgCard;
+  const renderQueueItem = useCallback(
+    ({ item, index }) => {
+      const isActive = index === activeQueueIndex;
+      const fallbackColor =
+        MUSIC_HOME_ART_COLORS.purple ||
+        MUSIC_HOME_ART_COLORS.indigo ||
+        C.bgCard;
 
-    return (
-      <TouchableOpacity
-        style={[styles.queueItem, isActive && styles.queueItemActive]}
-        onPress={() => playQueuedTrack(index)}
-        activeOpacity={0.8}>
-        {item.artwork ? (
-          <Image source={{uri: item.artwork}} style={styles.queueArtwork} />
-        ) : (
-          <View
-            style={[
-              styles.queueArtworkFallback,
-              {backgroundColor: fallbackColor},
-            ]}>
-            <Icon name="music-note" size={18} color={C.accentFg} />
+      return (
+        <TouchableOpacity
+          style={[styles.queueItem, isActive && styles.queueItemActive]}
+          onPress={() => playQueuedTrack(index)}
+          activeOpacity={0.8}>
+          {item.artwork ? (
+            <Image
+              source={{ uri: item.artwork }}
+              style={styles.queueArtwork}
+              resizeMode="cover"
+              fadeDuration={0}
+            />
+          ) : (
+            <View
+              style={[
+                styles.queueArtworkFallback,
+                { backgroundColor: fallbackColor },
+              ]}>
+              <Icon name="music-note" size={18} color={C.accentFg} />
+            </View>
+          )}
+
+          <View style={styles.queueMeta}>
+            <Text style={styles.queueTitle} numberOfLines={1}>
+              {item.title || `Track ${index + 1}`}
+            </Text>
+            <Text style={styles.queueArtist} numberOfLines={1}>
+              {item.artist || 'Unknown Artist'}
+            </Text>
           </View>
-        )}
 
-        <View style={styles.queueMeta}>
-          <Text style={styles.queueTitle} numberOfLines={1}>
-            {item.title || `Track ${index + 1}`}
-          </Text>
-          <Text style={styles.queueArtist} numberOfLines={1}>
-            {item.artist || 'Unknown Artist'}
-          </Text>
-        </View>
-
-        {isActive ? (
-          <Icon name="volume-high" size={18} color={C.accentFg} />
-        ) : null}
-      </TouchableOpacity>
-    );
-  };
+          {isActive ? (
+            <Icon name="volume-high" size={18} color={C.accentFg} />
+          ) : null}
+        </TouchableOpacity>
+      );
+    },
+    [activeQueueIndex, playQueuedTrack],
+  );
 
   if (!displayTrack) {
     return (
@@ -323,7 +332,12 @@ const NowPlayingScreen = ({navigation, route}) => {
 
       <View style={styles.artworkContainer}>
         {displayTrack.artwork ? (
-          <Image source={{uri: displayTrack.artwork}} style={styles.artwork} />
+          <Image
+            source={{ uri: displayTrack.artwork }}
+            style={styles.artwork}
+            resizeMode="cover"
+            fadeDuration={150}
+          />
         ) : (
           <View style={styles.placeholderArtwork}>
             <Icon name="music-note" size={120} color={C.textMute} />
@@ -364,7 +378,7 @@ const NowPlayingScreen = ({navigation, route}) => {
 
       <View style={styles.controls}>
         <TouchableOpacity onPress={toggleRepeat}>
-          <Icon name={getRepeatIcon()} size={28} color={getRepeatColor()} />
+          <Icon name={repeatIcon} size={28} color={repeatColor} />
         </TouchableOpacity>
 
         <TouchableOpacity onPress={skipToPrevious}>
@@ -383,13 +397,8 @@ const NowPlayingScreen = ({navigation, route}) => {
           <Icon name="skip-next" size={48} color="#fff" />
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => setIsShuffling(!isShuffling)}>
-          <Icon
-            name="shuffle-variant"
-            size={28}
-            color={isShuffling ? C.accentFg : C.textDeep}
-          />
-        </TouchableOpacity>
+        {/* Shuffle removed — PlaybackService has no setShuffleMode method */}
+        <View style={{ width: 28 }} />
       </View>
 
       <View style={styles.bottomActions}>
@@ -413,7 +422,7 @@ const NowPlayingScreen = ({navigation, route}) => {
         <Pressable
           style={styles.modalOverlay}
           onPress={() => setDetailsOpen(false)}>
-          <Pressable style={styles.modalCard} onPress={() => {}}>
+          <Pressable style={styles.modalCard} onPress={noop}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Track Details</Text>
               <TouchableOpacity onPress={() => setDetailsOpen(false)}>
@@ -441,7 +450,7 @@ const NowPlayingScreen = ({navigation, route}) => {
         <Pressable
           style={styles.queueOverlay}
           onPress={() => setQueueOpen(false)}>
-          <Pressable style={styles.queueCard} onPress={() => {}}>
+          <Pressable style={styles.queueCard} onPress={noop}>
             <View style={styles.queueHeader}>
               <View>
                 <Text style={styles.queueHeaderTitle}>Current Queue</Text>
@@ -458,9 +467,7 @@ const NowPlayingScreen = ({navigation, route}) => {
               <FlatList
                 data={queueTracks}
                 renderItem={renderQueueItem}
-                keyExtractor={(item, index) =>
-                  String(item.id || item.url || `queue-${index}`)
-                }
+                keyExtractor={queueKeyExtractor}
                 contentContainerStyle={styles.queueListContent}
               />
             ) : (

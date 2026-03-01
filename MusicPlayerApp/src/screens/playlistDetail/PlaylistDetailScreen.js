@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useState} from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -11,11 +11,55 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import playbackService from '../../services/playback/PlaybackService';
 import storageService from '../../services/storage/StorageService';
-import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
+import { MUSIC_HOME_THEME as C } from '../../theme/musicHomeTheme';
 import styles from './playlistDetail.styles';
 
-const PlaylistDetailScreen = ({route, navigation}) => {
-  const {playlist: initialPlaylist} = route.params;
+const SONG_ITEM_HEIGHT = 68;
+const idKeyExtractor = item => item.id;
+
+const SongCard = React.memo(({ item, index, onPress, onRemove }) => (
+  <View style={styles.songCard}>
+    <TouchableOpacity
+      style={styles.songMain}
+      onPress={() => onPress(index)}
+      onLongPress={() => onRemove(item)}>
+      <Text style={styles.songIndex}>{index + 1}</Text>
+
+      {item.artwork ? (
+        <Image
+          source={{ uri: item.artwork }}
+          style={styles.songArtwork}
+          resizeMode="cover"
+          fadeDuration={0}
+        />
+      ) : (
+        <View style={styles.songArtworkFallback}>
+          <Icon name="music-note" size={18} color={C.accentFg} />
+        </View>
+      )}
+
+      <View style={styles.songMeta}>
+        <Text style={styles.songTitle} numberOfLines={1}>
+          {item.title}
+        </Text>
+        <Text style={styles.songArtist} numberOfLines={1}>
+          {item.artist}
+        </Text>
+      </View>
+    </TouchableOpacity>
+
+    <TouchableOpacity
+      style={styles.removeBtn}
+      onPress={() => onRemove(item)}>
+      <Icon name="close" size={17} color={C.textMute} />
+    </TouchableOpacity>
+  </View>
+));
+
+SongCard.displayName = 'PlaylistDetailSongCard';
+
+const PlaylistDetailScreen = ({ route, navigation }) => {
+  const { playlist: initialPlaylist } = route.params;
   const [playlist, setPlaylist] = useState(initialPlaylist);
 
   const loadPlaylist = useCallback(async () => {
@@ -34,25 +78,28 @@ const PlaylistDetailScreen = ({route, navigation}) => {
     loadPlaylist();
   }, [loadPlaylist]);
 
-  const playSong = async index => {
-    const nextTrack = playlist.songs[index];
-    if (!nextTrack) {
-      return;
-    }
+  const playSong = useCallback(
+    async index => {
+      const nextTrack = playlist.songs[index];
+      if (!nextTrack) {
+        return;
+      }
 
-    try {
-      await playbackService.playSongs(playlist.songs, {startIndex: index});
-      navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
-    } catch (error) {
-      console.error('Error playing song:', error);
-      Alert.alert(
-        'Playback Error',
-        error.message || 'Could not play this track.',
-      );
-    }
-  };
+      try {
+        await playbackService.playSongs(playlist.songs, { startIndex: index });
+        navigation.navigate('NowPlaying', { optimisticTrack: nextTrack });
+      } catch (error) {
+        console.error('Error playing song:', error);
+        Alert.alert(
+          'Playback Error',
+          error.message || 'Could not play this track.',
+        );
+      }
+    },
+    [playlist.songs, navigation],
+  );
 
-  const playAll = async () => {
+  const playAll = useCallback(async () => {
     if (playlist.songs.length === 0) {
       return;
     }
@@ -60,8 +107,8 @@ const PlaylistDetailScreen = ({route, navigation}) => {
     const nextTrack = playlist.songs[0];
 
     try {
-      await playbackService.playSongs(playlist.songs, {startIndex: 0});
-      navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
+      await playbackService.playSongs(playlist.songs, { startIndex: 0 });
+      navigation.navigate('NowPlaying', { optimisticTrack: nextTrack });
     } catch (error) {
       console.error('Error playing all songs:', error);
       Alert.alert(
@@ -69,34 +116,48 @@ const PlaylistDetailScreen = ({route, navigation}) => {
         error.message || 'Could not play songs from this playlist.',
       );
     }
-  };
+  }, [playlist.songs, navigation]);
 
-  const removeSong = song => {
-    Alert.alert('Remove Song', `Remove "${song.title}" from this playlist?`, [
-      {text: 'Cancel', style: 'cancel'},
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await storageService.removeSongFromPlaylist(playlist.id, song.id);
-            await loadPlaylist();
-          } catch (error) {
-            console.error('Error removing song:', error);
-            Alert.alert('Error', 'Failed to remove song');
-          }
-        },
-      },
-    ]);
-  };
+  const removeSong = useCallback(
+    song => {
+      Alert.alert(
+        'Remove Song',
+        `Remove "${song.title}" from this playlist?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await storageService.removeSongFromPlaylist(
+                  playlist.id,
+                  song.id,
+                );
+                await loadPlaylist();
+              } catch (error) {
+                console.error('Error removing song:', error);
+                Alert.alert('Error', 'Failed to remove song');
+              }
+            },
+          },
+        ],
+      );
+    },
+    [playlist.id, loadPlaylist],
+  );
 
-  const renderHeader = () => {
-    const artworks = playlist.songs
-      .filter(song => song.artwork)
-      .slice(0, 4)
-      .map(song => song.artwork);
+  const artworks = useMemo(
+    () =>
+      playlist.songs
+        .filter(song => song.artwork)
+        .slice(0, 4)
+        .map(song => song.artwork),
+    [playlist.songs],
+  );
 
-    return (
+  const listHeader = useMemo(
+    () => (
       <View>
         <View style={styles.topBar}>
           <TouchableOpacity
@@ -117,24 +178,26 @@ const PlaylistDetailScreen = ({route, navigation}) => {
                 {artworks.map((artwork, index) => (
                   <Image
                     key={`${playlist.id}-${index}`}
-                    source={{uri: artwork}}
+                    source={{ uri: artwork }}
                     style={styles.gridImage}
+                    resizeMode="cover"
+                    fadeDuration={0}
                   />
                 ))}
                 {artworks.length < 4
-                  ? Array.from({length: 4 - artworks.length}).map(
-                      (_, index) => (
-                        <View
-                          key={`empty-${playlist.id}-${index}`}
-                          style={styles.gridImageEmpty}>
-                          <Icon
-                            name="music-note"
-                            size={22}
-                            color={C.textMute}
-                          />
-                        </View>
-                      ),
-                    )
+                  ? Array.from({ length: 4 - artworks.length }).map(
+                    (_, index) => (
+                      <View
+                        key={`empty-${playlist.id}-${index}`}
+                        style={styles.gridImageEmpty}>
+                        <Icon
+                          name="music-note"
+                          size={22}
+                          color={C.textMute}
+                        />
+                      </View>
+                    ),
+                  )
                   : null}
               </View>
             ) : (
@@ -169,49 +232,40 @@ const PlaylistDetailScreen = ({route, navigation}) => {
 
         <Text style={styles.sectionLabel}>Tracks</Text>
       </View>
-    );
-  };
-
-  const renderSongItem = ({item, index}) => (
-    <View style={styles.songCard}>
-      <TouchableOpacity
-        style={styles.songMain}
-        onPress={() => playSong(index)}
-        onLongPress={() => removeSong(item)}>
-        <Text style={styles.songIndex}>{index + 1}</Text>
-
-        {item.artwork ? (
-          <Image source={{uri: item.artwork}} style={styles.songArtwork} />
-        ) : (
-          <View style={styles.songArtworkFallback}>
-            <Icon name="music-note" size={18} color={C.accentFg} />
-          </View>
-        )}
-
-        <View style={styles.songMeta}>
-          <Text style={styles.songTitle} numberOfLines={1}>
-            {item.title}
-          </Text>
-          <Text style={styles.songArtist} numberOfLines={1}>
-            {item.artist}
-          </Text>
-        </View>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.removeBtn}
-        onPress={() => removeSong(item)}>
-        <Icon name="close" size={17} color={C.textMute} />
-      </TouchableOpacity>
-    </View>
+    ),
+    [artworks, playlist, playAll, navigation],
   );
 
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Icon name="music-note-off" size={62} color={C.textMute} />
-      <Text style={styles.emptyTitle}>This playlist is empty</Text>
-      <Text style={styles.emptySubtitle}>Add songs from your library.</Text>
-    </View>
+  const renderSongItem = useCallback(
+    ({ item, index }) => (
+      <SongCard
+        item={item}
+        index={index}
+        onPress={playSong}
+        onRemove={removeSong}
+      />
+    ),
+    [playSong, removeSong],
+  );
+
+  const renderEmpty = useCallback(
+    () => (
+      <View style={styles.emptyContainer}>
+        <Icon name="music-note-off" size={62} color={C.textMute} />
+        <Text style={styles.emptyTitle}>This playlist is empty</Text>
+        <Text style={styles.emptySubtitle}>Add songs from your library.</Text>
+      </View>
+    ),
+    [],
+  );
+
+  const getItemLayout = useCallback(
+    (_, index) => ({
+      length: SONG_ITEM_HEIGHT,
+      offset: SONG_ITEM_HEIGHT * index,
+      index,
+    }),
+    [],
   );
 
   return (
@@ -219,10 +273,15 @@ const PlaylistDetailScreen = ({route, navigation}) => {
       <FlatList
         data={playlist.songs}
         renderItem={renderSongItem}
-        keyExtractor={item => item.id}
-        ListHeaderComponent={renderHeader}
+        keyExtractor={idKeyExtractor}
+        ListHeaderComponent={listHeader}
         ListEmptyComponent={renderEmpty}
         contentContainerStyle={styles.listContent}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+        initialNumToRender={12}
+        getItemLayout={getItemLayout}
       />
     </View>
   );

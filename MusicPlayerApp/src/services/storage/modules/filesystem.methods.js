@@ -1,5 +1,6 @@
 import {PermissionsAndroid, Platform} from 'react-native';
 import RNFS from 'react-native-fs';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   getFileExtensionFromPath,
   getFileNameFromUriOrPath,
@@ -10,6 +11,7 @@ import {
   toFileUriFromPath,
   toPathFromUri,
 } from '../storage.helpers';
+import {STORAGE_KEYS} from '../storage.constants';
 
 export const filesystemMethods = {
   emitSourceImportProgress(onProgress, payload = {}) {
@@ -29,6 +31,25 @@ export const filesystemMethods = {
       .replace(/\\/g, '/')
       .trim()
       .toLowerCase();
+  },
+
+  toMtimeMs(value) {
+    if (!value) {
+      return 0;
+    }
+
+    if (value instanceof Date) {
+      const time = value.getTime();
+      return Number.isFinite(time) ? time : 0;
+    }
+
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric < 100000000000 ? Math.round(numeric * 1000) : Math.round(numeric);
+    }
+
+    const parsed = Date.parse(String(value));
+    return Number.isFinite(parsed) ? parsed : 0;
   },
 
   toUniqueAudioPathList(filePaths = []) {
@@ -360,6 +381,9 @@ export const filesystemMethods = {
       : {
           skipDurationHydration: shouldRunDurationMigration,
         };
+    importOptions.sourcePath = sourcePath;
+    importOptions.readEmbeddedTextMetadata =
+      options.readEmbeddedTextMetadata !== false;
     const formats = new Set();
     let importedCount = 0;
     let skippedCount = 0;
@@ -384,7 +408,10 @@ export const filesystemMethods = {
         formats.add(ext.toUpperCase());
       }
       try {
-        const importedSong = await this.importLocalAudioPath(filePath, importOptions);
+        const importedSong = await this.importLocalAudioPath(
+          filePath,
+          importOptions,
+        );
         if (importedSong?.id) {
           importedSongIds.push(importedSong.id);
         }
@@ -475,9 +502,9 @@ export const filesystemMethods = {
     const onProgress =
       typeof options.onProgress === 'function' ? options.onProgress : null;
     const recursive = options.recursive !== false;
-    const shouldRunArtworkMigration = options.migrateArtwork === true;
-    const shouldRunDurationMigration = options.migrateDuration === true;
     const promptForPermission = options.promptForPermission === true;
+    const readEmbeddedTextMetadata = options.readEmbeddedTextMetadata !== false;
+    const BATCH_SIZE = 4;
 
     const fileSources = await this.getFileSources();
     const enabledSources = fileSources.filter(source => source.on !== false);
@@ -493,7 +520,9 @@ export const filesystemMethods = {
       };
     }
 
-    const hasPermission = await this.ensureAudioReadPermission(promptForPermission);
+    const hasPermission = await this.ensureAudioReadPermission(
+      promptForPermission,
+    );
     if (!hasPermission) {
       return {
         scannedSources: 0,
@@ -508,6 +537,7 @@ export const filesystemMethods = {
     }
 
     const scanBySourceId = new Map();
+    const sourceByPathKey = new Map();
     const allDiscoveredFiles = [];
 
     for (let index = 0; index < enabledSources.length; index += 1) {
@@ -535,16 +565,412 @@ export const filesystemMethods = {
         count: files.length,
         formats: Array.from(formats),
       });
+      files.forEach(filePath => {
+        const pathKey = this.toNormalizedPathKey(filePath);
+        if (pathKey && !sourceByPathKey.has(pathKey)) {
+          sourceByPathKey.set(pathKey, source.path);
+        }
+        allDiscoveredFiles.push(filePath);
+      });
+    }
+
+    const uniqueFiles = this.toUniqueAudioPathList(allDiscoveredFiles);
+    const fileStatByPathKey = new Map();
+    for (let index = 0; index < uniqueFiles.length; index += BATCH_SIZE) {
+      const statBatch = uniqueFiles.slice(index, index + BATCH_SIZE);
+      const statResults = await Promise.all(
+        statBatch.map(async filePath => {
+          const normalizedPath = toPathFromUri(filePath);
+          const pathKey = this.toNormalizedPathKey(normalizedPath);
+          if (!pathKey) {
+            return null;
+          }
+          const stat = await RNFS.stat(normalizedPath).catch(() => null);
+          return {
+            filePath: normalizedPath,
+            pathKey,
+            size: Number(stat?.size) || 0,
+            mtimeMs: this.toMtimeMs(stat?.mtime),
+          };
+        }),
+      );
+      statResults.filter(Boolean).forEach(result => {
+        fileStatByPathKey.set(result.pathKey, result);
+      });
+    }
+
+    const discoveredPathSet = new Set(
+      uniqueFiles
+        .map(filePath => this.toNormalizedPathKey(filePath))
+        .filter(Boolean),
+    );
+    const enabledSourceRoots = enabledSources
+      .map(source => this.toNormalizedPathKey(source.path))
+      .filter(Boolean);
+    const isUnderEnabledSource = pathKey =>
+      enabledSourceRoots.some(
+        root => pathKey === root || pathKey.startsWith(`${root}/`),
+      );
+
+    const existingLibrary = await this.getLocalLibrary();
+    const existingByPathKey = new Map();
+    const removedSongs = [];
+    const retainedSongs = [];
+    existingLibrary.forEach(song => {
+      const localPath = this.resolveSongLocalPath(song);
+      const pathKey = this.toNormalizedPathKey(
+        localPath || song?.localPath || song?.url,
+      );
+      if (pathKey && isUnderEnabledSource(pathKey) && !discoveredPathSet.has(pathKey)) {
+        removedSongs.push(song);
+        return;
+      }
+
+      retainedSongs.push(song);
+      if (pathKey && !existingByPathKey.has(pathKey)) {
+        existingByPathKey.set(pathKey, song);
+      }
+    });
+
+    let processedCount = 0;
+    let importedCount = 0;
+    let skippedCount = 0;
+    let errorCount = 0;
+    const filesToProcess = [];
+
+    this.emitSourceImportProgress(onProgress, {
+      phase: 'checking',
+      status: `Checking file changes... 0/${uniqueFiles.length} files`,
+      processed: 0,
+      total: uniqueFiles.length,
+      importedCount: 0,
+      skippedCount: 0,
+      errorCount: 0,
+    });
+
+    for (const filePath of uniqueFiles) {
+      processedCount += 1;
+      const pathKey = this.toNormalizedPathKey(filePath);
+      const fileStat = pathKey ? fileStatByPathKey.get(pathKey) : null;
+      if (!pathKey || !fileStat) {
+        skippedCount += 1;
+        this.emitSourceImportProgress(onProgress, {
+          phase: 'checking',
+          status: `Checking file changes... ${processedCount}/${uniqueFiles.length} files`,
+          processed: processedCount,
+          total: uniqueFiles.length,
+          importedCount,
+          skippedCount,
+          errorCount,
+        });
+        continue;
+      }
+
+      const existingSong = existingByPathKey.get(pathKey) || null;
+      const existingSize = Number(existingSong?.fileSizeBytes) || 0;
+      const existingMtimeMs = Number(existingSong?.fileMtimeMs) || 0;
+      const sizeUnchanged = existingSong ? existingSize === fileStat.size : false;
+      const mtimeUnchanged = existingSong
+        ? existingMtimeMs > 0 && existingMtimeMs === fileStat.mtimeMs
+        : false;
+      const fileChanged = !existingSong || !(sizeUnchanged && mtimeUnchanged);
+      const hasArtwork = Boolean(String(existingSong?.artwork || '').trim());
+      const hasDuration = Number(existingSong?.duration) > 0;
+      const needsImport = fileChanged || !hasArtwork || !hasDuration;
+
+      if (needsImport) {
+        filesToProcess.push({
+          filePath: fileStat.filePath,
+          pathKey,
+          existingSong,
+          sourcePath: sourceByPathKey.get(pathKey) || '',
+          fileChanged,
+          priorRequiredSeek: Boolean(existingSong?.requiredSeek),
+        });
+      } else {
+        skippedCount += 1;
+      }
+
+      this.emitSourceImportProgress(onProgress, {
+        phase: 'checking',
+        status: `Checking file changes... ${processedCount}/${uniqueFiles.length} files`,
+        processed: processedCount,
+        total: uniqueFiles.length,
+        importedCount,
+        skippedCount,
+        errorCount,
+      });
+    }
+
+    filesToProcess.sort((a, b) => {
+      const aSeek = a.priorRequiredSeek ? 1 : 0;
+      const bSeek = b.priorRequiredSeek ? 1 : 0;
+      return aSeek - bSeek;
+    });
+
+    const stagedImports = [];
+    let processedImportCount = 0;
+    this.emitSourceImportProgress(onProgress, {
+      phase: 'importing',
+      status: `Extracting metadata... 0/${filesToProcess.length} files`,
+      processed: 0,
+      total: filesToProcess.length,
+      importedCount,
+      skippedCount,
+      errorCount,
+    });
+
+    for (let index = 0; index < filesToProcess.length; index += BATCH_SIZE) {
+      const batch = filesToProcess.slice(index, index + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(async entry => {
+          try {
+            const importedSong = await this.importLocalAudioPath(entry.filePath, {
+              skipArtworkHydration: false,
+              skipDurationHydration: false,
+              persistToLibrary: false,
+              readEmbeddedTextMetadata,
+              sourcePath: entry.sourcePath,
+              existingSong: entry.existingSong,
+              fileChanged: entry.fileChanged,
+            });
+            return {ok: true, importedSong};
+          } catch (error) {
+            return {ok: false};
+          }
+        }),
+      );
+
+      batchResults.forEach(result => {
+        processedImportCount += 1;
+        if (result.ok && result.importedSong) {
+          stagedImports.push(result.importedSong);
+          importedCount += 1;
+        } else {
+          errorCount += 1;
+        }
+      });
+
+      this.emitSourceImportProgress(onProgress, {
+        phase: 'importing',
+        status: `Extracting metadata... ${processedImportCount}/${filesToProcess.length} files`,
+        processed: processedImportCount,
+        total: filesToProcess.length,
+        importedCount,
+        skippedCount,
+        errorCount,
+      });
+    }
+
+    let upsertSummary = {
+      library: retainedSongs,
+      addedCount: 0,
+      updatedCount: 0,
+      affectedSongIds: [],
+    };
+    if (stagedImports.length > 0) {
+      upsertSummary = await this.upsertLibrarySongs(stagedImports, {
+        baseLibrary: retainedSongs,
+      });
+      importedCount = upsertSummary.addedCount + upsertSummary.updatedCount;
+    } else if (removedSongs.length > 0) {
+      await this.saveLibrarySnapshot(retainedSongs);
+      importedCount = 0;
+    }
+
+    const nextSources = fileSources.map(source => {
+      const summary = scanBySourceId.get(source.id);
+      if (!summary) {
+        return source;
+      }
+      const nextFormats = Array.from(
+        new Set([...(source.fmt || []), ...(summary.formats || [])]),
+      );
+      return {
+        ...source,
+        count: summary.count,
+        fmt: nextFormats.length > 0 ? nextFormats : source.fmt,
+      };
+    });
+    await this.saveFileSources(nextSources);
+    const lastSyncedAt = Date.now();
+    await AsyncStorage.setItem(STORAGE_KEYS.LAST_LIBRARY_SYNC_AT, `${lastSyncedAt}`);
+
+    this.emitSourceImportProgress(onProgress, {
+      phase: 'complete',
+      status: 'Import complete.',
+      processed: processedCount,
+      total: uniqueFiles.length,
+      importedCount,
+      skippedCount,
+      errorCount,
+    });
+
+    return {
+      scannedSources: enabledSources.length,
+      totalFiles: uniqueFiles.length,
+      processedCount,
+      importedCount,
+      removedCount: removedSongs.length,
+      skippedCount,
+      errorCount,
+      fileSources: nextSources,
+      lastSyncedAt,
+      affectedSongIds: upsertSummary.affectedSongIds || [],
+    };
+  },
+
+  async refreshLibraryAcrossSources(options = {}) {
+    const onProgress =
+      typeof options.onProgress === 'function' ? options.onProgress : null;
+    const recursive = options.recursive !== false;
+    const promptForPermission = options.promptForPermission !== false;
+    const readEmbeddedTextMetadata = options.readEmbeddedTextMetadata === true;
+
+    const fileSources = await this.getFileSources();
+    if (fileSources.length === 0) {
+      return {
+        scannedSources: 0,
+        totalFiles: 0,
+        processedCount: 0,
+        importedCount: 0,
+        removedCount: 0,
+        skippedCount: 0,
+        errorCount: 0,
+        removedSongIds: [],
+        removedPathKeys: [],
+        fileSources,
+      };
+    }
+
+    const hasPermission = await this.ensureAudioReadPermission(
+      promptForPermission,
+    );
+    if (!hasPermission) {
+      return {
+        scannedSources: 0,
+        totalFiles: 0,
+        processedCount: 0,
+        importedCount: 0,
+        removedCount: 0,
+        skippedCount: 0,
+        errorCount: 0,
+        removedSongIds: [],
+        removedPathKeys: [],
+        permissionDenied: true,
+        fileSources,
+      };
+    }
+
+    const scanBySourceId = new Map();
+    const sourceByPathKey = new Map();
+    const allDiscoveredFiles = [];
+
+    for (let index = 0; index < fileSources.length; index += 1) {
+      const source = fileSources[index];
+      this.emitSourceImportProgress(onProgress, {
+        phase: 'scanning',
+        status: `Scanning source ${index + 1}/${fileSources.length}`,
+        sourcePath: source.path,
+        processed: index,
+        total: fileSources.length,
+      });
+
+      const files = this.toUniqueAudioPathList(
+        await this.readAudioFilesFromDirectory(source.path, recursive),
+      );
+      const formats = new Set();
+      files.forEach(filePath => {
+        const ext = getFileExtensionFromPath(filePath);
+        if (ext) {
+          formats.add(ext.toUpperCase());
+        }
+        const pathKey = this.toNormalizedPathKey(filePath);
+        if (pathKey && !sourceByPathKey.has(pathKey)) {
+          sourceByPathKey.set(pathKey, source.path);
+        }
+      });
+
+      scanBySourceId.set(source.id, {
+        count: files.length,
+        formats: Array.from(formats),
+      });
       allDiscoveredFiles.push(...files);
     }
 
     const uniqueFiles = this.toUniqueAudioPathList(allDiscoveredFiles);
+    const discoveredPathSet = new Set(
+      uniqueFiles
+        .map(filePath => this.toNormalizedPathKey(filePath))
+        .filter(Boolean),
+    );
+    const configuredRoots = fileSources
+      .map(source => this.toNormalizedPathKey(source.path))
+      .filter(Boolean);
+
     const existingLibrary = await this.getLocalLibrary();
+    const removedSongs = [];
+    const retainedSongs = [];
+    let retainedMetadataChanged = false;
+
+    const isUnderConfiguredSource = pathKey =>
+      configuredRoots.some(
+        root => pathKey === root || pathKey.startsWith(`${root}/`),
+      );
+
+    for (const song of existingLibrary) {
+      const localPath = this.resolveSongLocalPath(song);
+      if (!localPath) {
+        retainedSongs.push(song);
+        continue;
+      }
+      const pathKey = this.toNormalizedPathKey(
+        localPath || song?.localPath || song?.url,
+      );
+      if (!pathKey) {
+        retainedSongs.push(song);
+        continue;
+      }
+
+      let existsOnDisk = false;
+      if (discoveredPathSet.has(pathKey)) {
+        existsOnDisk = true;
+      } else if (isUnderConfiguredSource(pathKey)) {
+        existsOnDisk = false;
+      } else {
+        existsOnDisk = await RNFS.exists(localPath).catch(() => false);
+      }
+
+      if (!existsOnDisk) {
+        removedSongs.push(song);
+        continue;
+      }
+
+      const sourcePath =
+        sourceByPathKey.get(pathKey) ||
+        this.inferSourcePathFromSong(song, localPath);
+      if (
+        sourcePath &&
+        this.normalizeSourcePath(song?.sourcePath) !== sourcePath
+      ) {
+        retainedMetadataChanged = true;
+        retainedSongs.push({
+          ...song,
+          sourcePath,
+        });
+        continue;
+      }
+
+      retainedSongs.push(song);
+    }
+
     const existingPathSet = new Set(
-      existingLibrary
+      retainedSongs
         .map(song => {
           const localPath = this.resolveSongLocalPath(song);
-          return this.toNormalizedPathKey(localPath || song?.localPath || song?.url);
+          return this.toNormalizedPathKey(
+            localPath || song?.localPath || song?.url,
+          );
         })
         .filter(Boolean),
     );
@@ -553,11 +979,11 @@ export const filesystemMethods = {
     let importedCount = 0;
     let skippedCount = 0;
     let errorCount = 0;
-    const importedSongIds = [];
+    const stagedImports = [];
 
     this.emitSourceImportProgress(onProgress, {
       phase: 'importing',
-      status: `Extracting metadata... 0/${uniqueFiles.length} files`,
+      status: `Refreshing library... 0/${uniqueFiles.length} files`,
       processed: 0,
       total: uniqueFiles.length,
       importedCount: 0,
@@ -572,7 +998,7 @@ export const filesystemMethods = {
         skippedCount += 1;
         this.emitSourceImportProgress(onProgress, {
           phase: 'importing',
-          status: `Extracting metadata... ${processedCount}/${uniqueFiles.length} files`,
+          status: `Refreshing library... ${processedCount}/${uniqueFiles.length} files`,
           processed: processedCount,
           total: uniqueFiles.length,
           importedCount,
@@ -586,25 +1012,46 @@ export const filesystemMethods = {
         const importedSong = await this.importLocalAudioPath(filePath, {
           skipArtworkHydration: true,
           skipDurationHydration: true,
+          persistToLibrary: false,
+          readEmbeddedTextMetadata,
+          sourcePath: sourceByPathKey.get(pathKey) || '',
         });
-        importedCount += 1;
-        if (importedSong?.id) {
-          importedSongIds.push(importedSong.id);
+        if (importedSong) {
+          stagedImports.push(importedSong);
+          importedCount += 1;
+          existingPathSet.add(pathKey);
         }
-        existingPathSet.add(pathKey);
       } catch (error) {
         errorCount += 1;
       }
 
       this.emitSourceImportProgress(onProgress, {
         phase: 'importing',
-        status: `Extracting metadata... ${processedCount}/${uniqueFiles.length} files`,
+        status: `Refreshing library... ${processedCount}/${uniqueFiles.length} files`,
         processed: processedCount,
         total: uniqueFiles.length,
         importedCount,
         skippedCount,
         errorCount,
       });
+    }
+
+    let finalLibrary = retainedSongs;
+    let upsertSummary = {
+      addedCount: 0,
+      updatedCount: 0,
+      affectedSongIds: [],
+      library: retainedSongs,
+    };
+    if (stagedImports.length > 0) {
+      upsertSummary = await this.upsertLibrarySongs(stagedImports, {
+        baseLibrary: retainedSongs,
+      });
+      finalLibrary = upsertSummary.library;
+      importedCount = upsertSummary.addedCount + upsertSummary.updatedCount;
+    } else if (removedSongs.length > 0 || retainedMetadataChanged) {
+      finalLibrary = await this.saveLibrarySnapshot(retainedSongs);
+      importedCount = 0;
     }
 
     const nextSources = fileSources.map(source => {
@@ -623,39 +1070,9 @@ export const filesystemMethods = {
     });
     await this.saveFileSources(nextSources);
 
-    let artworkMigration = null;
-    let durationMigration = null;
-    if (importedSongIds.length > 0 && shouldRunArtworkMigration) {
-      this.emitSourceImportProgress(onProgress, {
-        phase: 'migrating-artwork',
-        status: 'Finalizing artwork extraction...',
-        processed: 0,
-        total: 1,
-      });
-      artworkMigration = await this.migrateAllArtworkNow({
-        batchSize: 8,
-        yieldMs: 0,
-        onlySongIds: importedSongIds,
-      });
-    }
-
-    if (importedSongIds.length > 0 && shouldRunDurationMigration) {
-      this.emitSourceImportProgress(onProgress, {
-        phase: 'migrating-duration',
-        status: 'Finalizing duration metadata...',
-        processed: 0,
-        total: 1,
-      });
-      durationMigration = await this.migrateAllDurationsNow({
-        batchSize: 10,
-        yieldMs: 0,
-        onlySongIds: importedSongIds,
-      });
-    }
-
     this.emitSourceImportProgress(onProgress, {
       phase: 'complete',
-      status: 'Import complete.',
+      status: 'Library updated.',
       processed: processedCount,
       total: uniqueFiles.length,
       importedCount,
@@ -664,15 +1081,27 @@ export const filesystemMethods = {
     });
 
     return {
-      scannedSources: enabledSources.length,
+      scannedSources: fileSources.length,
       totalFiles: uniqueFiles.length,
       processedCount,
       importedCount,
+      removedCount: removedSongs.length,
       skippedCount,
       errorCount,
-      artworkMigration,
-      durationMigration,
+      removedSongIds: removedSongs
+        .map(song => String(song?.id || '').trim())
+        .filter(Boolean),
+      removedPathKeys: removedSongs
+        .map(song => {
+          const localPath = this.resolveSongLocalPath(song);
+          return this.toNormalizedPathKey(
+            localPath || song?.localPath || song?.url,
+          );
+        })
+        .filter(Boolean),
       fileSources: nextSources,
+      finalLibraryCount: finalLibrary.length,
+      affectedSongIds: upsertSummary.affectedSongIds || [],
     };
   },
 

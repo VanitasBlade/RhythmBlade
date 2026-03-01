@@ -1,28 +1,29 @@
-import React, {useCallback, useMemo, useState} from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Image,
   Modal,
+  Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   Text,
   TextInput,
+  ToastAndroid,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import DocumentPicker from 'react-native-document-picker';
-import {useFocusEffect} from '@react-navigation/native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import playbackService from '../../services/playback/PlaybackService';
 import storageService from '../../services/storage/StorageService';
 import {
-  MUSIC_HOME_ART_COLORS,
   MUSIC_HOME_THEME as C,
+  MUSIC_HOME_ART_COLORS,
 } from '../../theme/musicHomeTheme';
-import styles from './library.styles';
 import {
   ART_KEYS,
   PLAYLIST_ICONS,
@@ -30,19 +31,25 @@ import {
   SUB_TABS,
   TRACK_ICONS,
 } from './library.constants';
+import styles from './library.styles';
 import {
   compactFolderPath,
   formatDuration,
   normalizeFormats,
   sortSongs,
 } from './library.utils';
+import TrackCard from './TrackCard';
 
-const LibraryScreen = ({navigation, route}) => {
+const noop = () => { };
+const idKeyExtractor = item => item.id;
+
+const LibraryScreen = ({ navigation, route }) => {
   const [songs, setSongs] = useState([]);
   const [playlists, setPlaylists] = useState([]);
   const [favoriteIds, setFavoriteIds] = useState(new Set());
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshingLibrary, setRefreshingLibrary] = useState(false);
   const [migratingArtwork, setMigratingArtwork] = useState(false);
   const [migratingDuration, setMigratingDuration] = useState(false);
   const [sourceImportState, setSourceImportState] = useState({
@@ -82,23 +89,27 @@ const LibraryScreen = ({navigation, route}) => {
       setFavoriteIds(new Set((favorites?.songs || []).map(song => song.id)));
       setSources(storedSources);
 
-      storageService
-        .hydrateArtworkForLibrary(library, 3)
-        .then(updated => {
-          if (updated?.length) {
-            setSongs(updated);
-          }
-        })
-        .catch(() => {});
-
-      storageService
-        .hydrateDurationForLibrary(library, 4)
-        .then(updated => {
-          if (updated?.length) {
-            setSongs(updated);
-          }
-        })
-        .catch(() => {});
+      // Hydrate artwork and duration in parallel, then merge results to avoid
+      // a race condition where whichever resolves last overwrites the other.
+      const [artworkResult, durationResult] = await Promise.allSettled([
+        storageService.hydrateArtworkForLibrary(library, 3),
+        storageService.hydrateDurationForLibrary(library, 4),
+      ]);
+      const artworkLib =
+        artworkResult.status === 'fulfilled' ? artworkResult.value : null;
+      const durationLib =
+        durationResult.status === 'fulfilled' ? durationResult.value : null;
+      const base = artworkLib?.length ? artworkLib : library;
+      if (durationLib?.length) {
+        const durMap = new Map(durationLib.map(s => [s.id, s.duration]));
+        setSongs(
+          base.map(s =>
+            durMap.has(s.id) ? { ...s, duration: durMap.get(s.id) } : s,
+          ),
+        );
+      } else if (base !== library) {
+        setSongs(base);
+      }
     } catch (error) {
       console.error('Error loading library:', error);
     } finally {
@@ -109,18 +120,79 @@ const LibraryScreen = ({navigation, route}) => {
   useFocusEffect(
     useCallback(() => {
       loadLibrary();
-    }, [loadLibrary]),
-  );
-
-  useFocusEffect(
-    useCallback(() => {
       const requested = String(route?.params?.libraryTab || '').toLowerCase();
       if (requested && SUB_TABS.some(item => item.id === requested)) {
         setTab(requested);
-        navigation.setParams({libraryTab: undefined});
+        navigation.setParams({ libraryTab: undefined });
       }
-    }, [navigation, route?.params?.libraryTab]),
+    }, [loadLibrary, navigation, route?.params?.libraryTab]),
   );
+
+  const showLibraryMessage = useCallback((message, title = 'Library') => {
+    if (!message) {
+      return;
+    }
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(message, ToastAndroid.SHORT);
+      return;
+    }
+    Alert.alert(title, message);
+  }, []);
+
+  const onRefreshLibrary = useCallback(async () => {
+    if (refreshingLibrary) {
+      return;
+    }
+
+    setRefreshingLibrary(true);
+    try {
+      const activeTrack = await playbackService
+        .getCurrentTrack()
+        .catch(() => null);
+      const activeTrackId = String(activeTrack?.id || '').trim();
+      const activeTrackPath = storageService.resolveSongLocalPath(activeTrack);
+      const activeTrackPathKey = storageService.toNormalizedPathKey(
+        activeTrackPath || activeTrack?.url,
+      );
+
+      const summary = await storageService.refreshLibraryAcrossSources({
+        recursive: true,
+        promptForPermission: true,
+        readEmbeddedTextMetadata: false,
+      });
+
+      if (summary?.permissionDenied) {
+        Alert.alert(
+          'Permission Required',
+          'Audio file access is required to refresh your library.',
+        );
+        return;
+      }
+
+      const removedSongIdSet = new Set(summary?.removedSongIds || []);
+      const removedPathKeySet = new Set(summary?.removedPathKeys || []);
+      const activeTrackWasRemoved =
+        (activeTrackId && removedSongIdSet.has(activeTrackId)) ||
+        (activeTrackPathKey && removedPathKeySet.has(activeTrackPathKey));
+
+      if (activeTrackWasRemoved) {
+        await playbackService.reset();
+        showLibraryMessage('Track no longer available', 'Playback');
+      }
+
+      await loadLibrary();
+      if (!activeTrackWasRemoved) {
+        showLibraryMessage('Library updated');
+      }
+    } catch (error) {
+      Alert.alert(
+        'Refresh Failed',
+        error?.message || 'Could not refresh your library right now.',
+      );
+    } finally {
+      setRefreshingLibrary(false);
+    }
+  }, [loadLibrary, refreshingLibrary, showLibraryMessage]);
 
   const sortedSongs = useMemo(() => sortSongs(songs, sortBy), [songs, sortBy]);
 
@@ -160,28 +232,31 @@ const LibraryScreen = ({navigation, route}) => {
       (sum, source) => sum + (Number(source.count) || 0),
       0,
     );
-    return {active, files};
+    return { active, files };
   }, [normalizedSources]);
 
   const importProgressFillStyle = useMemo(() => {
     const total = Math.max(0, Number(sourceImportState.total) || 0);
     const processed = Math.max(0, Number(sourceImportState.processed) || 0);
     if (total <= 0) {
-      return {width: '12%'};
+      return { width: '12%' };
     }
-    const percentage = Math.max(4, Math.min(100, Math.round((processed / total) * 100)));
-    return {width: `${percentage}%`};
+    const percentage = Math.max(
+      4,
+      Math.min(100, Math.round((processed / total) * 100)),
+    );
+    return { width: `${percentage}%` };
   }, [sourceImportState.processed, sourceImportState.total]);
 
-  const playSong = async index => {
+  const playSong = useCallback(async index => {
     const nextTrack = sortedSongs[index];
     if (!nextTrack) {
       return;
     }
 
     try {
-      await playbackService.playSongs(sortedSongs, {startIndex: index});
-      navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
+      await playbackService.playSongs(sortedSongs, { startIndex: index });
+      navigation.navigate('NowPlaying', { optimisticTrack: nextTrack });
     } catch (error) {
       console.error('Error playing song:', error);
       Alert.alert(
@@ -189,9 +264,9 @@ const LibraryScreen = ({navigation, route}) => {
         error.message || 'Could not play this track.',
       );
     }
-  };
+  }, [sortedSongs, navigation]);
 
-  const playAll = async () => {
+  const playAll = useCallback(async () => {
     if (!sortedSongs.length) {
       return;
     }
@@ -199,8 +274,8 @@ const LibraryScreen = ({navigation, route}) => {
     const nextTrack = sortedSongs[0];
 
     try {
-      await playbackService.playSongs(sortedSongs, {startIndex: 0});
-      navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
+      await playbackService.playSongs(sortedSongs, { startIndex: 0 });
+      navigation.navigate('NowPlaying', { optimisticTrack: nextTrack });
     } catch (error) {
       console.error('Error playing all songs:', error);
       Alert.alert(
@@ -208,9 +283,9 @@ const LibraryScreen = ({navigation, route}) => {
         error.message || 'Could not play songs right now.',
       );
     }
-  };
+  }, [sortedSongs, navigation]);
 
-  const shufflePlay = async () => {
+  const shufflePlay = useCallback(async () => {
     if (!sortedSongs.length) {
       return;
     }
@@ -226,8 +301,8 @@ const LibraryScreen = ({navigation, route}) => {
     const nextTrack = shuffled[0];
 
     try {
-      await playbackService.playSongs(shuffled, {startIndex: 0});
-      navigation.navigate('NowPlaying', {optimisticTrack: nextTrack});
+      await playbackService.playSongs(shuffled, { startIndex: 0 });
+      navigation.navigate('NowPlaying', { optimisticTrack: nextTrack });
     } catch (error) {
       console.error('Error shuffling songs:', error);
       Alert.alert(
@@ -235,11 +310,11 @@ const LibraryScreen = ({navigation, route}) => {
         error.message || 'Could not start shuffle playback.',
       );
     }
-  };
+  }, [sortedSongs, navigation]);
 
-  const deleteSong = song => {
+  const deleteSong = useCallback(song => {
     Alert.alert('Delete Song', `Delete "${song.title}" from your library?`, [
-      {text: 'Cancel', style: 'cancel'},
+      { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
@@ -253,9 +328,9 @@ const LibraryScreen = ({navigation, route}) => {
         },
       },
     ]);
-  };
+  }, [loadLibrary]);
 
-  const toggleFavorite = async song => {
+  const toggleFavorite = useCallback(async song => {
     try {
       const result = await storageService.toggleSongInFavorites(song);
       setPlaylists(result.playlists);
@@ -263,13 +338,13 @@ const LibraryScreen = ({navigation, route}) => {
     } catch (error) {
       Alert.alert('Error', 'Could not update favorites');
     }
-  };
+  }, []);
 
-  const showSongOptions = song => {
-    const isFavorite = favoriteIds.has(song.id);
+  const showSongOptions = useCallback(song => {
+    const isFav = favoriteIds.has(song.id);
     Alert.alert(song.title, 'Choose an action', [
       {
-        text: isFavorite ? 'Remove from Favorites' : 'Add to Favorites',
+        text: isFav ? 'Remove from Favorites' : 'Add to Favorites',
         onPress: () => toggleFavorite(song),
       },
       {
@@ -277,9 +352,9 @@ const LibraryScreen = ({navigation, route}) => {
         style: 'destructive',
         onPress: () => deleteSong(song),
       },
-      {text: 'Cancel', style: 'cancel'},
+      { text: 'Cancel', style: 'cancel' },
     ]);
-  };
+  }, [favoriteIds, toggleFavorite, deleteSong]);
 
   const createPlaylist = async () => {
     const name = newPlaylistName.trim();
@@ -310,7 +385,7 @@ const LibraryScreen = ({navigation, route}) => {
       return;
     }
     Alert.alert('Delete Playlist', `Delete "${playlist.name}"?`, [
-      {text: 'Cancel', style: 'cancel'},
+      { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
@@ -391,10 +466,9 @@ const LibraryScreen = ({navigation, route}) => {
       await loadLibrary();
       Alert.alert(
         'Import Complete',
-        `${result.importedCount} file${
-          result.importedCount === 1 ? '' : 's'
+        `${result.importedCount} file${result.importedCount === 1 ? '' : 's'
         } imported — album art and metadata extracted successfully.`,
-        [{text: 'OK'}],
+        [{ text: 'OK' }],
       );
     } catch (error) {
       if (!DocumentPicker.isCancel(error)) {
@@ -440,10 +514,8 @@ const LibraryScreen = ({navigation, route}) => {
 
       Alert.alert(
         'Artwork Migration Complete',
-        `${updatedCount} track${
-          updatedCount === 1 ? '' : 's'
-        } updated (${extractedCount} extracted, ${inlineConvertedCount} inline converted).\nProcessed ${processedCount} candidate track${
-          processedCount === 1 ? '' : 's'
+        `${updatedCount} track${updatedCount === 1 ? '' : 's'
+        } updated (${extractedCount} extracted, ${inlineConvertedCount} inline converted).\nProcessed ${processedCount} candidate track${processedCount === 1 ? '' : 's'
         }.`,
       );
     } catch (error) {
@@ -475,10 +547,8 @@ const LibraryScreen = ({navigation, route}) => {
 
       Alert.alert(
         'Duration Migration Complete',
-        `${updatedCount} track${
-          updatedCount === 1 ? '' : 's'
-        } updated.\nProcessed ${processedCount} candidate track${
-          processedCount === 1 ? '' : 's'
+        `${updatedCount} track${updatedCount === 1 ? '' : 's'
+        } updated.\nProcessed ${processedCount} candidate track${processedCount === 1 ? '' : 's'
         }, skipped ${skippedCount}.`,
       );
     } catch (error) {
@@ -491,46 +561,34 @@ const LibraryScreen = ({navigation, route}) => {
     }
   };
 
-  const renderTrackItem = ({item, index}) => {
+  const TRACK_ITEM_HEIGHT = 72;
+
+  const renderTrackItem = useCallback(({ item, index }) => {
     const color =
       MUSIC_HOME_ART_COLORS[ART_KEYS[index % ART_KEYS.length]] || C.bgCard;
     const icon = TRACK_ICONS[index % TRACK_ICONS.length];
     return (
-      <View style={styles.trackCard}>
-        <TouchableOpacity
-          style={styles.trackMain}
-          onPress={() => playSong(index)}
-          onLongPress={() => showSongOptions(item)}
-          activeOpacity={0.85}>
-          {item.artwork ? (
-            <Image source={{uri: item.artwork}} style={styles.trackArtwork} />
-          ) : (
-            <View style={[styles.trackFallback, {backgroundColor: color}]}>
-              <Icon name={icon} size={20} color={C.accentFg} />
-            </View>
-          )}
-          <View style={styles.trackMeta}>
-            <Text style={styles.trackTitle} numberOfLines={1}>
-              {item.title}
-            </Text>
-            <Text style={styles.trackArtist} numberOfLines={1}>
-              {item.artist}
-            </Text>
-          </View>
-        </TouchableOpacity>
-        <View style={styles.trackRight}>
-          <Text style={styles.trackDuration}>
-            {formatDuration(item.duration)}
-          </Text>
-          <TouchableOpacity
-            onPress={() => showSongOptions(item)}
-            style={styles.dotBtn}>
-            <Icon name="dots-horizontal" size={18} color={C.textMute} />
-          </TouchableOpacity>
-        </View>
-      </View>
+      <TrackCard
+        item={item}
+        color={color}
+        icon={icon}
+        duration={formatDuration(item.duration)}
+        onPress={() => playSong(index)}
+        onLongPress={() => showSongOptions(item)}
+        onOptions={() => showSongOptions(item)}
+      />
     );
-  };
+  }, [playSong, showSongOptions]);
+
+  const getTrackItemLayout = useCallback(
+    (_, index) => ({ length: TRACK_ITEM_HEIGHT, offset: TRACK_ITEM_HEIGHT * index, index }),
+    [],
+  );
+
+  const onTabPress = useCallback(id => {
+    setSortOpen(false);
+    setTab(id);
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -550,10 +608,7 @@ const LibraryScreen = ({navigation, route}) => {
             <TouchableOpacity
               key={item.id}
               style={styles.subTabBtn}
-              onPress={() => {
-                setSortOpen(false);
-                setTab(item.id);
-              }}>
+              onPress={() => onTabPress(item.id)}>
               <Text
                 style={[styles.subTabText, active && styles.subTabTextActive]}>
                 {item.label}
@@ -628,8 +683,20 @@ const LibraryScreen = ({navigation, route}) => {
           <FlatList
             data={sortedSongs}
             renderItem={renderTrackItem}
-            keyExtractor={item => item.id}
+            keyExtractor={idKeyExtractor}
             contentContainerStyle={styles.listContent}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            windowSize={10}
+            initialNumToRender={12}
+            getItemLayout={getTrackItemLayout}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshingLibrary}
+                onRefresh={onRefreshLibrary}
+                tintColor={C.accentFg}
+              />
+            }
             ListEmptyComponent={
               loading ? null : (
                 <View style={styles.emptyState}>
@@ -656,6 +723,8 @@ const LibraryScreen = ({navigation, route}) => {
                 placeholderTextColor={C.textMute}
                 value={playlistQuery}
                 onChangeText={setPlaylistQuery}
+                autoCorrect={false}
+                autoCapitalize="none"
               />
             </View>
             <TouchableOpacity
@@ -686,13 +755,13 @@ const LibraryScreen = ({navigation, route}) => {
                       key={playlist.id}
                       style={styles.playlistCard}
                       onPress={() =>
-                        navigation.navigate('PlaylistDetail', {playlist})
+                        navigation.navigate('PlaylistDetail', { playlist })
                       }
                       onLongPress={() => deletePlaylist(playlist)}>
                       <View
                         style={[
                           styles.playlistCover,
-                          {backgroundColor: color},
+                          { backgroundColor: color },
                         ]}>
                         <Icon name={icon} size={34} color={C.accentFg} />
                       </View>
@@ -843,9 +912,9 @@ const LibraryScreen = ({navigation, route}) => {
         visible={sourceImportState.visible}
         transparent
         animationType="fade"
-        onRequestClose={() => {}}>
-        <Pressable style={styles.modalOverlay} onPress={() => {}}>
-          <Pressable style={styles.importProgressCard} onPress={() => {}}>
+        onRequestClose={() => { }}>
+        <Pressable style={styles.modalOverlay} onPress={noop}>
+          <Pressable style={styles.importProgressCard} onPress={noop}>
             <View style={styles.importProgressHeader}>
               <Text style={styles.importProgressTitle}>Importing Files</Text>
               <ActivityIndicator size="small" color={C.accentFg} />
@@ -854,7 +923,9 @@ const LibraryScreen = ({navigation, route}) => {
               {sourceImportState.status || 'Extracting metadata...'}
             </Text>
             <View style={styles.importProgressTrack}>
-              <View style={[styles.importProgressFill, importProgressFillStyle]} />
+              <View
+                style={[styles.importProgressFill, importProgressFillStyle]}
+              />
             </View>
             <Text style={styles.importProgressMeta}>
               Imported {sourceImportState.importedCount}
@@ -877,7 +948,7 @@ const LibraryScreen = ({navigation, route}) => {
         <Pressable
           style={styles.modalOverlay}
           onPress={() => setCreateOpen(false)}>
-          <Pressable style={styles.modalCard} onPress={() => {}}>
+          <Pressable style={styles.modalCard} onPress={noop}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Create Playlist</Text>
               <TouchableOpacity onPress={() => setCreateOpen(false)}>

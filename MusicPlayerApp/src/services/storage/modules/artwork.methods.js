@@ -8,6 +8,7 @@ import {
 import {STORAGE_KEYS} from '../storage.constants';
 import {
   isUnknownValue,
+  normalizeFileSourcePath,
   normalizeText,
   toFileUriFromPath,
   toPathFromUri,
@@ -32,6 +33,37 @@ export const artworkMethods = {
     }
 
     return '';
+  },
+
+  normalizeSourcePath(pathValue) {
+    const rawPath = String(toPathFromUri(pathValue) || pathValue || '').trim();
+    if (!rawPath || rawPath.startsWith('content://')) {
+      return '';
+    }
+
+    const normalized = normalizeFileSourcePath(rawPath);
+    if (!normalized) {
+      return '';
+    }
+
+    return normalized.replace(/\/+$/g, '');
+  },
+
+  inferSourcePathFromSong(song, fallbackFilePath = '') {
+    const explicitSourcePath = this.normalizeSourcePath(song?.sourcePath);
+    if (explicitSourcePath) {
+      return explicitSourcePath;
+    }
+
+    const localPath =
+      this.resolveSongLocalPath(song) ||
+      this.normalizeSourcePath(fallbackFilePath);
+    if (!localPath) {
+      return '';
+    }
+
+    const parentPath = localPath.replace(/\/[^/]+$/g, '');
+    return parentPath || localPath;
   },
 
   async songFileExists(song) {
@@ -86,6 +118,12 @@ export const artworkMethods = {
       merged.localPath = effectivePath;
       merged.url = toFileUriFromPath(effectivePath);
       merged.isLocal = true;
+    }
+    const sourcePath =
+      this.inferSourcePathFromSong(incoming, effectivePath) ||
+      this.inferSourcePathFromSong(existing, existingPath);
+    if (sourcePath) {
+      merged.sourcePath = sourcePath;
     }
 
     merged.id = existing?.id || incoming?.id || `local_${Date.now()}`;
@@ -160,6 +198,38 @@ export const artworkMethods = {
     }
 
     return '';
+  },
+
+  async artworkUriExistsOnDisk(artworkUri) {
+    const normalized = String(artworkUri || '').trim();
+    if (!normalized) {
+      return false;
+    }
+
+    const filePath = toPathFromUri(normalized);
+    if (!filePath || filePath.startsWith('content://')) {
+      return false;
+    }
+
+    try {
+      return await RNFS.exists(filePath);
+    } catch (error) {
+      return false;
+    }
+  },
+
+  async hasReusableArtwork(song) {
+    const artwork = String(song?.artwork || '').trim();
+    if (!artwork) {
+      return false;
+    }
+
+    const lower = artwork.toLowerCase();
+    if (lower.startsWith('data:image/')) {
+      return true;
+    }
+
+    return this.artworkUriExistsOnDisk(artwork);
   },
 
   async persistArtworkForSong(song, artwork) {

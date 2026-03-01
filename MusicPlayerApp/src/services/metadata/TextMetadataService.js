@@ -399,6 +399,10 @@ async function extractMp4TextMetadata(filePath, options = {}) {
   const scanWindows = Array.isArray(options.scanWindows)
     ? options.scanWindows
     : DEFAULT_MP4_SCAN_WINDOWS;
+  const readProbe =
+    options.readProbe && typeof options.readProbe === 'object'
+      ? options.readProbe
+      : null;
   const inspectedChunks = new Set();
   let best = null;
 
@@ -420,6 +424,9 @@ async function extractMp4TextMetadata(filePath, options = {}) {
         continue;
       }
       inspectedChunks.add(key);
+      if (readProbe && offset > 0) {
+        readProbe.requiredSeek = true;
+      }
 
       const chunkBytes = await readChunk(filePath, length, offset);
       if (!chunkBytes) {

@@ -1,4 +1,5 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,16 +11,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import {useFocusEffect} from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import {WebView} from 'react-native-webview';
+import { WebView } from 'react-native-webview';
 
 import storageService from '../../services/storage/StorageService';
-import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
+import { MUSIC_HOME_THEME as C } from '../../theme/musicHomeTheme';
 import QueueItemCard from './components/QueueItemCard';
 import SearchResultCard from './components/SearchResultCard';
-import styles from './search.styles';
-import useSquidWebViewDownloader from './useSquidWebViewDownloader';
 import {
   ACTIVE_QUEUE_STATUSES,
   DEFAULT_DOWNLOAD_SETTING,
@@ -29,7 +27,11 @@ import {
   normalizeDownloadSetting,
   SEARCH_TYPES,
 } from './search.constants';
-import {toTrackKey} from './search.utils';
+import styles from './search.styles';
+import { toTrackKey } from './search.utils';
+import useSquidWebViewDownloader from './useSquidWebViewDownloader';
+
+const queueKeyExtractor = item => item.id;
 
 const SearchScreen = () => {
   const [query, setQuery] = useState('');
@@ -186,7 +188,24 @@ const SearchScreen = () => {
     }, [applyDownloadSetting, refreshQueue]),
   );
 
+  const doneJobIds = useMemo(
+    () =>
+      queue
+        .filter(
+          job =>
+            job.status === 'done' &&
+            job.song?.id &&
+            !persistedJobsRef.current.has(job.id),
+        )
+        .map(job => job.id)
+        .join(','),
+    [queue],
+  );
+
   useEffect(() => {
+    if (!doneJobIds) {
+      return;
+    }
     const persistCompletedDownloads = async () => {
       const completedJobs = queue.filter(
         job =>
@@ -212,7 +231,7 @@ const SearchScreen = () => {
     };
 
     persistCompletedDownloads();
-  }, [queue]);
+  }, [doneJobIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const persistDownloadSetting = useCallback(async nextSetting => {
     const normalized = applyDownloadSetting(nextSetting);
@@ -292,24 +311,6 @@ const SearchScreen = () => {
         activeSearchType.toLowerCase(),
       );
       setResults(songs);
-      console.log('[SquidWV UI] FlatList render diagnostics.', {
-        requestedCount: songs.length,
-        sampleKeys: songs.slice(0, 10).map((item, index) =>
-          getSearchResultKey(item, index),
-        ),
-      });
-      console.log('[SquidWV UI] Search state updated.', {
-        query: query.trim(),
-        searchType: activeSearchType.toLowerCase(),
-        count: songs.length,
-        firstFive: songs.slice(0, 5).map(item => ({
-          title: item?.title,
-          artist: item?.artist,
-          index: item?.index,
-          tidalId: item?.tidalId || null,
-          url: item?.url || null,
-        })),
-      });
 
       if (songs.length === 0) {
         Alert.alert(
@@ -341,7 +342,7 @@ const SearchScreen = () => {
         typeof options?.switchToQueue === 'boolean' ? options.switchToQueue : true;
 
       if (!item.downloadable) {
-        return {status: 'not-downloadable'};
+        return { status: 'not-downloadable' };
       }
 
       if (!bridgeEnabled) {
@@ -351,14 +352,14 @@ const SearchScreen = () => {
             'Enable the bridge button in the top bar to start downloads.',
           );
         }
-        return {status: 'bridge-disabled'};
+        return { status: 'bridge-disabled' };
       }
 
       const resolvedIndex = Number.isInteger(item?.index)
         ? item.index
         : Number.isInteger(index)
-        ? index
-        : null;
+          ? index
+          : null;
 
       const key = toTrackKey(item);
       const existingJob = queueByTrackKey.get(key);
@@ -366,11 +367,11 @@ const SearchScreen = () => {
         if (switchToQueue) {
           setActiveDownloaderTab('Queue');
         }
-        return {status: 'exists', job: existingJob};
+        return { status: 'exists', job: existingJob };
       }
 
       try {
-        setQueuingKeys(prev => ({...prev, [key]: true}));
+        setQueuingKeys(prev => ({ ...prev, [key]: true }));
         const selectedSetting = normalizeDownloadSetting(
           downloadSettingRef.current,
         );
@@ -388,7 +389,7 @@ const SearchScreen = () => {
             setActiveDownloaderTab('Queue');
           }
         }
-        return {status: 'queued', job};
+        return { status: 'queued', job };
       } catch (error) {
         if (!suppressAlert) {
           Alert.alert(
@@ -396,11 +397,11 @@ const SearchScreen = () => {
             error.message || 'Failed to queue download. Please try again.',
           );
         }
-        return {status: 'failed', error};
+        return { status: 'failed', error };
       } finally {
         if (mountedRef.current) {
           setQueuingKeys(prev => {
-            const next = {...prev};
+            const next = { ...prev };
             delete next[key];
             return next;
           });
@@ -519,7 +520,7 @@ const SearchScreen = () => {
       }
 
       try {
-        setRetryingJobs(prev => ({...prev, [job.id]: true}));
+        setRetryingJobs(prev => ({ ...prev, [job.id]: true }));
         const fallbackSong = {
           title: job.title,
           artist: job.artist || 'Unknown Artist',
@@ -552,7 +553,7 @@ const SearchScreen = () => {
       } finally {
         if (mountedRef.current) {
           setRetryingJobs(prev => {
-            const next = {...prev};
+            const next = { ...prev };
             delete next[job.id];
             return next;
           });
@@ -569,7 +570,7 @@ const SearchScreen = () => {
       }
 
       try {
-        setCancelingJobs(prev => ({...prev, [job.id]: true}));
+        setCancelingJobs(prev => ({ ...prev, [job.id]: true }));
         await cancelDownloadFromWebView(job.id);
         if (mountedRef.current) {
           setQueue(prev => prev.filter(existing => existing.id !== job.id));
@@ -582,7 +583,7 @@ const SearchScreen = () => {
       } finally {
         if (mountedRef.current) {
           setCancelingJobs(prev => {
-            const next = {...prev};
+            const next = { ...prev };
             delete next[job.id];
             return next;
           });
@@ -603,7 +604,7 @@ const SearchScreen = () => {
   }, []);
 
   const renderSearchResult = useCallback(
-    ({item, index}) => {
+    ({ item, index }) => {
       const key = toTrackKey(item);
       const canOpenAlbum =
         activeSearchType === 'Albums' &&
@@ -625,7 +626,7 @@ const SearchScreen = () => {
   );
 
   const renderAlbumTrack = useCallback(
-    ({item, index}) => {
+    ({ item, index }) => {
       const key = toTrackKey(item);
       return (
         <SearchResultCard
@@ -635,7 +636,7 @@ const SearchScreen = () => {
           linkedJob={queueByTrackKey.get(key)}
           isQueuing={Boolean(queuingKeys[key])}
           onQueueDownload={(trackItem, trackIndex) =>
-            queueDownload(trackItem, trackIndex, {switchToQueue: false})
+            queueDownload(trackItem, trackIndex, { switchToQueue: false })
           }
         />
       );
@@ -644,7 +645,7 @@ const SearchScreen = () => {
   );
 
   const renderQueueItem = useCallback(
-    ({item}) => (
+    ({ item }) => (
       <QueueItemCard
         item={item}
         retrying={Boolean(retryingJobs[item.id])}
@@ -703,7 +704,7 @@ const SearchScreen = () => {
             style={[
               styles.albumQueueAllButton,
               (albumQueueingAll || albumTracksLoading || albumTracks.length === 0) &&
-                styles.albumQueueAllButtonDisabled,
+              styles.albumQueueAllButtonDisabled,
             ]}
             onPress={queueAlbumTracksAll}
             disabled={albumQueueingAll || albumTracksLoading || albumTracks.length === 0}>
@@ -817,7 +818,7 @@ const SearchScreen = () => {
             <TouchableOpacity
               style={[
                 styles.qualitySelectorSegment,
-                {borderColor: qualityOutlineColor},
+                { borderColor: qualityOutlineColor },
               ]}
               onPress={() => setSettingsOpen(true)}>
               <Icon name="music-note-eighth" size={14} color={C.textDim} />
@@ -873,12 +874,14 @@ const SearchScreen = () => {
                   onChangeText={setQuery}
                   onSubmitEditing={searchSongs}
                   returnKeyType="search"
+                  autoCorrect={false}
+                  autoCapitalize="none"
                 />
                 <TouchableOpacity
                   style={[
                     styles.searchActionButton,
                     (!query.trim() || loading) &&
-                      styles.searchActionButtonDisabled,
+                    styles.searchActionButtonDisabled,
                   ]}
                   onPress={searchSongs}
                   disabled={!query.trim() || loading}>
@@ -899,7 +902,7 @@ const SearchScreen = () => {
                       style={[
                         styles.searchTypeButton,
                         index < SEARCH_TYPES.length - 1 &&
-                          styles.searchTypeButtonGap,
+                        styles.searchTypeButtonGap,
                         active && styles.searchTypeButtonActive,
                       ]}
                       onPress={() => {
@@ -936,6 +939,7 @@ const SearchScreen = () => {
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
+            // removeClippedSubviews={false}: intentional — WebView interaction workaround
             removeClippedSubviews={false}
           />
         </View>
@@ -943,9 +947,13 @@ const SearchScreen = () => {
         <FlatList
           data={orderedQueue}
           renderItem={renderQueueItem}
-          keyExtractor={item => item.id}
+          keyExtractor={queueKeyExtractor}
           contentContainerStyle={styles.queueListContent}
           ListEmptyComponent={renderQueueEmpty}
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={8}
+          windowSize={8}
+          initialNumToRender={10}
         />
       )}
 

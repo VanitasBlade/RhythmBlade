@@ -1,90 +1,78 @@
-import React, {useEffect, useState} from 'react';
-import {Image, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import {useNavigation} from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
+import React, { useCallback, useMemo, useRef } from 'react';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   State,
   useActiveTrack,
   usePlaybackState,
   useProgress,
 } from 'react-native-track-player';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import playbackService from '../services/playback/PlaybackService';
-import {MUSIC_HOME_THEME as C} from '../theme/musicHomeTheme';
-
-const formatTime = value => {
-  const total = Math.max(0, Math.floor(Number(value) || 0));
-  const mins = Math.floor(total / 60);
-  const secs = total % 60;
-  return `${mins}:${String(secs).padStart(2, '0')}`;
-};
+import { MUSIC_HOME_THEME as C } from '../theme/musicHomeTheme';
+import { formatTime } from '../utils/formatTime';
 
 const MiniPlayer = () => {
   const navigation = useNavigation();
   const playbackState = usePlaybackState();
   const track = useActiveTrack();
-  const {position, duration} = useProgress(1);
-  const [stableTrackKey, setStableTrackKey] = useState('');
-  const [stableArtworkUri, setStableArtworkUri] = useState('');
-  const currentTrackKey = String(track?.id || track?.url || '').trim();
-  const currentArtworkUri = String(track?.artwork || '').trim();
-  const displayArtworkUri = currentArtworkUri || stableArtworkUri;
+  const { position, duration } = useProgress(500);
+
+  const artworkCacheRef = useRef({ trackKey: '', uri: '' });
+
+  const displayArtworkUri = useMemo(() => {
+    const key = String(track?.id || track?.url || '').trim();
+    const uri = String(track?.artwork || '').trim();
+    if (!key) {
+      artworkCacheRef.current = { trackKey: '', uri: '' };
+      return '';
+    }
+    if (key !== artworkCacheRef.current.trackKey) {
+      artworkCacheRef.current = { trackKey: key, uri: uri || '' };
+    } else if (uri) {
+      artworkCacheRef.current.uri = uri;
+    }
+    return artworkCacheRef.current.uri;
+  }, [track]);
 
   const isPlaying = playbackState.state === State.Playing;
   const progressPct =
     duration > 0 ? Math.min(100, Math.max(0, (position / duration) * 100)) : 0;
 
-  useEffect(() => {
-    if (!currentTrackKey) {
-      setStableTrackKey('');
-      setStableArtworkUri('');
-      return;
-    }
-
-    if (currentTrackKey !== stableTrackKey) {
-      setStableTrackKey(currentTrackKey);
-      setStableArtworkUri(currentArtworkUri || '');
-      return;
-    }
-
-    if (currentArtworkUri) {
-      setStableArtworkUri(currentArtworkUri);
-    }
-  }, [currentArtworkUri, currentTrackKey, stableTrackKey]);
-
-  if (!track) {
-    return null;
-  }
-
-  const togglePlayback = async () => {
+  const togglePlayback = useCallback(async () => {
     if (isPlaying) {
       await playbackService.pause();
     } else {
       await playbackService.play();
     }
-  };
+  }, [isPlaying]);
 
-  const skipToNext = async () => {
-    await playbackService.skipToNext();
-  };
+  const skipToNext = useCallback(() => playbackService.skipToNext(), []);
+  const skipToPrevious = useCallback(() => playbackService.skipToPrevious(), []);
 
-  const skipToPrevious = async () => {
-    await playbackService.skipToPrevious();
-  };
+  if (!track) {
+    return null;
+  }
 
   return (
     <View style={styles.container}>
       <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, {width: `${progressPct}%`}]} />
+        <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
       </View>
 
       <TouchableOpacity
         style={styles.trackRow}
         activeOpacity={0.9}
         onPress={() =>
-          navigation.navigate('NowPlaying', {optimisticTrack: track})
+          navigation.navigate('NowPlaying', { optimisticTrack: track })
         }>
         {displayArtworkUri ? (
-          <Image source={{uri: displayArtworkUri}} style={styles.artwork} />
+          <Image
+            source={{ uri: displayArtworkUri }}
+            style={styles.artwork}
+            resizeMode="cover"
+            fadeDuration={0}
+          />
         ) : (
           <View style={styles.artworkFallback}>
             <Icon name="music-note" size={18} color={C.accentFg} />
@@ -211,4 +199,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default MiniPlayer;
+export default React.memo(MiniPlayer);

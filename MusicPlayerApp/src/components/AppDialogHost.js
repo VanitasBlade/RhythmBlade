@@ -1,9 +1,10 @@
-import React, {useEffect, useMemo, useState} from 'react';
-import {Modal, Pressable, Text, TouchableOpacity, View} from 'react-native';
-import {MUSIC_HOME_THEME as C} from '../theme/musicHomeTheme';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import appDialogService from '../services/ui/AppDialogService';
+import { MUSIC_HOME_THEME as C } from '../theme/musicHomeTheme';
 
-const FALLBACK_BUTTON = [{text: 'OK'}];
+const FALLBACK_BUTTON = [{ text: 'OK' }];
+const noop = () => { };
 
 const AppDialogHost = () => {
   const [queue, setQueue] = useState([]);
@@ -51,7 +52,7 @@ const AppDialogHost = () => {
       animationType="fade"
       onRequestClose={onBackdropPress}>
       <Pressable style={styles.overlay} onPress={onBackdropPress}>
-        <Pressable style={styles.card} onPress={() => {}}>
+        <Pressable style={styles.card} onPress={noop}>
           {current?.title ? <Text style={styles.title}>{current.title}</Text> : null}
           {current?.message ? (
             <Text style={styles.message}>{current.message}</Text>
@@ -90,10 +91,10 @@ const AppDialogHost = () => {
   );
 };
 
-const styles = {
+const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(8, 5, 18, 0.78)',
+    backgroundColor: C.modalOverlayBg,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
@@ -151,7 +152,7 @@ const styles = {
   actionTextDanger: {
     color: '#f7a8cf',
   },
-};
+});
 
 export default AppDialogHost;
 

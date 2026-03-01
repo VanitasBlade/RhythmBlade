@@ -1,6 +1,16 @@
 const SQUID_BRIDGE_SCRIPT = String.raw`
 (function () {
   if (window.__RB_SQUID_BRIDGE__) {
+    // Already installed — just re-signal readiness to the native side
+    try {
+      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: "bridge-ready",
+          href: window.location.href,
+          reinstall: true,
+        }));
+      }
+    } catch (_) {}
     return;
   }
   window.__RB_SQUID_BRIDGE__ = true;
