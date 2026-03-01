@@ -107,6 +107,19 @@ function isSameTrackOrder(left = [], right = []) {
   return true;
 }
 
+function findTrackIndexByKey(reference = [], track = null) {
+  const targetKey = getTrackOrderKey(track || {});
+  if (!targetKey) {
+    return -1;
+  }
+  for (let index = 0; index < reference.length; index += 1) {
+    if (getTrackOrderKey(reference[index]) === targetKey) {
+      return index;
+    }
+  }
+  return -1;
+}
+
 function buildOrderLookup(reference = []) {
   const lookup = new Map();
   for (let index = 0; index < reference.length; index += 1) {
@@ -134,11 +147,7 @@ function orderTracksByReference(tracks = [], reference = []) {
     const rank = Number.isFinite(positions[used])
       ? positions[used]
       : Number.MAX_SAFE_INTEGER - 1000 + index;
-    return {
-      index,
-      rank,
-      track,
-    };
+    return {index, rank, track};
   });
 
   ranked.sort((left, right) => {
@@ -779,6 +788,17 @@ class PlaybackService {
         ? Number(activeIndex)
         : 0;
       const boundedIndex = Math.max(0, Math.min(currentIndex, queue.length - 1));
+      const currentTrack = queue[boundedIndex] || null;
+      const targetIndex = findTrackIndexByKey(sourceQueue, currentTrack);
+      if (targetIndex < 0) {
+        this.clearShuffleState();
+        return {
+          changed: false,
+          enabled: false,
+          queueLength: queue.length,
+        };
+      }
+
       const upcoming = queue.slice(boundedIndex + 1);
       if (upcoming.length <= 1) {
         this.clearShuffleState();
@@ -789,7 +809,14 @@ class PlaybackService {
         };
       }
 
-      const restoredUpcoming = orderTracksByReference(upcoming, sourceQueue);
+      const rotatedReference = [
+        ...sourceQueue.slice(targetIndex + 1),
+        ...sourceQueue.slice(0, targetIndex),
+      ];
+      const restoredUpcoming = orderTracksByReference(
+        upcoming,
+        rotatedReference,
+      );
       const changed = !isSameTrackOrder(upcoming, restoredUpcoming);
       if (!changed) {
         this.clearShuffleState();
@@ -821,7 +848,7 @@ class PlaybackService {
 
       this.clearShuffleState();
       return {
-        changed: true,
+        changed,
         enabled: false,
         queueLength: queue.length,
       };

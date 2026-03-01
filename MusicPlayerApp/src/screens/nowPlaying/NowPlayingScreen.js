@@ -60,7 +60,6 @@ const NowPlayingScreen = ({ navigation, route }) => {
   const progress = useProgress(250);
   const track = useActiveTrack();
   const optimisticTrack = route?.params?.optimisticTrack || null;
-  const displayTrack = track || optimisticTrack;
   const [loopMode, setLoopMode] = useState(LOOP_MODE.OFF);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
@@ -73,21 +72,35 @@ const NowPlayingScreen = ({ navigation, route }) => {
   const [playlistOptions, setPlaylistOptions] = useState([]);
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekWasPlaying, setSeekWasPlaying] = useState(false);
+  const [shuffleTransitioning, setShuffleTransitioning] = useState(false);
+  const [shuffleTransitionWasPlaying, setShuffleTransitionWasPlaying] = useState(false);
+  const [frozenTrack, setFrozenTrack] = useState(null);
   const loopModeRef = useRef(LOOP_MODE.OFF);
   const loopOneTrackTokenRef = useRef('');
   const loopOneConsumedRef = useRef(false);
   const seekInteractionRef = useRef(false);
+  const shuffleTransitionTimeoutRef = useRef(null);
   const progressRef = useRef({
     token: '',
     position: 0,
     duration: 0,
   });
+  const displayTrack =
+    (shuffleTransitioning && frozenTrack) ||
+    track ||
+    optimisticTrack ||
+    frozenTrack;
 
   const isPlayingRaw = playbackState.state === State.Playing;
+  const isTransitioningPlaybackState =
+    playbackState.state === State.Buffering ||
+    playbackState.state === State.Loading ||
+    playbackState.state === State.Ready;
   const isPlayingVisual =
     (isPlayingRaw && (!isSeeking || seekWasPlaying)) ||
-    (playbackState.state === State.Buffering && seekWasPlaying) ||
-    (isSeeking && seekWasPlaying);
+    (isTransitioningPlaybackState && seekWasPlaying) ||
+    (isSeeking && seekWasPlaying) ||
+    (shuffleTransitioning && shuffleTransitionWasPlaying);
 
   const togglePlayback = useCallback(async () => {
     if (
@@ -120,10 +133,48 @@ const NowPlayingScreen = ({ navigation, route }) => {
     await playbackService.seekTo(value);
     setTimeout(() => {
       setIsSeeking(false);
-      setSeekWasPlaying(false);
       seekInteractionRef.current = false;
     }, 180);
   }, []);
+
+  useEffect(() => {
+    if (!seekWasPlaying) {
+      return;
+    }
+
+    if (playbackState.state === State.Playing) {
+      const timer = setTimeout(() => {
+        setSeekWasPlaying(false);
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+
+    if (
+      playbackState.state === State.Paused ||
+      playbackState.state === State.Stopped ||
+      playbackState.state === State.None
+    ) {
+      setSeekWasPlaying(false);
+      return;
+    }
+
+    if (playbackState.state === State.Ended) {
+      const timer = setTimeout(() => {
+        setSeekWasPlaying(false);
+      }, 700);
+      return () => clearTimeout(timer);
+    }
+  }, [playbackState.state, seekWasPlaying]);
+
+  useEffect(
+    () => () => {
+      if (shuffleTransitionTimeoutRef.current) {
+        clearTimeout(shuffleTransitionTimeoutRef.current);
+        shuffleTransitionTimeoutRef.current = null;
+      }
+    },
+    [],
+  );
 
   const syncRepeatMode = useCallback(async () => {
     const mode = await playbackService.getRepeatMode();
@@ -374,8 +425,27 @@ const NowPlayingScreen = ({ navigation, route }) => {
   );
 
   const shuffleQueue = useCallback(async () => {
+    let shouldSmoothVisualTransition = false;
     try {
-      const nextState = !shuffleActive;
+      const currentShuffleState = playbackService.isShuffleEnabled();
+      shouldSmoothVisualTransition = currentShuffleState;
+      if (shouldSmoothVisualTransition) {
+        if (shuffleTransitionTimeoutRef.current) {
+          clearTimeout(shuffleTransitionTimeoutRef.current);
+          shuffleTransitionTimeoutRef.current = null;
+        }
+        const preservedTrack = track || optimisticTrack || null;
+        const wasPlaying = [
+          State.Playing,
+          State.Buffering,
+          State.Loading,
+          State.Ready,
+        ].includes(playbackState.state);
+        setFrozenTrack(preservedTrack);
+        setShuffleTransitionWasPlaying(wasPlaying);
+        setShuffleTransitioning(true);
+      }
+      const nextState = !currentShuffleState;
       const result = await playbackService.setShuffleEnabled(nextState);
       setShuffleActive(Boolean(result?.enabled));
       const [queue, index] = await Promise.all([
@@ -389,8 +459,17 @@ const NowPlayingScreen = ({ navigation, route }) => {
     } catch (error) {
       console.error('Error shuffling queue:', error);
       Alert.alert('Shuffle Failed', 'Could not shuffle the current queue.');
+    } finally {
+      if (shouldSmoothVisualTransition) {
+        shuffleTransitionTimeoutRef.current = setTimeout(() => {
+          setShuffleTransitioning(false);
+          setShuffleTransitionWasPlaying(false);
+          setFrozenTrack(null);
+          shuffleTransitionTimeoutRef.current = null;
+        }, 700);
+      }
     }
-  }, [shuffleActive]);
+  }, [optimisticTrack, playbackState.state, track]);
 
   const deleteCurrentTrack = useCallback(() => {
     if (!displayTrack) {
