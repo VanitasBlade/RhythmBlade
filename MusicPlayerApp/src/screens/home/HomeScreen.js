@@ -7,7 +7,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
@@ -121,7 +121,10 @@ const HomeScreen = ({ navigation }) => {
 
       try {
         await playbackService.playSongs(filteredSongs, { startIndex: index });
-        navigation.navigate('NowPlaying', { optimisticTrack: nextTrack });
+        navigation.navigate('NowPlaying', {
+          optimisticTrack: nextTrack,
+          shuffleActive: false,
+        });
       } catch (error) {
         console.error('Error playing song:', error);
       }

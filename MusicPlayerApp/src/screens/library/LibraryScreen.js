@@ -13,7 +13,7 @@ import {
   TextInput,
   ToastAndroid,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -70,6 +70,8 @@ const LibraryScreen = ({ navigation, route }) => {
   const [createOpen, setCreateOpen] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [newPlaylistDesc, setNewPlaylistDesc] = useState('');
+  const [playlistPickerOpen, setPlaylistPickerOpen] = useState(false);
+  const [playlistPickerSong, setPlaylistPickerSong] = useState(null);
 
   const loadLibrary = useCallback(async () => {
     try {
@@ -216,6 +218,12 @@ const LibraryScreen = ({ navigation, route }) => {
     return rows;
   }, [filteredPlaylists]);
 
+  const selectablePlaylists = useMemo(
+    () =>
+      playlists.filter(item => !storageService.isFavoritesPlaylist(item)),
+    [playlists],
+  );
+
   const normalizedSources = useMemo(
     () =>
       sources.map(source => ({
@@ -256,7 +264,10 @@ const LibraryScreen = ({ navigation, route }) => {
 
     try {
       await playbackService.playSongs(sortedSongs, { startIndex: index });
-      navigation.navigate('NowPlaying', { optimisticTrack: nextTrack });
+      navigation.navigate('NowPlaying', {
+        optimisticTrack: nextTrack,
+        shuffleActive: false,
+      });
     } catch (error) {
       console.error('Error playing song:', error);
       Alert.alert(
@@ -275,7 +286,10 @@ const LibraryScreen = ({ navigation, route }) => {
 
     try {
       await playbackService.playSongs(sortedSongs, { startIndex: 0 });
-      navigation.navigate('NowPlaying', { optimisticTrack: nextTrack });
+      navigation.navigate('NowPlaying', {
+        optimisticTrack: nextTrack,
+        shuffleActive: false,
+      });
     } catch (error) {
       console.error('Error playing all songs:', error);
       Alert.alert(
@@ -301,8 +315,15 @@ const LibraryScreen = ({ navigation, route }) => {
     const nextTrack = shuffled[0];
 
     try {
-      await playbackService.playSongs(shuffled, { startIndex: 0 });
-      navigation.navigate('NowPlaying', { optimisticTrack: nextTrack });
+      await playbackService.playSongs(shuffled, {
+        startIndex: 0,
+        shuffleEnabled: true,
+        shuffleOriginalQueue: sortedSongs,
+      });
+      navigation.navigate('NowPlaying', {
+        optimisticTrack: nextTrack,
+        shuffleActive: true,
+      });
     } catch (error) {
       console.error('Error shuffling songs:', error);
       Alert.alert(
@@ -342,19 +363,69 @@ const LibraryScreen = ({ navigation, route }) => {
 
   const showSongOptions = useCallback(song => {
     const isFav = favoriteIds.has(song.id);
-    Alert.alert(song.title, 'Choose an action', [
+    const openPlaylistPicker = () => {
+      if (!selectablePlaylists.length) {
+        Alert.alert(
+          'No Playlists',
+          'Create a playlist first, then add songs to it.',
+        );
+        return;
+      }
+      setPlaylistPickerSong(song);
+      setPlaylistPickerOpen(true);
+    };
+
+    const baseActions = [
       {
         text: isFav ? 'Remove from Favorites' : 'Add to Favorites',
         onPress: () => toggleFavorite(song),
+      },
+      {
+        text: 'Add to Playlist',
+        onPress: openPlaylistPicker,
       },
       {
         text: 'Delete Song',
         style: 'destructive',
         onPress: () => deleteSong(song),
       },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  }, [favoriteIds, toggleFavorite, deleteSong]);
+    ];
+
+    const actions =
+      Platform.OS === 'android'
+        ? baseActions
+        : [...baseActions, {text: 'Cancel', style: 'cancel'}];
+    Alert.alert(song.title, 'Choose an action', actions);
+  }, [favoriteIds, toggleFavorite, deleteSong, selectablePlaylists]);
+
+  const addSongToPlaylist = useCallback(
+    async playlist => {
+      const targetSong = playlistPickerSong;
+      if (!playlist || !targetSong) {
+        return;
+      }
+
+      try {
+        const nextPlaylists = await storageService.addSongToPlaylist(
+          playlist.id,
+          targetSong,
+        );
+        setPlaylists(nextPlaylists);
+        setPlaylistPickerOpen(false);
+        setPlaylistPickerSong(null);
+        Alert.alert(
+          'Added to Playlist',
+          `"${targetSong.title}" was added to "${playlist.name}".`,
+        );
+      } catch (error) {
+        Alert.alert(
+          'Add to Playlist Failed',
+          error?.message || 'Could not add this song to the playlist.',
+        );
+      }
+    },
+    [playlistPickerSong],
+  );
 
   const createPlaylist = async () => {
     const name = newPlaylistName.trim();
@@ -936,6 +1007,60 @@ const LibraryScreen = ({ navigation, route }) => {
                 ? ` • Errors ${sourceImportState.errorCount}`
                 : ''}
             </Text>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={playlistPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setPlaylistPickerOpen(false);
+          setPlaylistPickerSong(null);
+        }}>
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => {
+            setPlaylistPickerOpen(false);
+            setPlaylistPickerSong(null);
+          }}>
+          <Pressable style={styles.modalCard} onPress={noop}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add to Playlist</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setPlaylistPickerOpen(false);
+                  setPlaylistPickerSong(null);
+                }}>
+                <Icon name="close" size={20} color={C.textDim} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.playlistPickerSubtitle} numberOfLines={2}>
+              {playlistPickerSong?.title || 'Select a playlist'}
+            </Text>
+
+            <ScrollView
+              style={styles.playlistPickerList}
+              contentContainerStyle={styles.playlistPickerContent}>
+              {selectablePlaylists.map(item => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.playlistPickerItem}
+                  onPress={() => addSongToPlaylist(item)}>
+                  <View style={styles.playlistPickerMeta}>
+                    <Text style={styles.playlistPickerName} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text style={styles.playlistPickerCount} numberOfLines={1}>
+                      {Array.isArray(item.songs) ? item.songs.length : 0} songs
+                    </Text>
+                  </View>
+                  <Icon name="plus" size={20} color={C.accentFg} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>

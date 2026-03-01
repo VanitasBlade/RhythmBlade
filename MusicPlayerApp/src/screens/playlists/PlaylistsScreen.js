@@ -126,7 +126,10 @@ const PlaylistsScreen = ({ navigation }) => {
 
       try {
         await playbackService.playSongs(playlist.songs, { startIndex: 0 });
-        navigation.navigate('NowPlaying', { optimisticTrack: nextTrack });
+        navigation.navigate('NowPlaying', {
+          optimisticTrack: nextTrack,
+          shuffleActive: false,
+        });
       } catch (error) {
         console.error('Error playing playlist:', error);
         Alert.alert(

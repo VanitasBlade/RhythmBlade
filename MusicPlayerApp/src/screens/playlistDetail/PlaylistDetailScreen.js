@@ -3,7 +3,10 @@ import {
   Alert,
   FlatList,
   Image,
+  Modal,
+  Pressable,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -16,6 +19,15 @@ import styles from './playlistDetail.styles';
 
 const SONG_ITEM_HEIGHT = 68;
 const idKeyExtractor = item => item.id;
+const songKey = song =>
+  String(song?.id || song?.sourceSongId || song?.localPath || song?.url || '')
+    .trim();
+const songIdentityKeys = song => {
+  const keys = [song?.id, song?.sourceSongId, song?.localPath, song?.url]
+    .map(value => String(value || '').trim())
+    .filter(Boolean);
+  return Array.from(new Set(keys));
+};
 
 const SongCard = React.memo(({ item, index, onPress, onRemove }) => (
   <View style={styles.songCard}>
@@ -61,6 +73,11 @@ SongCard.displayName = 'PlaylistDetailSongCard';
 const PlaylistDetailScreen = ({ route, navigation }) => {
   const { playlist: initialPlaylist } = route.params;
   const [playlist, setPlaylist] = useState(initialPlaylist);
+  const [addTracksOpen, setAddTracksOpen] = useState(false);
+  const [loadingLibrarySongs, setLoadingLibrarySongs] = useState(false);
+  const [librarySongs, setLibrarySongs] = useState([]);
+  const [selectedSongKeys, setSelectedSongKeys] = useState(new Set());
+  const [addTracksQuery, setAddTracksQuery] = useState('');
 
   const loadPlaylist = useCallback(async () => {
     try {
@@ -87,7 +104,10 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
 
       try {
         await playbackService.playSongs(playlist.songs, { startIndex: index });
-        navigation.navigate('NowPlaying', { optimisticTrack: nextTrack });
+        navigation.navigate('NowPlaying', {
+          optimisticTrack: nextTrack,
+          shuffleActive: false,
+        });
       } catch (error) {
         console.error('Error playing song:', error);
         Alert.alert(
@@ -108,7 +128,10 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
 
     try {
       await playbackService.playSongs(playlist.songs, { startIndex: 0 });
-      navigation.navigate('NowPlaying', { optimisticTrack: nextTrack });
+      navigation.navigate('NowPlaying', {
+        optimisticTrack: nextTrack,
+        shuffleActive: false,
+      });
     } catch (error) {
       console.error('Error playing all songs:', error);
       Alert.alert(
@@ -117,6 +140,97 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       );
     }
   }, [playlist.songs, navigation]);
+
+  const filteredLibrarySongs = useMemo(() => {
+    const query = addTracksQuery.trim().toLowerCase();
+    if (!query) {
+      return librarySongs;
+    }
+    return librarySongs.filter(item => {
+      const title = String(item?.title || '').toLowerCase();
+      const artist = String(item?.artist || '').toLowerCase();
+      return title.includes(query) || artist.includes(query);
+    });
+  }, [addTracksQuery, librarySongs]);
+
+  const openAddTracksModal = useCallback(async () => {
+    try {
+      setLoadingLibrarySongs(true);
+      const library = await storageService.getLocalLibrary();
+      const existingKeySet = new Set(
+        playlist.songs.flatMap(song => songIdentityKeys(song)),
+      );
+      const candidates = library.filter(song => {
+        const keys = songIdentityKeys(song);
+        return keys.length > 0 && !keys.some(key => existingKeySet.has(key));
+      });
+      setLibrarySongs(candidates);
+      setSelectedSongKeys(new Set());
+      setAddTracksQuery('');
+      setAddTracksOpen(true);
+    } catch (error) {
+      console.error('Error loading library songs for playlist add:', error);
+      Alert.alert('Error', 'Could not load library songs.');
+    } finally {
+      setLoadingLibrarySongs(false);
+    }
+  }, [playlist.songs]);
+
+  const toggleLibrarySongSelection = useCallback(song => {
+    const key = songKey(song);
+    if (!key) {
+      return;
+    }
+    setSelectedSongKeys(previous => {
+      const next = new Set(previous);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
+
+  const confirmAddTracks = useCallback(async () => {
+    if (!selectedSongKeys.size) {
+      setAddTracksOpen(false);
+      return;
+    }
+
+    const chosenSongs = librarySongs.filter(song =>
+      selectedSongKeys.has(songKey(song)),
+    );
+    if (!chosenSongs.length) {
+      setAddTracksOpen(false);
+      return;
+    }
+
+    try {
+      const result = await storageService.addSongsToPlaylist(
+        playlist.id,
+        chosenSongs,
+      );
+      if (result?.playlist) {
+        setPlaylist(result.playlist);
+      }
+      await loadPlaylist();
+      setAddTracksOpen(false);
+      setSelectedSongKeys(new Set());
+      Alert.alert(
+        'Tracks Added',
+        `${Number(result?.addedCount) || chosenSongs.length} track${
+          (Number(result?.addedCount) || chosenSongs.length) === 1 ? '' : 's'
+        } added to "${playlist.name}".`,
+      );
+    } catch (error) {
+      console.error('Error adding tracks to playlist:', error);
+      Alert.alert(
+        'Add Tracks Failed',
+        error?.message || 'Could not add tracks to this playlist.',
+      );
+    }
+  }, [librarySongs, loadPlaylist, playlist.id, playlist.name, selectedSongKeys]);
 
   const removeSong = useCallback(
     song => {
@@ -218,22 +332,31 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
             {playlist.songs.length === 1 ? 'song' : 'songs'}
           </Text>
 
-          <TouchableOpacity
-            style={[
-              styles.playAllButton,
-              playlist.songs.length === 0 && styles.playAllDisabled,
-            ]}
-            onPress={playAll}
-            disabled={playlist.songs.length === 0}>
-            <Icon name="play" size={16} color="#fff" />
-            <Text style={styles.playAllText}>Play All</Text>
-          </TouchableOpacity>
+          <View style={styles.heroActions}>
+            <TouchableOpacity
+              style={[
+                styles.playAllButton,
+                playlist.songs.length === 0 && styles.playAllDisabled,
+              ]}
+              onPress={playAll}
+              disabled={playlist.songs.length === 0}>
+              <Icon name="play" size={16} color="#fff" />
+              <Text style={styles.playAllText}>Play All</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.addTracksButton}
+              onPress={openAddTracksModal}>
+              <Icon name="playlist-plus" size={16} color={C.accentFg} />
+              <Text style={styles.addTracksText}>Add Tracks</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <Text style={styles.sectionLabel}>Tracks</Text>
       </View>
     ),
-    [artworks, playlist, playAll, navigation],
+    [artworks, navigation, openAddTracksModal, playAll, playlist],
   );
 
   const renderSongItem = useCallback(
@@ -268,6 +391,38 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     [],
   );
 
+  const selectedTrackCount = selectedSongKeys.size;
+
+  const renderLibrarySongItem = useCallback(
+    ({item}) => {
+      const key = songKey(item);
+      const selected = selectedSongKeys.has(key);
+      return (
+        <TouchableOpacity
+          style={[
+            styles.librarySongRow,
+            selected && styles.librarySongRowSelected,
+          ]}
+          onPress={() => toggleLibrarySongSelection(item)}>
+          <View style={styles.librarySongMeta}>
+            <Text style={styles.librarySongTitle} numberOfLines={1}>
+              {item.title || 'Unknown'}
+            </Text>
+            <Text style={styles.librarySongArtist} numberOfLines={1}>
+              {item.artist || 'Unknown Artist'}
+            </Text>
+          </View>
+          <Icon
+            name={selected ? 'checkbox-marked-circle' : 'checkbox-blank-circle-outline'}
+            size={22}
+            color={selected ? C.accentFg : C.textMute}
+          />
+        </TouchableOpacity>
+      );
+    },
+    [selectedSongKeys, toggleLibrarySongSelection],
+  );
+
   return (
     <View style={styles.container}>
       <FlatList
@@ -283,6 +438,68 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
         initialNumToRender={12}
         getItemLayout={getItemLayout}
       />
+
+      <Modal
+        visible={addTracksOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAddTracksOpen(false)}>
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setAddTracksOpen(false)}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Tracks</Text>
+              <TouchableOpacity onPress={() => setAddTracksOpen(false)}>
+                <Icon name="close" size={20} color={C.textDim} />
+              </TouchableOpacity>
+            </View>
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Search library songs..."
+              placeholderTextColor={C.textMute}
+              value={addTracksQuery}
+              onChangeText={setAddTracksQuery}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            {loadingLibrarySongs ? (
+              <View style={styles.librarySongsLoading}>
+                <Text style={styles.librarySongsEmptyText}>Loading songs...</Text>
+              </View>
+            ) : filteredLibrarySongs.length ? (
+              <FlatList
+                data={filteredLibrarySongs}
+                keyExtractor={(item, index) => `${songKey(item)}-${index}`}
+                style={styles.librarySongsList}
+                contentContainerStyle={styles.librarySongsListContent}
+                renderItem={renderLibrarySongItem}
+              />
+            ) : (
+              <View style={styles.librarySongsEmpty}>
+                <Text style={styles.librarySongsEmptyText}>
+                  No more tracks available to add.
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[
+                styles.modalPrimaryButton,
+                selectedTrackCount <= 0 && styles.playAllDisabled,
+              ]}
+              onPress={confirmAddTracks}
+              disabled={selectedTrackCount <= 0}>
+              <Text style={styles.modalPrimaryButtonText}>
+                Add {selectedTrackCount} Track
+                {selectedTrackCount === 1 ? '' : 's'}
+              </Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 };

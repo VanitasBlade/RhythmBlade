@@ -140,6 +140,43 @@ const styles = StyleSheet.create({
   menuOptionTextDanger: {
     color: '#f57f86',
   },
+  playlistPickerSubtitle: {
+    color: C.textDim,
+    fontSize: 13,
+    marginBottom: 10,
+  },
+  playlistPickerList: {
+    maxHeight: 320,
+  },
+  playlistPickerContent: {
+    paddingBottom: 4,
+  },
+  playlistPickerItem: {
+    minHeight: 52,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.bg,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  playlistPickerMeta: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  playlistPickerName: {
+    color: C.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  playlistPickerCount: {
+    marginTop: 2,
+    color: C.textMute,
+    fontSize: 12,
+  },
 
   detailRow: {
     paddingVertical: 8,

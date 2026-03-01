@@ -240,18 +240,60 @@ export const playlistMethods = {
     };
   },
 
+  buildSongIdentityKeys(song = {}) {
+    const keys = [];
+    const pushKey = value => {
+      const normalized = String(value || '').trim();
+      if (normalized && !keys.includes(normalized)) {
+        keys.push(normalized);
+      }
+    };
+
+    pushKey(song.id);
+    pushKey(song.sourceSongId);
+    pushKey(song.localPath);
+    pushKey(song.url);
+    return keys;
+  },
+
+  normalizeSongForPlaylist(song = {}) {
+    if (!song || typeof song !== 'object') {
+      throw new Error('Invalid song');
+    }
+
+    const id =
+      String(song.id || song.sourceSongId || song.localPath || song.url || '')
+        .trim();
+    if (!id) {
+      throw new Error('Song id is missing');
+    }
+
+    return {
+      ...song,
+      id,
+    };
+  },
+
   async addSongToPlaylist(playlistId, song) {
     try {
       const playlists = await this.getPlaylists();
-      const playlist = playlists.find(item => item.id === playlistId);
+      const normalizedPlaylistId = String(playlistId || '').trim();
+      const playlist = playlists.find(
+        item => String(item?.id || '').trim() === normalizedPlaylistId,
+      );
 
       if (!playlist) {
         throw new Error('Playlist not found');
       }
 
-      const exists = playlist.songs.find(item => item.id === song.id);
+      const normalizedSong = this.normalizeSongForPlaylist(song);
+      const songKeys = this.buildSongIdentityKeys(normalizedSong);
+      const exists = playlist.songs.find(item => {
+        const existingKeys = this.buildSongIdentityKeys(item);
+        return existingKeys.some(key => songKeys.includes(key));
+      });
       if (!exists) {
-        playlist.songs.push(song);
+        playlist.songs.push(normalizedSong);
         playlist.updatedAt = Date.now();
         const nextPlaylists = this.sortPlaylists(playlists);
         await this.savePlaylists(nextPlaylists);
@@ -266,16 +308,92 @@ export const playlistMethods = {
     }
   },
 
-  async removeSongFromPlaylist(playlistId, songId) {
+  async addSongsToPlaylist(playlistId, songs = []) {
     try {
       const playlists = await this.getPlaylists();
-      const playlist = playlists.find(item => item.id === playlistId);
+      const normalizedPlaylistId = String(playlistId || '').trim();
+      const playlist = playlists.find(
+        item => String(item?.id || '').trim() === normalizedPlaylistId,
+      );
 
       if (!playlist) {
         throw new Error('Playlist not found');
       }
 
-      playlist.songs = playlist.songs.filter(song => song.id !== songId);
+      const list = Array.isArray(songs) ? songs : [];
+      const existingKeySet = new Set(
+        playlist.songs.flatMap(item => this.buildSongIdentityKeys(item)),
+      );
+
+      let addedCount = 0;
+      for (let index = 0; index < list.length; index += 1) {
+        let normalizedSong = null;
+        try {
+          normalizedSong = this.normalizeSongForPlaylist(list[index]);
+        } catch (_) {
+          normalizedSong = null;
+        }
+        if (!normalizedSong) {
+          continue;
+        }
+
+        const candidateKeys = this.buildSongIdentityKeys(normalizedSong);
+        const alreadyExists = candidateKeys.some(key =>
+          existingKeySet.has(key),
+        );
+        if (alreadyExists) {
+          continue;
+        }
+
+        playlist.songs.push(normalizedSong);
+        candidateKeys.forEach(key => existingKeySet.add(key));
+        addedCount += 1;
+      }
+
+      if (addedCount <= 0) {
+        return {
+          playlists,
+          playlist,
+          addedCount: 0,
+        };
+      }
+
+      playlist.updatedAt = Date.now();
+      const nextPlaylists = this.sortPlaylists(playlists);
+      await this.savePlaylists(nextPlaylists);
+      const updatedPlaylist =
+        nextPlaylists.find(
+          item => String(item?.id || '').trim() === normalizedPlaylistId,
+        ) || playlist;
+
+      return {
+        playlists: nextPlaylists,
+        playlist: updatedPlaylist,
+        addedCount,
+      };
+    } catch (error) {
+      console.error('Error adding songs to playlist:', error);
+      throw error;
+    }
+  },
+
+  async removeSongFromPlaylist(playlistId, songId) {
+    try {
+      const playlists = await this.getPlaylists();
+      const normalizedPlaylistId = String(playlistId || '').trim();
+      const playlist = playlists.find(
+        item => String(item?.id || '').trim() === normalizedPlaylistId,
+      );
+
+      if (!playlist) {
+        throw new Error('Playlist not found');
+      }
+
+      const normalizedSongId = String(songId || '').trim();
+      playlist.songs = playlist.songs.filter(song => {
+        const keys = this.buildSongIdentityKeys(song);
+        return !keys.includes(normalizedSongId);
+      });
       playlist.updatedAt = Date.now();
       const nextPlaylists = this.sortPlaylists(playlists);
       await this.savePlaylists(nextPlaylists);

@@ -1,5 +1,6 @@
 import Slider from '@react-native-community/slider';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {useFocusEffect} from '@react-navigation/native';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   Alert,
   FlatList,
@@ -30,6 +31,29 @@ import styles from './nowPlaying.styles';
 const noop = () => { };
 const queueKeyExtractor = (item, index) =>
   String(item.id || item.url || `queue-${index}`);
+const LOOP_MODE = {
+  OFF: 'off',
+  ONE: 'one',
+  ALL: 'all',
+};
+
+function toLoopMode(value) {
+  const preferred = playbackService.getLoopBehavior?.();
+  if (value === RepeatMode.Queue) {
+    return preferred === LOOP_MODE.ONE ? LOOP_MODE.ONE : LOOP_MODE.ALL;
+  }
+  if (value === RepeatMode.Track) {
+    if (preferred === LOOP_MODE.ONE || preferred === LOOP_MODE.ALL) {
+      return preferred;
+    }
+    return LOOP_MODE.ALL;
+  }
+  return LOOP_MODE.OFF;
+}
+
+function currentTrackToken(track = null) {
+  return String(track?.id || track?.url || '').trim();
+}
 
 const NowPlayingScreen = ({ navigation, route }) => {
   const playbackState = usePlaybackState();
@@ -37,23 +61,44 @@ const NowPlayingScreen = ({ navigation, route }) => {
   const track = useActiveTrack();
   const optimisticTrack = route?.params?.optimisticTrack || null;
   const displayTrack = track || optimisticTrack;
-  const [repeatMode, setRepeatMode] = useState(RepeatMode.Off);
+  const [loopMode, setLoopMode] = useState(LOOP_MODE.OFF);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   const [queueTracks, setQueueTracks] = useState([]);
   const [activeQueueIndex, setActiveQueueIndex] = useState(-1);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [shuffleActive, setShuffleActive] = useState(false);
+  const [playlistPickerOpen, setPlaylistPickerOpen] = useState(false);
+  const [playlistOptions, setPlaylistOptions] = useState([]);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [seekWasPlaying, setSeekWasPlaying] = useState(false);
+  const loopModeRef = useRef(LOOP_MODE.OFF);
+  const loopOneTrackTokenRef = useRef('');
+  const loopOneConsumedRef = useRef(false);
+  const seekInteractionRef = useRef(false);
+  const progressRef = useRef({
+    token: '',
+    position: 0,
+    duration: 0,
+  });
 
-  const isPlaying = playbackState.state === State.Playing;
+  const isPlayingRaw = playbackState.state === State.Playing;
+  const isPlayingVisual =
+    (isPlayingRaw && (!isSeeking || seekWasPlaying)) ||
+    (playbackState.state === State.Buffering && seekWasPlaying) ||
+    (isSeeking && seekWasPlaying);
 
   const togglePlayback = useCallback(async () => {
-    if (isPlaying) {
+    if (
+      playbackState.state === State.Playing ||
+      playbackState.state === State.Buffering
+    ) {
       await playbackService.pause();
     } else {
       await playbackService.play();
     }
-  }, [isPlaying]);
+  }, [playbackState.state]);
 
   const skipToNext = useCallback(
     async () => playbackService.skipToNext(),
@@ -65,37 +110,148 @@ const NowPlayingScreen = ({ navigation, route }) => {
     [],
   );
 
+  const onSeekStart = useCallback(() => {
+    setIsSeeking(true);
+    setSeekWasPlaying(playbackState.state === State.Playing);
+    seekInteractionRef.current = true;
+  }, [playbackState.state]);
+
   const onSeek = useCallback(async value => {
     await playbackService.seekTo(value);
+    setTimeout(() => {
+      setIsSeeking(false);
+      setSeekWasPlaying(false);
+      seekInteractionRef.current = false;
+    }, 180);
+  }, []);
+
+  const syncRepeatMode = useCallback(async () => {
+    const mode = await playbackService.getRepeatMode();
+    if (mode !== null && mode !== undefined) {
+      const resolvedMode = toLoopMode(mode);
+      setLoopMode(resolvedMode);
+      loopModeRef.current = resolvedMode;
+    }
+  }, []);
+
+  const syncShuffleState = useCallback(() => {
+    setShuffleActive(playbackService.isShuffleEnabled());
   }, []);
 
   const toggleRepeat = useCallback(async () => {
-    let newMode;
-    switch (repeatMode) {
-      case RepeatMode.Off:
-        newMode = RepeatMode.Queue;
+    let nextMode = LOOP_MODE.OFF;
+    switch (loopModeRef.current) {
+      case LOOP_MODE.OFF:
+        nextMode = LOOP_MODE.ONE;
         break;
-      case RepeatMode.Queue:
-        newMode = RepeatMode.Track;
+      case LOOP_MODE.ONE:
+        nextMode = LOOP_MODE.ALL;
         break;
-      case RepeatMode.Track:
-        newMode = RepeatMode.Off;
-        break;
+      case LOOP_MODE.ALL:
       default:
-        newMode = RepeatMode.Off;
+        nextMode = LOOP_MODE.OFF;
     }
-    setRepeatMode(newMode);
-    await playbackService.setRepeatMode(newMode);
-  }, [repeatMode]);
+
+    setLoopMode(nextMode);
+    loopModeRef.current = nextMode;
+
+    if (nextMode === LOOP_MODE.ALL) {
+      loopOneConsumedRef.current = false;
+      loopOneTrackTokenRef.current = '';
+      playbackService.setLoopBehavior?.(LOOP_MODE.ALL);
+      await playbackService.setRepeatMode(RepeatMode.Track);
+      return;
+    }
+
+    if (nextMode === LOOP_MODE.ONE) {
+      loopOneConsumedRef.current = false;
+      loopOneTrackTokenRef.current = currentTrackToken(displayTrack);
+      playbackService.setLoopBehavior?.(LOOP_MODE.ONE);
+      await playbackService.setRepeatMode(RepeatMode.Track);
+      return;
+    }
+
+    loopOneConsumedRef.current = false;
+    loopOneTrackTokenRef.current = '';
+    playbackService.setLoopBehavior?.(LOOP_MODE.OFF);
+    await playbackService.setRepeatMode(RepeatMode.Off);
+  }, [displayTrack]);
 
   const repeatIcon = useMemo(
-    () => (repeatMode === RepeatMode.Track ? 'repeat-once' : 'repeat'),
-    [repeatMode],
+    () => (loopMode === LOOP_MODE.ONE ? 'repeat-once' : 'repeat'),
+    [loopMode],
   );
   const repeatColor = useMemo(
-    () => (repeatMode !== RepeatMode.Off ? C.accentFg : C.textDeep),
-    [repeatMode],
+    () => (loopMode !== LOOP_MODE.OFF ? C.accentFg : C.textDeep),
+    [loopMode],
   );
+  const shuffleColor = useMemo(
+    () => (shuffleActive ? C.accentFg : C.textDeep),
+    [shuffleActive],
+  );
+
+  useEffect(() => {
+    loopModeRef.current = loopMode;
+  }, [loopMode]);
+
+  useEffect(() => {
+    const token = currentTrackToken(displayTrack);
+    const position = Number(progress.position) || 0;
+    const duration = Math.max(
+      0,
+      Number(progress.duration || displayTrack?.duration) || 0,
+    );
+    const previous = progressRef.current;
+
+    if (!token || previous.token !== token) {
+      progressRef.current = {token, position, duration};
+      return;
+    }
+
+    const droppedToStart =
+      previous.position >= 3 &&
+      position <= 1.2 &&
+      previous.position - position >= 2;
+    const nearEndFloor = duration > 0 ? Math.max(duration - 4, duration * 0.75) : 10;
+    const wrapped = droppedToStart && previous.position >= nearEndFloor;
+    if (
+      wrapped &&
+      loopModeRef.current === LOOP_MODE.ONE &&
+      !loopOneConsumedRef.current &&
+      loopOneTrackTokenRef.current === token &&
+      !seekInteractionRef.current
+    ) {
+      loopOneConsumedRef.current = true;
+      setLoopMode(LOOP_MODE.OFF);
+      loopModeRef.current = LOOP_MODE.OFF;
+      playbackService.setLoopBehavior?.(LOOP_MODE.OFF);
+      playbackService.setRepeatMode(RepeatMode.Off).catch(() => {});
+    }
+
+    progressRef.current = {token, position, duration};
+  }, [displayTrack, progress.duration, progress.position]);
+
+  useEffect(() => {
+    const incomingShuffleState = route?.params?.shuffleActive;
+    if (typeof incomingShuffleState === 'boolean') {
+      setShuffleActive(incomingShuffleState);
+    }
+  }, [route?.params?.shuffleActive]);
+
+  useEffect(() => {
+    if (loopMode !== LOOP_MODE.ONE) {
+      loopOneConsumedRef.current = false;
+      if (loopMode === LOOP_MODE.OFF) {
+        loopOneTrackTokenRef.current = '';
+      }
+      return;
+    }
+    const token = currentTrackToken(displayTrack);
+    if (token && loopOneTrackTokenRef.current !== token) {
+      loopOneTrackTokenRef.current = token;
+      loopOneConsumedRef.current = false;
+    }
+  }, [displayTrack, loopMode]);
 
   const refreshFavoriteState = useCallback(async () => {
     if (!displayTrack?.id) {
@@ -114,6 +270,13 @@ const NowPlayingScreen = ({ navigation, route }) => {
   useEffect(() => {
     refreshFavoriteState();
   }, [refreshFavoriteState]);
+
+  useFocusEffect(
+    useCallback(() => {
+      syncRepeatMode();
+      syncShuffleState();
+    }, [syncRepeatMode, syncShuffleState]),
+  );
 
   const toggleFavorite = useCallback(async () => {
     if (!displayTrack?.id) {
@@ -161,6 +324,73 @@ const NowPlayingScreen = ({ navigation, route }) => {
     setMenuOpen(false);
     setDetailsOpen(true);
   }, []);
+
+  const openAddToPlaylistPicker = useCallback(async () => {
+    if (!displayTrack) {
+      return;
+    }
+    setMenuOpen(false);
+    try {
+      const playlists = await storageService.getPlaylists();
+      const selectable = playlists.filter(
+        item => !storageService.isFavoritesPlaylist(item),
+      );
+      if (!selectable.length) {
+        Alert.alert(
+          'No Playlists',
+          'Create a playlist first, then add songs to it.',
+        );
+        return;
+      }
+      setPlaylistOptions(selectable);
+      setPlaylistPickerOpen(true);
+    } catch (error) {
+      console.error('Error loading playlists for picker:', error);
+      Alert.alert('Error', 'Could not load playlists.');
+    }
+  }, [displayTrack]);
+
+  const addCurrentTrackToPlaylist = useCallback(
+    async playlist => {
+      if (!displayTrack || !playlist) {
+        return;
+      }
+      try {
+        await storageService.addSongToPlaylist(playlist.id, displayTrack);
+        setPlaylistPickerOpen(false);
+        Alert.alert(
+          'Added to Playlist',
+          `"${displayTrack.title || 'Track'}" was added to "${playlist.name}".`,
+        );
+      } catch (error) {
+        console.error('Error adding track to playlist:', error);
+        Alert.alert(
+          'Add to Playlist Failed',
+          error?.message || 'Could not add this track.',
+        );
+      }
+    },
+    [displayTrack],
+  );
+
+  const shuffleQueue = useCallback(async () => {
+    try {
+      const nextState = !shuffleActive;
+      const result = await playbackService.setShuffleEnabled(nextState);
+      setShuffleActive(Boolean(result?.enabled));
+      const [queue, index] = await Promise.all([
+        playbackService.getQueue(),
+        TrackPlayer.getActiveTrackIndex(),
+      ]);
+      setQueueTracks(queue);
+      setActiveQueueIndex(
+        index === null || index === undefined ? -1 : Number(index),
+      );
+    } catch (error) {
+      console.error('Error shuffling queue:', error);
+      Alert.alert('Shuffle Failed', 'Could not shuffle the current queue.');
+    }
+  }, [shuffleActive]);
 
   const deleteCurrentTrack = useCallback(() => {
     if (!displayTrack) {
@@ -315,6 +545,11 @@ const NowPlayingScreen = ({ navigation, route }) => {
           <View style={styles.optionsMenu}>
             <TouchableOpacity
               style={styles.menuOption}
+              onPress={openAddToPlaylistPicker}>
+              <Text style={styles.menuOptionText}>Add to Playlist</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuOption}
               onPress={openTrackDetails}>
               <Text style={styles.menuOptionText}>Track Details</Text>
             </TouchableOpacity>
@@ -363,6 +598,7 @@ const NowPlayingScreen = ({ navigation, route }) => {
             progress.duration || displayTrack.duration || 0,
             1,
           )}
+          onSlidingStart={onSeekStart}
           onSlidingComplete={onSeek}
           minimumTrackTintColor={C.accentFg}
           maximumTrackTintColor={C.textDeep}
@@ -387,7 +623,7 @@ const NowPlayingScreen = ({ navigation, route }) => {
 
         <TouchableOpacity style={styles.playButton} onPress={togglePlayback}>
           <Icon
-            name={isPlaying ? 'pause-circle' : 'play-circle'}
+            name={isPlayingVisual ? 'pause-circle' : 'play-circle'}
             size={80}
             color={C.accentFg}
           />
@@ -397,8 +633,9 @@ const NowPlayingScreen = ({ navigation, route }) => {
           <Icon name="skip-next" size={48} color="#fff" />
         </TouchableOpacity>
 
-        {/* Shuffle removed — PlaybackService has no setShuffleMode method */}
-        <View style={{ width: 28 }} />
+        <TouchableOpacity onPress={shuffleQueue}>
+          <Icon name="shuffle" size={28} color={shuffleColor} />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.bottomActions}>
@@ -413,6 +650,51 @@ const NowPlayingScreen = ({ navigation, route }) => {
           <Icon name="playlist-music" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={playlistPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPlaylistPickerOpen(false)}>
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setPlaylistPickerOpen(false)}>
+          <Pressable style={styles.modalCard} onPress={noop}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add to Playlist</Text>
+              <TouchableOpacity onPress={() => setPlaylistPickerOpen(false)}>
+                <Icon name="close" size={20} color={C.textDim} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.playlistPickerSubtitle} numberOfLines={2}>
+              {displayTrack?.title || 'Select a playlist'}
+            </Text>
+
+            <FlatList
+              data={playlistOptions}
+              keyExtractor={queueKeyExtractor}
+              style={styles.playlistPickerList}
+              contentContainerStyle={styles.playlistPickerContent}
+              renderItem={({item}) => (
+                <TouchableOpacity
+                  style={styles.playlistPickerItem}
+                  onPress={() => addCurrentTrackToPlaylist(item)}>
+                  <View style={styles.playlistPickerMeta}>
+                    <Text style={styles.playlistPickerName} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text style={styles.playlistPickerCount} numberOfLines={1}>
+                      {Array.isArray(item.songs) ? item.songs.length : 0} songs
+                    </Text>
+                  </View>
+                  <Icon name="plus" size={20} color={C.accentFg} />
+                </TouchableOpacity>
+              )}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={detailsOpen}
