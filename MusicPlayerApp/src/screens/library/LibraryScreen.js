@@ -1,10 +1,10 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { FlashList } from '@shopify/flash-list';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  FlatList,
   InteractionManager,
   Modal,
   Platform,
@@ -44,6 +44,212 @@ import TrackCard from './TrackCard';
 
 const noop = () => { };
 const idKeyExtractor = item => item.id;
+
+const areSetsEqual = (left, right) => {
+  if (left === right) {
+    return true;
+  }
+  if (!(left instanceof Set) || !(right instanceof Set)) {
+    return false;
+  }
+  if (left.size !== right.size) {
+    return false;
+  }
+  for (const value of left) {
+    if (!right.has(value)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const areSongsEquivalent = (left = [], right = []) => {
+  if (left === right) {
+    return true;
+  }
+  if (!Array.isArray(left) || !Array.isArray(right)) {
+    return false;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    const previous = left[index];
+    const next = right[index];
+    if (
+      previous !== next &&
+      (String(previous?.id || '') !== String(next?.id || '') ||
+        String(previous?.title || '') !== String(next?.title || '') ||
+        String(previous?.artist || '') !== String(next?.artist || '') ||
+        String(previous?.artwork || '') !== String(next?.artwork || '') ||
+        (Number(previous?.duration) || 0) !== (Number(next?.duration) || 0) ||
+        (Number(previous?.addedAt) || 0) !== (Number(next?.addedAt) || 0))
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const arePlaylistsEquivalent = (left = [], right = []) => {
+  if (left === right) {
+    return true;
+  }
+  if (!Array.isArray(left) || !Array.isArray(right)) {
+    return false;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    const previous = left[index];
+    const next = right[index];
+    if (
+      previous !== next &&
+      (String(previous?.id || '') !== String(next?.id || '') ||
+        String(previous?.name || '') !== String(next?.name || '') ||
+        String(previous?.description || '') !== String(next?.description || '') ||
+        ((Array.isArray(previous?.songs) ? previous.songs.length : 0) !==
+          (Array.isArray(next?.songs) ? next.songs.length : 0))
+      )
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const areSourceListsEquivalent = (left = [], right = []) => {
+  if (left === right) {
+    return true;
+  }
+  if (!Array.isArray(left) || !Array.isArray(right)) {
+    return false;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    const previous = left[index];
+    const next = right[index];
+    const previousFmt = Array.isArray(previous?.fmt) ? previous.fmt : [];
+    const nextFmt = Array.isArray(next?.fmt) ? next.fmt : [];
+    if (
+      previous !== next &&
+      (String(previous?.id || '') !== String(next?.id || '') ||
+        String(previous?.path || '') !== String(next?.path || '') ||
+        Boolean(previous?.on) !== Boolean(next?.on) ||
+        (Number(previous?.count) || 0) !== (Number(next?.count) || 0) ||
+        previousFmt.join('|') !== nextFmt.join('|'))
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const LibrarySubTabs = React.memo(({ activeTab, onTabPress }) => (
+  <View style={styles.subTabs}>
+    {SUB_TABS.map(item => {
+      const active = item.id === activeTab;
+      return (
+        <TouchableOpacity
+          key={item.id}
+          style={styles.subTabBtn}
+          onPress={() => onTabPress(item.id)}>
+          <Text
+            style={[styles.subTabText, active && styles.subTabTextActive]}>
+            {item.label}
+          </Text>
+          {active ? <View style={styles.subTabLine} /> : null}
+        </TouchableOpacity>
+      );
+    })}
+  </View>
+));
+
+LibrarySubTabs.displayName = 'LibrarySubTabs';
+
+const LibraryTrackControls = React.memo(
+  ({
+    trackCount,
+    sortBy,
+    sortOpen,
+    onToggleSort,
+    onSelectSort,
+    onPlayAll,
+    onShuffle,
+  }) => (
+    <>
+      <View style={styles.controlsRow}>
+        <TouchableOpacity
+          style={[
+            styles.primaryBtn,
+            trackCount === 0 && styles.disabled,
+          ]}
+          onPress={onPlayAll}
+          disabled={trackCount === 0}>
+          <Icon name="play" size={14} color={C.accentFg} />
+          <Text style={styles.primaryBtnText}>Play All</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.ghostBtn,
+            trackCount === 0 && styles.disabled,
+          ]}
+          onPress={onShuffle}
+          disabled={trackCount === 0}>
+          <Icon name="shuffle" size={13} color={C.accentFg} />
+          <Text style={styles.ghostBtnText}>Shuffle</Text>
+        </TouchableOpacity>
+
+        <View style={styles.sortWrap}>
+          <TouchableOpacity
+            style={styles.sortBtn}
+            onPress={onToggleSort}>
+            <Icon name="sort-variant" size={13} color={C.textDim} />
+            <Text style={styles.sortBtnText}>{sortBy}</Text>
+          </TouchableOpacity>
+          {sortOpen ? (
+            <View style={styles.sortMenu}>
+              {SORT_OPTIONS.map(option => (
+                <TouchableOpacity
+                  key={option}
+                  style={[
+                    styles.sortOption,
+                    sortBy === option && styles.sortOptionActive,
+                  ]}
+                  onPress={() => onSelectSort(option)}>
+                  <Text
+                    style={[
+                      styles.sortOptionText,
+                      sortBy === option && styles.sortOptionTextActive,
+                    ]}>
+                    {option}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      </View>
+
+      <Text style={styles.metaText}>{trackCount} tracks</Text>
+    </>
+  ),
+  (prevProps, nextProps) => (
+    prevProps.trackCount === nextProps.trackCount &&
+    prevProps.sortBy === nextProps.sortBy &&
+    prevProps.sortOpen === nextProps.sortOpen &&
+    prevProps.onToggleSort === nextProps.onToggleSort &&
+    prevProps.onSelectSort === nextProps.onSelectSort &&
+    prevProps.onPlayAll === nextProps.onPlayAll &&
+    prevProps.onShuffle === nextProps.onShuffle
+  ),
+);
+
+LibraryTrackControls.displayName = 'LibraryTrackControls';
 
 const LibraryScreen = ({ navigation, route }) => {
   const [songs, setSongs] = useState([]);
@@ -93,11 +299,18 @@ const LibraryScreen = ({ navigation, route }) => {
       const favorites =
         playlistData.find(item => storageService.isFavoritesPlaylist(item)) ||
         null;
+      const nextFavoriteIds = new Set((favorites?.songs || []).map(song => song.id));
 
-      setSongs(library);
-      setPlaylists(playlistData);
-      setFavoriteIds(new Set((favorites?.songs || []).map(song => song.id)));
-      setSources(storedSources);
+      setSongs(prev => (areSongsEquivalent(prev, library) ? prev : library));
+      setPlaylists(prev =>
+        arePlaylistsEquivalent(prev, playlistData) ? prev : playlistData,
+      );
+      setFavoriteIds(prev =>
+        areSetsEqual(prev, nextFavoriteIds) ? prev : nextFavoriteIds,
+      );
+      setSources(prev =>
+        areSourceListsEquivalent(prev, storedSources) ? prev : storedSources,
+      );
 
       // Hydrate artwork and duration in parallel, then merge results to avoid
       // a race condition where whichever resolves last overwrites the other.
@@ -112,13 +325,14 @@ const LibraryScreen = ({ navigation, route }) => {
       const base = artworkLib?.length ? artworkLib : library;
       if (durationLib?.length) {
         const durMap = new Map(durationLib.map(s => [s.id, s.duration]));
-        setSongs(
-          base.map(s =>
-            durMap.has(s.id) ? { ...s, duration: durMap.get(s.id) } : s,
-          ),
+        const mergedSongs = base.map(s =>
+          durMap.has(s.id) ? { ...s, duration: durMap.get(s.id) } : s,
+        );
+        setSongs(prev =>
+          areSongsEquivalent(prev, mergedSongs) ? prev : mergedSongs,
         );
       } else if (base !== library) {
-        setSongs(base);
+        setSongs(prev => (areSongsEquivalent(prev, base) ? prev : base));
       }
     } catch (error) {
       console.error('Error loading library:', error);
@@ -372,8 +586,16 @@ const LibraryScreen = ({ navigation, route }) => {
   const toggleFavorite = useCallback(async song => {
     try {
       const result = await storageService.toggleSongInFavorites(song);
-      setPlaylists(result.playlists);
-      setFavoriteIds(new Set(result.playlist.songs.map(item => item.id)));
+      const nextPlaylists = Array.isArray(result?.playlists) ? result.playlists : [];
+      const nextFavoriteIds = new Set(
+        (result?.playlist?.songs || []).map(item => item.id),
+      );
+      setPlaylists(prev =>
+        arePlaylistsEquivalent(prev, nextPlaylists) ? prev : nextPlaylists,
+      );
+      setFavoriteIds(prev =>
+        areSetsEqual(prev, nextFavoriteIds) ? prev : nextFavoriteIds,
+      );
     } catch (error) {
       Alert.alert('Error', 'Could not update favorites');
     }
@@ -465,7 +687,9 @@ const LibraryScreen = ({ navigation, route }) => {
           playlist.id,
           targetSong,
         );
-        setPlaylists(nextPlaylists);
+        setPlaylists(prev =>
+          arePlaylistsEquivalent(prev, nextPlaylists) ? prev : nextPlaylists,
+        );
         setPlaylistPickerOpen(false);
         setPlaylistPickerSong(null);
         Alert.alert(
@@ -587,7 +811,12 @@ const LibraryScreen = ({ navigation, route }) => {
           }));
         },
       });
-      setSources(result.fileSources);
+      const importedSources = Array.isArray(result?.fileSources)
+        ? result.fileSources
+        : [];
+      setSources(prev =>
+        areSourceListsEquivalent(prev, importedSources) ? prev : importedSources,
+      );
 
       await loadLibrary();
       Alert.alert(
@@ -614,7 +843,9 @@ const LibraryScreen = ({ navigation, route }) => {
   const toggleSource = async source => {
     try {
       const nextSources = await storageService.toggleFileSource(source.id);
-      setSources(nextSources);
+      setSources(prev =>
+        areSourceListsEquivalent(prev, nextSources) ? prev : nextSources,
+      );
     } catch (error) {
       Alert.alert('Error', 'Could not update this source.');
     }
@@ -715,26 +946,31 @@ const LibraryScreen = ({ navigation, route }) => {
     return (
       <TrackCard
         item={item}
+        rowIndex={index}
         color={color}
         icon={icon}
         duration={formatDuration(item.duration)}
-        onPress={() => playSong(index)}
-        onLongPress={event => openSongMenu(item, event)}
-        onOptions={event => openSongMenu(item, event)}
+        onPressRow={playSong}
+        onLongPressRow={openSongMenu}
+        onOptionsRow={openSongMenu}
       />
     );
   }, [openSongMenu, playSong]);
-
-  const getTrackItemLayout = useCallback(
-    (_, index) => ({ length: TRACK_ITEM_HEIGHT, offset: TRACK_ITEM_HEIGHT * index, index }),
-    [],
-  );
 
   const onTabPress = useCallback(id => {
     closeSongMenu();
     setSortOpen(false);
     setTab(id);
   }, [closeSongMenu]);
+
+  const toggleSortMenu = useCallback(() => {
+    setSortOpen(open => !open);
+  }, []);
+
+  const selectSortOption = useCallback(option => {
+    setSortBy(option);
+    setSortOpen(false);
+  }, []);
 
   const songMenuIsFavorite = useMemo(
     () => Boolean(songMenuState.song?.id && favoriteIds.has(songMenuState.song.id)),
@@ -752,95 +988,27 @@ const LibraryScreen = ({ navigation, route }) => {
         <Text style={styles.headerTitle}>Library</Text>
       </View>
 
-      <View style={styles.subTabs}>
-        {SUB_TABS.map(item => {
-          const active = item.id === tab;
-          return (
-            <TouchableOpacity
-              key={item.id}
-              style={styles.subTabBtn}
-              onPress={() => onTabPress(item.id)}>
-              <Text
-                style={[styles.subTabText, active && styles.subTabTextActive]}>
-                {item.label}
-              </Text>
-              {active ? <View style={styles.subTabLine} /> : null}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+      <LibrarySubTabs activeTab={tab} onTabPress={onTabPress} />
 
       {tab === 'tracks' ? (
         <View style={styles.panel}>
-          <View style={styles.controlsRow}>
-            <TouchableOpacity
-              style={[
-                styles.primaryBtn,
-                sortedSongs.length === 0 && styles.disabled,
-              ]}
-              onPress={playAll}
-              disabled={sortedSongs.length === 0}>
-              <Icon name="play" size={14} color={C.accentFg} />
-              <Text style={styles.primaryBtnText}>Play All</Text>
-            </TouchableOpacity>
+          <LibraryTrackControls
+            trackCount={sortedSongs.length}
+            sortBy={sortBy}
+            sortOpen={sortOpen}
+            onToggleSort={toggleSortMenu}
+            onSelectSort={selectSortOption}
+            onPlayAll={playAll}
+            onShuffle={shufflePlay}
+          />
 
-            <TouchableOpacity
-              style={[
-                styles.ghostBtn,
-                sortedSongs.length === 0 && styles.disabled,
-              ]}
-              onPress={shufflePlay}
-              disabled={sortedSongs.length === 0}>
-              <Icon name="shuffle" size={13} color={C.accentFg} />
-              <Text style={styles.ghostBtnText}>Shuffle</Text>
-            </TouchableOpacity>
-
-            <View style={styles.sortWrap}>
-              <TouchableOpacity
-                style={styles.sortBtn}
-                onPress={() => setSortOpen(open => !open)}>
-                <Icon name="sort-variant" size={13} color={C.textDim} />
-                <Text style={styles.sortBtnText}>{sortBy}</Text>
-              </TouchableOpacity>
-              {sortOpen ? (
-                <View style={styles.sortMenu}>
-                  {SORT_OPTIONS.map(option => (
-                    <TouchableOpacity
-                      key={option}
-                      style={[
-                        styles.sortOption,
-                        sortBy === option && styles.sortOptionActive,
-                      ]}
-                      onPress={() => {
-                        setSortBy(option);
-                        setSortOpen(false);
-                      }}>
-                      <Text
-                        style={[
-                          styles.sortOptionText,
-                          sortBy === option && styles.sortOptionTextActive,
-                        ]}>
-                        {option}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ) : null}
-            </View>
-          </View>
-
-          <Text style={styles.metaText}>{sortedSongs.length} tracks</Text>
-
-          <FlatList
+          <FlashList
             data={sortedSongs}
             renderItem={renderTrackItem}
             keyExtractor={idKeyExtractor}
+            estimatedItemSize={TRACK_ITEM_HEIGHT}
             contentContainerStyle={styles.listContent}
-            removeClippedSubviews={true}
-            maxToRenderPerBatch={10}
-            windowSize={10}
-            initialNumToRender={12}
-            getItemLayout={getTrackItemLayout}
+            drawDistance={520}
             refreshControl={
               <RefreshControl
                 refreshing={refreshingLibrary}

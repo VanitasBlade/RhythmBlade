@@ -21,6 +21,7 @@ const SearchResultCard = ({
   isQueuing,
   onQueueDownload,
   onPress,
+  switchToQueue = true,
 }) => {
   const isActive = linkedJob
     ? ACTIVE_QUEUE_STATUSES.has(linkedJob.status)
@@ -82,7 +83,11 @@ const SearchResultCard = ({
               isFailed && styles.downloadButtonRetry,
               (isQueuing || isActive) && styles.downloadButtonBusy,
             ]}
-            onPress={() => onQueueDownload(item, item?.index ?? index)}
+            onPress={() =>
+              onQueueDownload(item, item?.index ?? index, {
+                switchToQueue,
+              })
+            }
             disabled={disabled}>
             {isQueuing || isActive ? (
               <ActivityIndicator size="small" color={C.bg} />
@@ -100,4 +105,29 @@ const SearchResultCard = ({
   );
 };
 
-export default React.memo(SearchResultCard);
+export default React.memo(
+  SearchResultCard,
+  (prevProps, nextProps) => {
+    const prevJob = prevProps.linkedJob;
+    const nextJob = nextProps.linkedJob;
+    const linkedJobStable =
+      prevJob === nextJob ||
+      (prevJob &&
+        nextJob &&
+        String(prevJob.id || '') === String(nextJob.id || '') &&
+        String(prevJob.status || '') === String(nextJob.status || '') &&
+        (Number(prevJob.updatedAt) || 0) === (Number(nextJob.updatedAt) || 0) &&
+        (Number(prevJob.progress) || 0) === (Number(nextJob.progress) || 0));
+
+    return (
+      prevProps.item === nextProps.item &&
+      prevProps.index === nextProps.index &&
+      prevProps.activeSearchType === nextProps.activeSearchType &&
+      prevProps.isQueuing === nextProps.isQueuing &&
+      prevProps.onQueueDownload === nextProps.onQueueDownload &&
+      prevProps.onPress === nextProps.onPress &&
+      prevProps.switchToQueue === nextProps.switchToQueue &&
+      linkedJobStable
+    );
+  },
+);

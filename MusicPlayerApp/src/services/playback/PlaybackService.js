@@ -303,9 +303,42 @@ class PlaybackService {
 
     const repeatModeBeforeReset = await this.getRepeatMode();
     this.repeatMode = repeatModeBeforeReset;
-    await this.reset();
-    await this.addTracks(queueTracks);
-    await this.applyStoredRepeatMode();
+    let reusedCurrentQueue = false;
+    try {
+      const [currentQueue, activeIndex] = await Promise.all([
+        TrackPlayer.getQueue(),
+        TrackPlayer.getActiveTrackIndex(),
+      ]);
+      if (
+        Array.isArray(currentQueue) &&
+        currentQueue.length > 0 &&
+        isSameTrackOrder(currentQueue, queueTracks)
+      ) {
+        reusedCurrentQueue = true;
+        const numericActiveIndex = Number.isInteger(activeIndex)
+          ? Number(activeIndex)
+          : 0;
+        if (numericActiveIndex !== boundedIndex) {
+          await TrackPlayer.skip(boundedIndex);
+        }
+      }
+    } catch (error) {
+      // Fallback to replacing queue below.
+      reusedCurrentQueue = false;
+    }
+
+    if (!reusedCurrentQueue) {
+      await TrackPlayer.setQueue(queueTracks);
+      // Move to selected track as early as possible to avoid transient index 0 artwork.
+      if (boundedIndex > 0) {
+        try {
+          await TrackPlayer.skip(boundedIndex);
+        } catch (error) {
+          console.error('Error selecting start track:', error);
+        }
+      }
+    }
+
     if (shuffleEnabled) {
       const sourceQueue =
         Array.isArray(shuffleOriginalQueue) && shuffleOriginalQueue.length
@@ -315,11 +348,9 @@ class PlaybackService {
     } else {
       this.clearShuffleState();
     }
-    if (boundedIndex > 0) {
-      await this.skipTo(boundedIndex);
-    } else {
-      await this.play();
-    }
+
+    await this.applyStoredRepeatMode();
+    await this.play();
     return true;
   }
 
@@ -331,8 +362,7 @@ class PlaybackService {
 
     const repeatModeBeforeReset = await this.getRepeatMode();
     this.repeatMode = repeatModeBeforeReset;
-    await this.reset();
-    await this.addTrack(track);
+    await TrackPlayer.setQueue([track]);
     await this.applyStoredRepeatMode();
     this.clearShuffleState();
     await this.play();

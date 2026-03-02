@@ -133,15 +133,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  playlistsListWrap: {
+    height: 132,
+    width: '100%',
+  },
   playlistsRow: {
+    paddingTop: 2,
     paddingBottom: 4,
     paddingRight: 2,
   },
   playlistCard: {
     width: 102,
+    height: 124,
     marginRight: 10,
   },
   playlistArt: {
+    width: '100%',
     height: 94,
     borderRadius: 7,
     borderWidth: 1,
@@ -151,6 +158,8 @@ const styles = StyleSheet.create({
   },
   playlistEmoji: {
     fontSize: 30,
+    color: '#f0eaff',
+    fontWeight: '700',
   },
   playlistName: {
     marginTop: 6,

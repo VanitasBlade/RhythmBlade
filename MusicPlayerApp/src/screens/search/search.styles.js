@@ -214,9 +214,6 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 84,
   },
-  searchListContentEmpty: {
-    flexGrow: 1,
-  },
   albumHeaderCard: {
     borderRadius: 8,
     borderWidth: 1,
@@ -358,7 +355,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#2a1430',
   },
   queueListContent: {
-    flexGrow: 1,
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 84,

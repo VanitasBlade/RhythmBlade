@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   State,
@@ -12,17 +12,74 @@ import playbackService from '../services/playback/PlaybackService';
 import { MUSIC_HOME_THEME as C } from '../theme/musicHomeTheme';
 import { formatTime } from '../utils/formatTime';
 
+const TRACK_TRANSITION_HOLD_MS = 700;
+
+const getTrackKey = track => String(track?.id || track?.url || '').trim();
+
 const MiniPlayer = () => {
   const navigation = useNavigation();
   const playbackState = usePlaybackState();
   const track = useActiveTrack();
   const { position, duration } = useProgress(500);
+  const [displayTrack, setDisplayTrack] = useState(null);
 
   const artworkCacheRef = useRef({ trackKey: '', uri: '' });
+  const displayTrackRef = useRef(null);
+  const hideTimerRef = useRef(null);
+
+  useEffect(() => {
+    const nextKey = getTrackKey(track);
+
+    if (nextKey) {
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+      displayTrackRef.current = track;
+      setDisplayTrack(track);
+      return;
+    }
+
+    const hasDisplayTrack = Boolean(getTrackKey(displayTrackRef.current));
+    const currentState = playbackState?.state;
+    const shouldHold =
+      hasDisplayTrack &&
+      currentState !== State.None &&
+      currentState !== State.Stopped &&
+      currentState !== State.Error;
+
+    if (shouldHold) {
+      if (!hideTimerRef.current) {
+        hideTimerRef.current = setTimeout(() => {
+          hideTimerRef.current = null;
+          displayTrackRef.current = null;
+          setDisplayTrack(null);
+        }, TRACK_TRANSITION_HOLD_MS);
+      }
+      return;
+    }
+
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    displayTrackRef.current = null;
+    setDisplayTrack(null);
+  }, [track, playbackState?.state]);
+
+  useEffect(
+    () => () => {
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+    },
+    [],
+  );
 
   const displayArtworkUri = useMemo(() => {
-    const key = String(track?.id || track?.url || '').trim();
-    const uri = String(track?.artwork || '').trim();
+    const key = getTrackKey(displayTrack);
+    const uri = String(displayTrack?.artwork || '').trim();
     if (!key) {
       artworkCacheRef.current = { trackKey: '', uri: '' };
       return '';
@@ -33,7 +90,7 @@ const MiniPlayer = () => {
       artworkCacheRef.current.uri = uri;
     }
     return artworkCacheRef.current.uri;
-  }, [track]);
+  }, [displayTrack]);
 
   const isPlaying = playbackState.state === State.Playing;
   const progressPct =
@@ -50,7 +107,7 @@ const MiniPlayer = () => {
   const skipToNext = useCallback(() => playbackService.skipToNext(), []);
   const skipToPrevious = useCallback(() => playbackService.skipToPrevious(), []);
 
-  if (!track) {
+  if (!displayTrack) {
     return null;
   }
 
@@ -64,7 +121,7 @@ const MiniPlayer = () => {
         style={styles.trackRow}
         activeOpacity={0.9}
         onPress={() =>
-          navigation.navigate('NowPlaying', { optimisticTrack: track })
+          navigation.navigate('NowPlaying', { optimisticTrack: displayTrack })
         }>
         {displayArtworkUri ? (
           <Image
@@ -81,15 +138,15 @@ const MiniPlayer = () => {
 
         <View style={styles.textWrap}>
           <Text style={styles.title} numberOfLines={1}>
-            {track.title}
+            {displayTrack.title}
           </Text>
           <Text style={styles.artist} numberOfLines={1}>
-            {track.artist}
+            {displayTrack.artist}
           </Text>
         </View>
 
         <Text style={styles.time}>
-          {formatTime(position)} / {formatTime(duration || track.duration)}
+          {formatTime(position)} / {formatTime(duration || displayTrack.duration)}
         </Text>
       </TouchableOpacity>
 

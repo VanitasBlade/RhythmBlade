@@ -1,8 +1,9 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { FlashList } from '@shopify/flash-list';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
+  Dimensions,
   InteractionManager,
   RefreshControl,
   Text,
@@ -29,8 +30,215 @@ const getPlaylistColor = index => {
 };
 
 const SONG_ITEM_HEIGHT = 78;
+const PLAYLIST_ITEM_SIZE = 112;
+const PLAYLIST_LIST_HEIGHT = 132;
+const PLAYLIST_LIST_VIEWPORT_WIDTH = Math.max(
+  Dimensions.get('window').width - 32,
+  PLAYLIST_ITEM_SIZE,
+);
 const RECENT_TRACKS_LIMIT = 5;
-const idKeyExtractor = item => item.id;
+const idKeyExtractor = item => String(item?.id ?? '');
+const playlistListSize = {
+  height: PLAYLIST_LIST_HEIGHT,
+  width: PLAYLIST_LIST_VIEWPORT_WIDTH,
+};
+
+const areSetsEqual = (left, right) => {
+  if (left === right) {
+    return true;
+  }
+  if (!(left instanceof Set) || !(right instanceof Set)) {
+    return false;
+  }
+  if (left.size !== right.size) {
+    return false;
+  }
+  for (const value of left) {
+    if (!right.has(value)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const areSongListsEquivalent = (left = [], right = []) => {
+  if (left === right) {
+    return true;
+  }
+  if (!Array.isArray(left) || !Array.isArray(right)) {
+    return false;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    const previous = left[index];
+    const next = right[index];
+    if (
+      previous !== next &&
+      (String(previous?.id || '') !== String(next?.id || '') ||
+        String(previous?.title || '') !== String(next?.title || '') ||
+        String(previous?.artist || '') !== String(next?.artist || '') ||
+        String(previous?.artwork || '') !== String(next?.artwork || '') ||
+        (Number(previous?.duration) || 0) !== (Number(next?.duration) || 0) ||
+        (Number(previous?.addedAt) || 0) !== (Number(next?.addedAt) || 0))
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const arePlaylistsEquivalent = (left = [], right = []) => {
+  if (left === right) {
+    return true;
+  }
+  if (!Array.isArray(left) || !Array.isArray(right)) {
+    return false;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    const previous = left[index];
+    const next = right[index];
+    if (
+      previous !== next &&
+      (String(previous?.id || '') !== String(next?.id || '') ||
+        String(previous?.name || '') !== String(next?.name || '') ||
+        String(previous?.description || '') !== String(next?.description || '') ||
+        ((Array.isArray(previous?.songs) ? previous.songs.length : 0) !==
+          (Array.isArray(next?.songs) ? next.songs.length : 0))
+      )
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const areSyncStatesEquivalent = (left = {}, right = {}) =>
+  Boolean(left?.isRunning) === Boolean(right?.isRunning) &&
+  (Number(left?.startedAt) || 0) === (Number(right?.startedAt) || 0) &&
+  (Number(left?.completedAt) || 0) === (Number(right?.completedAt) || 0) &&
+  (Number(left?.lastSyncedAt) || 0) === (Number(right?.lastSyncedAt) || 0) &&
+  String(left?.error || '') === String(right?.error || '');
+
+const HomeListHeader = React.memo(
+  ({
+    search,
+    onSearchChange,
+    isSyncing,
+    onTriggerSync,
+    onOpenSettings,
+    onOpenLibrary,
+    onOpenDownloader,
+    onOpenPlaylists,
+    playlists,
+    renderPlaylistCard,
+    playlistKeyExtractor,
+    onRefresh,
+  }) => (
+    <View>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerTitle}>Home</Text>
+          <Text style={styles.headerSubtitle}>
+            Your library at a glance
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.headerAction}
+          onPress={onOpenSettings}>
+          <View style={styles.profilePlaceholder}>
+            <Text style={styles.profileInitial}>U</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.searchWrap}>
+        <Icon name="magnify" size={18} color={C.textMute} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search your recent tracks"
+          placeholderTextColor={C.textMute}
+          value={search}
+          onChangeText={onSearchChange}
+          autoCorrect={false}
+          autoCapitalize="none"
+        />
+      </View>
+
+      <TouchableOpacity
+        style={styles.syncBanner}
+        activeOpacity={0.9}
+        onPress={onTriggerSync}
+        disabled={Boolean(isSyncing)}>
+        {isSyncing ? (
+          <ActivityIndicator size="small" color={C.accentFg} />
+        ) : (
+          <Icon name="refresh" size={16} color={C.accentFg} />
+        )}
+        <Text style={styles.syncBannerText}>
+          {isSyncing ? 'Updating library in background' : 'Update Library'}
+        </Text>
+      </TouchableOpacity>
+
+      <View style={styles.quickActionsRow}>
+        <TouchableOpacity
+          style={[styles.quickActionCard, styles.quickActionGap]}
+          onPress={onOpenLibrary}>
+          <Icon name="music-box-multiple" size={20} color={C.accentFg} />
+          <Text style={styles.quickActionLabel}>Library</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.quickActionCard}
+          onPress={onOpenDownloader}>
+          <Icon
+            name="cloud-download-outline"
+            size={20}
+            color={C.accentFg}
+          />
+          <Text style={styles.quickActionLabel}>Downloader</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.sectionRow}>
+        <Text style={styles.sectionTitle}>Playlists</Text>
+        <TouchableOpacity onPress={onOpenPlaylists}>
+          <Text style={styles.sectionAction}>View all</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.playlistsListWrap}>
+        <FlashList
+          horizontal
+          data={playlists}
+          renderItem={renderPlaylistCard}
+          keyExtractor={playlistKeyExtractor}
+          estimatedItemSize={PLAYLIST_ITEM_SIZE}
+          estimatedListSize={playlistListSize}
+          disableHorizontalListHeightMeasurement
+          showsHorizontalScrollIndicator={false}
+          nestedScrollEnabled
+          contentContainerStyle={styles.playlistsRow}
+          drawDistance={PLAYLIST_ITEM_SIZE * 2}
+        />
+      </View>
+
+      <View style={styles.sectionRow}>
+        <Text style={styles.sectionTitle}>Recent Tracks</Text>
+        <TouchableOpacity onPress={onRefresh}>
+          <Text style={styles.sectionAction}>Refresh</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  ),
+);
+
+HomeListHeader.displayName = 'HomeListHeader';
 
 const HomeScreen = ({ navigation }) => {
   const [recentSongs, setRecentSongs] = useState([]);
@@ -62,10 +270,15 @@ const HomeScreen = ({ navigation }) => {
         playlistData.find(playlist =>
           storageService.isFavoritesPlaylist(playlist),
         ) || null;
+      const nextFavoriteIds = new Set((favorites?.songs || []).map(song => song.id));
 
-      setRecentSongs(recent);
-      setPlaylists(playlistData);
-      setFavoriteIds(new Set((favorites?.songs || []).map(song => song.id)));
+      setRecentSongs(prev => (areSongListsEquivalent(prev, recent) ? prev : recent));
+      setPlaylists(prev =>
+        arePlaylistsEquivalent(prev, playlistData) ? prev : playlistData,
+      );
+      setFavoriteIds(prev =>
+        areSetsEqual(prev, nextFavoriteIds) ? prev : nextFavoriteIds,
+      );
     } catch (error) {
       console.error('Error loading home data:', error);
     } finally {
@@ -94,7 +307,10 @@ const HomeScreen = ({ navigation }) => {
       const wasRunning = previousSyncRunningRef.current;
       const isRunning = Boolean(nextState?.isRunning);
       previousSyncRunningRef.current = isRunning;
-      setSyncState(nextState || {});
+      const normalizedNext = nextState || {};
+      setSyncState(prev =>
+        areSyncStatesEquivalent(prev, normalizedNext) ? prev : normalizedNext,
+      );
       if (wasRunning && !isRunning) {
         loadData();
       }
@@ -159,8 +375,16 @@ const HomeScreen = ({ navigation }) => {
   const toggleFavorite = useCallback(async song => {
     try {
       const result = await storageService.toggleSongInFavorites(song);
-      setPlaylists(result.playlists);
-      setFavoriteIds(new Set(result.playlist.songs.map(item => item.id)));
+      const nextPlaylists = Array.isArray(result?.playlists) ? result.playlists : [];
+      const nextFavoriteIds = new Set(
+        (result?.playlist?.songs || []).map(item => item.id),
+      );
+      setPlaylists(prev =>
+        arePlaylistsEquivalent(prev, nextPlaylists) ? prev : nextPlaylists,
+      );
+      setFavoriteIds(prev =>
+        areSetsEqual(prev, nextFavoriteIds) ? prev : nextFavoriteIds,
+      );
     } catch (error) {
       console.error('Error toggling favorite:', error);
     }
@@ -172,6 +396,22 @@ const HomeScreen = ({ navigation }) => {
     },
     [navigation],
   );
+
+  const openSettings = useCallback(() => {
+    navigation.navigate('Settings');
+  }, [navigation]);
+
+  const openLibrary = useCallback(() => {
+    navigation.navigate('Library');
+  }, [navigation]);
+
+  const openDownloader = useCallback(() => {
+    navigation.navigate('Search');
+  }, [navigation]);
+
+  const openPlaylistsTab = useCallback(() => {
+    navigation.navigate('Library', { libraryTab: 'playlists' });
+  }, [navigation]);
 
   const renderPlaylistCard = useCallback(
     ({ item, index }) => {
@@ -197,122 +437,37 @@ const HomeScreen = ({ navigation }) => {
     [openPlaylist],
   );
 
-  const playlistKeyExtractor = useCallback(item => item.id, []);
-
-  const getPlaylistItemLayout = useCallback(
-    (_, index) => ({ length: 112, offset: 112 * index, index }),
-    [],
-  );
+  const playlistKeyExtractor = useCallback(item => String(item?.id ?? ''), []);
 
   const listHeader = useMemo(
     () => (
-      <View>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.headerTitle}>Home</Text>
-            <Text style={styles.headerSubtitle}>
-              Your library at a glance
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            style={styles.headerAction}
-            onPress={() => navigation.navigate('Settings')}>
-            <View style={styles.profilePlaceholder}>
-              <Text style={styles.profileInitial}>U</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.searchWrap}>
-          <Icon name="magnify" size={18} color={C.textMute} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search your recent tracks"
-            placeholderTextColor={C.textMute}
-            value={search}
-            onChangeText={setSearch}
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
-        </View>
-
-        <TouchableOpacity
-          style={styles.syncBanner}
-          activeOpacity={0.9}
-          onPress={triggerLibrarySync}
-          disabled={Boolean(syncState?.isRunning)}>
-          {syncState?.isRunning ? (
-            <ActivityIndicator size="small" color={C.accentFg} />
-          ) : (
-            <Icon name="refresh" size={16} color={C.accentFg} />
-          )}
-          <Text style={styles.syncBannerText}>
-            {syncState?.isRunning
-              ? 'Updating library in background'
-              : 'Update Library'}
-          </Text>
-        </TouchableOpacity>
-
-        <View style={styles.quickActionsRow}>
-          <TouchableOpacity
-            style={[styles.quickActionCard, styles.quickActionGap]}
-            onPress={() => navigation.navigate('Library')}>
-            <Icon name="music-box-multiple" size={20} color={C.accentFg} />
-            <Text style={styles.quickActionLabel}>Library</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.quickActionCard}
-            onPress={() => navigation.navigate('Search')}>
-            <Icon
-              name="cloud-download-outline"
-              size={20}
-              color={C.accentFg}
-            />
-            <Text style={styles.quickActionLabel}>Downloader</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.sectionRow}>
-          <Text style={styles.sectionTitle}>Playlists</Text>
-          <TouchableOpacity
-            onPress={() =>
-              navigation.navigate('Library', { libraryTab: 'playlists' })
-            }>
-            <Text style={styles.sectionAction}>View all</Text>
-          </TouchableOpacity>
-        </View>
-
-        <FlatList
-          horizontal
-          data={playlists}
-          renderItem={renderPlaylistCard}
-          keyExtractor={playlistKeyExtractor}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.playlistsRow}
-          initialNumToRender={5}
-          getItemLayout={getPlaylistItemLayout}
-        />
-
-        <View style={styles.sectionRow}>
-          <Text style={styles.sectionTitle}>Recent Tracks</Text>
-          <TouchableOpacity onPress={onRefresh}>
-            <Text style={styles.sectionAction}>Refresh</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      <HomeListHeader
+        search={search}
+        onSearchChange={setSearch}
+        isSyncing={Boolean(syncState?.isRunning)}
+        onTriggerSync={triggerLibrarySync}
+        onOpenSettings={openSettings}
+        onOpenLibrary={openLibrary}
+        onOpenDownloader={openDownloader}
+        onOpenPlaylists={openPlaylistsTab}
+        playlists={playlists}
+        renderPlaylistCard={renderPlaylistCard}
+        playlistKeyExtractor={playlistKeyExtractor}
+        onRefresh={onRefresh}
+      />
     ),
     [
+      onRefresh,
+      openDownloader,
+      openLibrary,
+      openPlaylistsTab,
+      openSettings,
+      playlistKeyExtractor,
+      playlists,
+      renderPlaylistCard,
       search,
       syncState?.isRunning,
       triggerLibrarySync,
-      playlists,
-      onRefresh,
-      navigation,
-      renderPlaylistCard,
-      playlistKeyExtractor,
-      getPlaylistItemLayout,
     ],
   );
 
@@ -354,17 +509,13 @@ const HomeScreen = ({ navigation }) => {
     );
   }, [loading, search]);
 
-  const getItemLayout = useCallback(
-    (_, index) => ({ length: SONG_ITEM_HEIGHT, offset: SONG_ITEM_HEIGHT * index, index }),
-    [],
-  );
-
   return (
     <View style={styles.container}>
-      <FlatList
+      <FlashList
         data={filteredSongs}
         renderItem={renderSongItem}
         keyExtractor={idKeyExtractor}
+        estimatedItemSize={SONG_ITEM_HEIGHT}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={listHeader}
         ListEmptyComponent={renderEmpty}
@@ -375,11 +526,7 @@ const HomeScreen = ({ navigation }) => {
             tintColor={C.accentFg}
           />
         }
-        removeClippedSubviews={true}
-        maxToRenderPerBatch={10}
-        windowSize={10}
-        initialNumToRender={12}
-        getItemLayout={getItemLayout}
+        drawDistance={420}
       />
     </View>
   );

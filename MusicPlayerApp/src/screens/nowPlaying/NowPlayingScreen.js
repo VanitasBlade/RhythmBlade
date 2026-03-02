@@ -755,6 +755,10 @@ const NowPlayingScreen = ({ navigation, route }) => {
               keyExtractor={queueKeyExtractor}
               style={styles.playlistPickerList}
               contentContainerStyle={styles.playlistPickerContent}
+              removeClippedSubviews={true}
+              maxToRenderPerBatch={8}
+              windowSize={6}
+              initialNumToRender={8}
               renderItem={({item}) => (
                 <TouchableOpacity
                   style={styles.playlistPickerItem}
@@ -830,6 +834,10 @@ const NowPlayingScreen = ({ navigation, route }) => {
                 renderItem={renderQueueItem}
                 keyExtractor={queueKeyExtractor}
                 contentContainerStyle={styles.queueListContent}
+                removeClippedSubviews={true}
+                maxToRenderPerBatch={10}
+                windowSize={8}
+                initialNumToRender={10}
               />
             ) : (
               <View style={styles.queueEmpty}>

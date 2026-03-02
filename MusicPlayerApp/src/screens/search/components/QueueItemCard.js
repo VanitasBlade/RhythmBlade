@@ -267,4 +267,34 @@ const QueueItemCard = ({
   );
 };
 
-export default React.memo(QueueItemCard);
+const areQueueItemsEquivalent = (left, right) => {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+  return (
+    String(left.id || '') === String(right.id || '') &&
+    String(left.status || '') === String(right.status || '') &&
+    (Number(left.progress) || 0) === (Number(right.progress) || 0) &&
+    (Number(left.updatedAt) || 0) === (Number(right.updatedAt) || 0) &&
+    String(left.title || '') === String(right.title || '') &&
+    String(left.artist || '') === String(right.artist || '') &&
+    String(left.artwork || '') === String(right.artwork || '')
+  );
+};
+
+export default React.memo(
+  QueueItemCard,
+  (prevProps, nextProps) => {
+    return (
+      prevProps.retrying === nextProps.retrying &&
+      prevProps.canceling === nextProps.canceling &&
+      prevProps.onRetry === nextProps.onRetry &&
+      prevProps.onCancel === nextProps.onCancel &&
+      prevProps.onDoneAnimationComplete === nextProps.onDoneAnimationComplete &&
+      areQueueItemsEquivalent(prevProps.item, nextProps.item)
+    );
+  },
+);

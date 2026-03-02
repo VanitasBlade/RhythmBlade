@@ -1,9 +1,9 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { FlashList } from '@shopify/flash-list';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   InteractionManager,
   Keyboard,
   Modal,
@@ -33,6 +33,46 @@ import { toTrackKey } from './search.utils';
 import useSquidWebViewDownloader from './useSquidWebViewDownloader';
 
 const queueKeyExtractor = item => item.id;
+const AGGRESSIVE_QUEUE_POLL_MS = 1200;
+const IDLE_QUEUE_POLL_MS = 4200;
+const SEARCH_RESULT_ESTIMATED_ITEM_SIZE = 88;
+const QUEUE_ESTIMATED_ITEM_SIZE = 90;
+
+const toComparableNumber = value => Number(value) || 0;
+
+const areQueueItemsEquivalent = (left, right) => {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+  return (
+    String(left.id || '') === String(right.id || '') &&
+    String(left.status || '') === String(right.status || '') &&
+    toComparableNumber(left.progress) === toComparableNumber(right.progress) &&
+    toComparableNumber(left.updatedAt) === toComparableNumber(right.updatedAt) &&
+    toComparableNumber(left.createdAt) === toComparableNumber(right.createdAt)
+  );
+};
+
+const areQueueListsEquivalent = (left = [], right = []) => {
+  if (left === right) {
+    return true;
+  }
+  if (!Array.isArray(left) || !Array.isArray(right)) {
+    return false;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (!areQueueItemsEquivalent(left[index], right[index])) {
+      return false;
+    }
+  }
+  return true;
+};
 
 const SearchScreen = () => {
   const [query, setQuery] = useState('');
@@ -60,6 +100,8 @@ const SearchScreen = () => {
   const pollInFlightRef = useRef(false);
   const persistedJobsRef = useRef(new Set());
   const dismissedDoneJobsRef = useRef(new Set());
+  const activeDownloaderTabRef = useRef('Search');
+  const activeQueueCountRef = useRef(0);
   const {
     webViewRef,
     webViewProps,
@@ -105,6 +147,14 @@ const SearchScreen = () => {
         .length,
     [queue],
   );
+
+  useEffect(() => {
+    activeDownloaderTabRef.current = activeDownloaderTab;
+  }, [activeDownloaderTab]);
+
+  useEffect(() => {
+    activeQueueCountRef.current = activeQueueCount;
+  }, [activeQueueCount]);
 
   const orderedQueue = useMemo(
     () => [...queue].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
@@ -154,7 +204,9 @@ const SearchScreen = () => {
               job.status === 'done' && dismissedDoneJobsRef.current.has(job.id)
             ),
         );
-        setQueue(filtered);
+        setQueue(prev =>
+          areQueueListsEquivalent(prev, filtered) ? prev : filtered,
+        );
       }
     } catch (error) {
       // Queue polling is best-effort.
@@ -180,15 +232,33 @@ const SearchScreen = () => {
         await refreshQueue();
       };
 
+      const scheduleNextPoll = () => {
+        if (!active) {
+          return;
+        }
+        const aggressivePolling =
+          activeDownloaderTabRef.current === 'Queue' ||
+          activeQueueCountRef.current > 0;
+        const delay = aggressivePolling
+          ? AGGRESSIVE_QUEUE_POLL_MS
+          : IDLE_QUEUE_POLL_MS;
+
+        timer = setTimeout(async () => {
+          if (!active) {
+            return;
+          }
+          await refreshQueue();
+          scheduleNextPoll();
+        }, delay);
+      };
+
       const task = InteractionManager.runAfterInteractions(() => {
         if (!active) {
           return;
         }
 
         loadFocusedData();
-        timer = setInterval(() => {
-          refreshQueue();
-        }, 1200);
+        scheduleNextPoll();
       });
 
       return () => {
@@ -196,11 +266,20 @@ const SearchScreen = () => {
         mountedRef.current = false;
         task.cancel();
         if (timer) {
-          clearInterval(timer);
+          clearTimeout(timer);
         }
       };
     }, [applyDownloadSetting, refreshQueue]),
   );
+
+  useEffect(() => {
+    if (!mountedRef.current) {
+      return;
+    }
+    if (activeDownloaderTab === 'Queue') {
+      refreshQueue();
+    }
+  }, [activeDownloaderTab, refreshQueue]);
 
   const doneJobIds = useMemo(
     () =>
@@ -670,9 +749,8 @@ const SearchScreen = () => {
           activeSearchType="Tracks"
           linkedJob={queueByTrackKey.get(key)}
           isQueuing={Boolean(queuingKeys[key])}
-          onQueueDownload={(trackItem, trackIndex) =>
-            queueDownload(trackItem, trackIndex, { switchToQueue: false })
-          }
+          onQueueDownload={queueDownload}
+          switchToQueue={false}
         />
       );
     },
@@ -820,14 +898,6 @@ const SearchScreen = () => {
         : `search-${activeSearchType.toLowerCase()}-${query.trim().toLowerCase()}`,
     [activeAlbum, activeSearchType, query],
   );
-  const searchListContentStyle = useMemo(
-    () => [
-      styles.searchListContent,
-      searchListData.length === 0 && styles.searchListContentEmpty,
-    ],
-    [searchListData.length],
-  );
-
   return (
     <View style={styles.container}>
       <View style={styles.topBar}>
@@ -960,36 +1030,38 @@ const SearchScreen = () => {
             <View style={styles.searchControlsDivider} />
           </View>
 
-          <FlatList
-            key={searchListKey}
-            style={styles.searchResultsList}
-            data={searchListData}
-            renderItem={activeAlbum ? renderAlbumTrack : renderSearchResult}
-            keyExtractor={getSearchResultKey}
-            contentContainerStyle={searchListContentStyle}
-            ListHeaderComponent={activeAlbum ? renderAlbumTracksHeader : null}
-            ListEmptyComponent={
-              activeAlbum ? renderAlbumTracksEmpty : renderSearchEmpty
-            }
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            showsVerticalScrollIndicator={false}
-            // removeClippedSubviews={false}: intentional — WebView interaction workaround
-            removeClippedSubviews={false}
-          />
+          <View style={styles.searchResultsList}>
+            <FlashList
+              key={searchListKey}
+              data={searchListData}
+              renderItem={activeAlbum ? renderAlbumTrack : renderSearchResult}
+              keyExtractor={getSearchResultKey}
+              estimatedItemSize={SEARCH_RESULT_ESTIMATED_ITEM_SIZE}
+              contentContainerStyle={styles.searchListContent}
+              ListHeaderComponent={activeAlbum ? renderAlbumTracksHeader : null}
+              ListEmptyComponent={
+                activeAlbum ? renderAlbumTracksEmpty : renderSearchEmpty
+              }
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}
+              drawDistance={560}
+            />
+          </View>
         </View>
       ) : (
-        <FlatList
-          data={orderedQueue}
-          renderItem={renderQueueItem}
-          keyExtractor={queueKeyExtractor}
-          contentContainerStyle={styles.queueListContent}
-          ListEmptyComponent={renderQueueEmpty}
-          removeClippedSubviews={true}
-          maxToRenderPerBatch={8}
-          windowSize={8}
-          initialNumToRender={10}
-        />
+        <View style={styles.searchResultsList}>
+          <FlashList
+            data={orderedQueue}
+            renderItem={renderQueueItem}
+            keyExtractor={queueKeyExtractor}
+            estimatedItemSize={QUEUE_ESTIMATED_ITEM_SIZE}
+            contentContainerStyle={styles.queueListContent}
+            ListEmptyComponent={renderQueueEmpty}
+            showsVerticalScrollIndicator={false}
+            drawDistance={520}
+          />
+        </View>
       )}
 
       <Modal

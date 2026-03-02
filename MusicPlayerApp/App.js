@@ -77,9 +77,12 @@ function TabNavigator() {
   return (
     <View style={styles.container}>
       <Tab.Navigator
-        detachInactiveScreens={false}
-        lazy={false}
-        screenOptions={TAB_SCREEN_OPTIONS}>
+        detachInactiveScreens
+        lazy
+        screenOptions={{
+          ...TAB_SCREEN_OPTIONS,
+          freezeOnBlur: true,
+        }}>
         <Tab.Screen
           name="Home"
           component={HomeScreen}
