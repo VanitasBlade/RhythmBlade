@@ -81,12 +81,13 @@ const styles = StyleSheet.create({
     backgroundColor: C.bgCard,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   syncBannerText: {
     marginLeft: 8,
-    color: C.textDim,
+    color: C.accentFg,
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   quickActionsRow: {
     flexDirection: 'row',

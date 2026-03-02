@@ -29,6 +29,7 @@ const getPlaylistColor = index => {
 };
 
 const SONG_ITEM_HEIGHT = 78;
+const RECENT_TRACKS_LIMIT = 5;
 const idKeyExtractor = item => item.id;
 
 const HomeScreen = ({ navigation }) => {
@@ -55,7 +56,7 @@ const HomeScreen = ({ navigation }) => {
 
       const recent = [...library]
         .sort((a, b) => (Number(b.addedAt) || 0) - (Number(a.addedAt) || 0))
-        .slice(0, 30);
+        .slice(0, RECENT_TRACKS_LIMIT);
 
       const favorites =
         playlistData.find(playlist =>
@@ -109,6 +110,18 @@ const HomeScreen = ({ navigation }) => {
     await loadData();
     setRefreshing(false);
   }, [loadData]);
+
+  const triggerLibrarySync = useCallback(async () => {
+    try {
+      await storageService.runLibrarySyncInBackground({
+        recursive: true,
+        promptForPermission: true,
+        readEmbeddedTextMetadata: true,
+      });
+    } catch (error) {
+      console.error('Manual library sync failed:', error);
+    }
+  }, []);
 
   const filteredSongs = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -224,14 +237,22 @@ const HomeScreen = ({ navigation }) => {
           />
         </View>
 
-        {syncState?.isRunning ? (
-          <View style={styles.syncBanner}>
+        <TouchableOpacity
+          style={styles.syncBanner}
+          activeOpacity={0.9}
+          onPress={triggerLibrarySync}
+          disabled={Boolean(syncState?.isRunning)}>
+          {syncState?.isRunning ? (
             <ActivityIndicator size="small" color={C.accentFg} />
-            <Text style={styles.syncBannerText}>
-              Updating library in background
-            </Text>
-          </View>
-        ) : null}
+          ) : (
+            <Icon name="refresh" size={16} color={C.accentFg} />
+          )}
+          <Text style={styles.syncBannerText}>
+            {syncState?.isRunning
+              ? 'Updating library in background'
+              : 'Update Library'}
+          </Text>
+        </TouchableOpacity>
 
         <View style={styles.quickActionsRow}>
           <TouchableOpacity
@@ -285,6 +306,7 @@ const HomeScreen = ({ navigation }) => {
     [
       search,
       syncState?.isRunning,
+      triggerLibrarySync,
       playlists,
       onRefresh,
       navigation,
