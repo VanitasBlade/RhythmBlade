@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  InteractionManager,
   Keyboard,
   Modal,
   Text,
@@ -165,6 +166,7 @@ const SearchScreen = () => {
   useFocusEffect(
     useCallback(() => {
       let active = true;
+      let timer = null;
       mountedRef.current = true;
 
       const loadFocusedData = async () => {
@@ -178,15 +180,24 @@ const SearchScreen = () => {
         await refreshQueue();
       };
 
-      loadFocusedData();
-      const timer = setInterval(() => {
-        refreshQueue();
-      }, 1200);
+      const task = InteractionManager.runAfterInteractions(() => {
+        if (!active) {
+          return;
+        }
+
+        loadFocusedData();
+        timer = setInterval(() => {
+          refreshQueue();
+        }, 1200);
+      });
 
       return () => {
         active = false;
         mountedRef.current = false;
-        clearInterval(timer);
+        task.cancel();
+        if (timer) {
+          clearInterval(timer);
+        }
       };
     }, [applyDownloadSetting, refreshQueue]),
   );

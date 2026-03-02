@@ -158,6 +158,55 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  songMenuBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8, 7, 20, 0.12)',
+  },
+  songMenuCard: {
+    position: 'absolute',
+    width: 214,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+    overflow: 'hidden',
+  },
+  songMenuHeader: {
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: C.borderDim,
+  },
+  songMenuTitle: {
+    color: C.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  songMenuSubtitle: {
+    marginTop: 2,
+    color: C.textMute,
+    fontSize: 11,
+  },
+  songMenuItem: {
+    minHeight: 42,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  songMenuItemDanger: {
+    borderTopWidth: 1,
+    borderTopColor: C.borderDim,
+  },
+  songMenuItemText: {
+    marginLeft: 10,
+    color: C.textDim,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  songMenuItemTextDanger: {
+    color: '#f87171',
+  },
   playlistSearchRow: {
     paddingTop: 12,
     paddingHorizontal: 16,

@@ -256,6 +256,7 @@ export const artworkMethods = {
         STORAGE_KEYS.LIBRARY,
         JSON.stringify(nextLibrary),
       );
+      this.setLibraryCache(nextLibrary);
       return true;
     } catch (error) {
       console.error('Error persisting artwork for song:', error);
@@ -487,6 +488,7 @@ export const artworkMethods = {
           STORAGE_KEYS.LIBRARY,
           JSON.stringify(nextLibrary),
         );
+        this.setLibraryCache(nextLibrary);
       }
 
       return {

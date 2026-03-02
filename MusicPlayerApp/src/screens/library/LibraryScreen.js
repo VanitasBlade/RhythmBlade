@@ -3,7 +3,9 @@ import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   FlatList,
+  InteractionManager,
   Modal,
   Platform,
   Pressable,
@@ -72,6 +74,12 @@ const LibraryScreen = ({ navigation, route }) => {
   const [newPlaylistDesc, setNewPlaylistDesc] = useState('');
   const [playlistPickerOpen, setPlaylistPickerOpen] = useState(false);
   const [playlistPickerSong, setPlaylistPickerSong] = useState(null);
+  const [songMenuState, setSongMenuState] = useState({
+    visible: false,
+    song: null,
+    anchorX: 0,
+    anchorY: 0,
+  });
 
   const loadLibrary = useCallback(async () => {
     try {
@@ -121,12 +129,22 @@ const LibraryScreen = ({ navigation, route }) => {
 
   useFocusEffect(
     useCallback(() => {
-      loadLibrary();
       const requested = String(route?.params?.libraryTab || '').toLowerCase();
       if (requested && SUB_TABS.some(item => item.id === requested)) {
         setTab(requested);
         navigation.setParams({ libraryTab: undefined });
       }
+      let active = true;
+      const task = InteractionManager.runAfterInteractions(() => {
+        if (active) {
+          loadLibrary();
+        }
+      });
+
+      return () => {
+        active = false;
+        task.cancel();
+      };
     }, [loadLibrary, navigation, route?.params?.libraryTab]),
   );
 
@@ -361,42 +379,79 @@ const LibraryScreen = ({ navigation, route }) => {
     }
   }, []);
 
-  const showSongOptions = useCallback(song => {
-    const isFav = favoriteIds.has(song.id);
-    const openPlaylistPicker = () => {
-      if (!selectablePlaylists.length) {
-        Alert.alert(
-          'No Playlists',
-          'Create a playlist first, then add songs to it.',
-        );
+  const closeSongMenu = useCallback(() => {
+    setSongMenuState(prev =>
+      prev.visible
+        ? {
+          visible: false,
+          song: null,
+          anchorX: 0,
+          anchorY: 0,
+        }
+        : prev,
+    );
+  }, []);
+
+  const openSongMenu = useCallback((song, event) => {
+    if (!song) {
+      return;
+    }
+
+    setSortOpen(false);
+    const window = Dimensions.get('window');
+    const fallbackX = Math.max(0, window.width - 16);
+    const fallbackY = Math.max(0, window.height * 0.42);
+    const rawX = Number(event?.nativeEvent?.pageX);
+    const rawY = Number(event?.nativeEvent?.pageY);
+    const anchorX = Number.isFinite(rawX) ? rawX : fallbackX;
+    const anchorY = Number.isFinite(rawY) ? rawY : fallbackY;
+
+    setSongMenuState({
+      visible: true,
+      song,
+      anchorX,
+      anchorY,
+    });
+  }, []);
+
+  const runSongMenuAction = useCallback(
+    action => {
+      const targetSong = songMenuState.song;
+      closeSongMenu();
+      if (!targetSong) {
         return;
       }
-      setPlaylistPickerSong(song);
-      setPlaylistPickerOpen(true);
-    };
 
-    const baseActions = [
-      {
-        text: isFav ? 'Remove from Favorites' : 'Add to Favorites',
-        onPress: () => toggleFavorite(song),
-      },
-      {
-        text: 'Add to Playlist',
-        onPress: openPlaylistPicker,
-      },
-      {
-        text: 'Delete Song',
-        style: 'destructive',
-        onPress: () => deleteSong(song),
-      },
-    ];
+      if (action === 'favorite') {
+        toggleFavorite(targetSong);
+        return;
+      }
 
-    const actions =
-      Platform.OS === 'android'
-        ? baseActions
-        : [...baseActions, {text: 'Cancel', style: 'cancel'}];
-    Alert.alert(song.title, 'Choose an action', actions);
-  }, [favoriteIds, toggleFavorite, deleteSong, selectablePlaylists]);
+      if (action === 'playlist') {
+        if (!selectablePlaylists.length) {
+          Alert.alert(
+            'No Playlists',
+            'Create a playlist first, then add songs to it.',
+          );
+          return;
+        }
+        setPlaylistPickerSong(targetSong);
+        setPlaylistPickerOpen(true);
+        return;
+      }
+
+      if (action === 'delete') {
+        deleteSong(targetSong);
+      }
+    },
+    [
+      closeSongMenu,
+      deleteSong,
+      selectablePlaylists,
+      songMenuState.song,
+      toggleFavorite,
+    ],
+  );
 
   const addSongToPlaylist = useCallback(
     async playlist => {
@@ -633,6 +688,25 @@ const LibraryScreen = ({ navigation, route }) => {
   };
 
   const TRACK_ITEM_HEIGHT = 72;
+  const SONG_MENU_WIDTH = 214;
+  const SONG_MENU_HEIGHT = 186;
+
+  const songMenuPositionStyle = useMemo(() => {
+    const { width, height } = Dimensions.get('window');
+    const inset = 10;
+    const anchorX = Number(songMenuState.anchorX) || width - inset;
+    const anchorY = Number(songMenuState.anchorY) || height / 2;
+
+    let left = anchorX - SONG_MENU_WIDTH + 20;
+    left = Math.max(inset, Math.min(left, width - SONG_MENU_WIDTH - inset));
+
+    let top = anchorY + 8;
+    if (top + SONG_MENU_HEIGHT > height - inset) {
+      top = Math.max(inset, anchorY - SONG_MENU_HEIGHT - 8);
+    }
+
+    return { left, top };
+  }, [songMenuState.anchorX, songMenuState.anchorY]);
 
   const renderTrackItem = useCallback(({ item, index }) => {
     const color =
@@ -645,11 +719,11 @@ const LibraryScreen = ({ navigation, route }) => {
         icon={icon}
         duration={formatDuration(item.duration)}
         onPress={() => playSong(index)}
-        onLongPress={() => showSongOptions(item)}
-        onOptions={() => showSongOptions(item)}
+        onLongPress={event => openSongMenu(item, event)}
+        onOptions={event => openSongMenu(item, event)}
       />
     );
-  }, [playSong, showSongOptions]);
+  }, [openSongMenu, playSong]);
 
   const getTrackItemLayout = useCallback(
     (_, index) => ({ length: TRACK_ITEM_HEIGHT, offset: TRACK_ITEM_HEIGHT * index, index }),
@@ -657,9 +731,15 @@ const LibraryScreen = ({ navigation, route }) => {
   );
 
   const onTabPress = useCallback(id => {
+    closeSongMenu();
     setSortOpen(false);
     setTab(id);
-  }, []);
+  }, [closeSongMenu]);
+
+  const songMenuIsFavorite = useMemo(
+    () => Boolean(songMenuState.song?.id && favoriteIds.has(songMenuState.song.id)),
+    [favoriteIds, songMenuState.song],
+  );
 
   return (
     <View style={styles.container}>
@@ -978,6 +1058,58 @@ const LibraryScreen = ({ navigation, route }) => {
       {sortOpen ? (
         <Pressable style={styles.backdrop} onPress={() => setSortOpen(false)} />
       ) : null}
+
+      <Modal
+        visible={songMenuState.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeSongMenu}>
+        <Pressable style={styles.songMenuBackdrop} onPress={closeSongMenu}>
+          <Pressable
+            style={[styles.songMenuCard, songMenuPositionStyle]}
+            onPress={noop}>
+            <View style={styles.songMenuHeader}>
+              <Text style={styles.songMenuTitle} numberOfLines={1}>
+                {songMenuState.song?.title || 'Track'}
+              </Text>
+              <Text style={styles.songMenuSubtitle} numberOfLines={1}>
+                {songMenuState.song?.artist || 'Unknown artist'}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.songMenuItem}
+              onPress={() => runSongMenuAction('favorite')}>
+              <Icon
+                name={songMenuIsFavorite ? 'heart-off-outline' : 'heart-outline'}
+                size={18}
+                color={C.accentFg}
+              />
+              <Text style={styles.songMenuItemText}>
+                {songMenuIsFavorite
+                  ? 'Remove from Favorites'
+                  : 'Add to Favorites'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.songMenuItem}
+              onPress={() => runSongMenuAction('playlist')}>
+              <Icon name="playlist-plus" size={18} color={C.accentFg} />
+              <Text style={styles.songMenuItemText}>Add to Playlist</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.songMenuItem, styles.songMenuItemDanger]}
+              onPress={() => runSongMenuAction('delete')}>
+              <Icon name="trash-can-outline" size={18} color="#f87171" />
+              <Text style={[styles.songMenuItemText, styles.songMenuItemTextDanger]}>
+                Delete Song
+              </Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={sourceImportState.visible}

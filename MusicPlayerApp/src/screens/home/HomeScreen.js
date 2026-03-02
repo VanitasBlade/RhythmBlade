@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   FlatList,
+  InteractionManager,
   RefreshControl,
   Text,
   TextInput,
@@ -73,7 +74,17 @@ const HomeScreen = ({ navigation }) => {
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
+      let active = true;
+      const task = InteractionManager.runAfterInteractions(() => {
+        if (active) {
+          loadData();
+        }
+      });
+
+      return () => {
+        active = false;
+        task.cancel();
+      };
     }, [loadData]),
   );
 

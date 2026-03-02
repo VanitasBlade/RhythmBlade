@@ -9,6 +9,9 @@ class StorageService {
   constructor() {
     this.musicDir = `${RNFS.DocumentDirectoryPath}/Music`;
     this.rhythmBladeDir = this.getPreferredMusicDir();
+    this.libraryCache = null;
+    this.libraryCacheUpdatedAt = 0;
+    this.libraryReadTask = null;
     this.artworkHydrationTasks = new Map();
     this.artworkMigrationTask = null;
     this.durationHydrationTasks = new Map();
@@ -24,6 +27,24 @@ class StorageService {
       summary: null,
     };
     this.initializeDirectories();
+  }
+
+  setLibraryCache(librarySongs = []) {
+    this.libraryCache = Array.isArray(librarySongs) ? librarySongs : [];
+    this.libraryCacheUpdatedAt = Date.now();
+    return this.libraryCache;
+  }
+
+  getLibraryCacheAgeMs() {
+    if (!this.libraryCacheUpdatedAt) {
+      return Number.POSITIVE_INFINITY;
+    }
+    return Math.max(0, Date.now() - this.libraryCacheUpdatedAt);
+  }
+
+  clearLibraryCache() {
+    this.libraryCache = null;
+    this.libraryCacheUpdatedAt = 0;
   }
 
   getLibrarySyncState() {

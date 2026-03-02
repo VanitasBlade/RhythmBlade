@@ -190,6 +190,7 @@ export const settingsMethods = {
         STORAGE_KEYS.PLAYLISTS,
         STORAGE_KEYS.ALBUMS,
       ]);
+      this.clearLibraryCache();
       console.log('All data cleared');
     } catch (error) {
       console.error('Error clearing data:', error);

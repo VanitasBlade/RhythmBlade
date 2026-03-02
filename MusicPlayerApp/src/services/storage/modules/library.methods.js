@@ -27,6 +27,7 @@ import {
 const MAX_ARTWORK_MIGRATIONS_PER_READ = 2;
 const MAX_TEXT_METADATA_MIGRATIONS_PER_READ = 4;
 const DEFAULT_DURATION_MIGRATION_BATCH_SIZE = 10;
+const LIBRARY_CACHE_TTL_MS = 30000;
 
 function resolveMetadataField(candidate, fallback) {
   const text = String(candidate || '').trim();
@@ -69,188 +70,223 @@ function toTimestampMs(value) {
 }
 
 export const libraryMethods = {
-  async getLocalLibrary() {
-    try {
-      const library = await AsyncStorage.getItem(STORAGE_KEYS.LIBRARY);
-      const parsedLibrary = library ? JSON.parse(library) : [];
-      let changed = false;
-      let artworkMigrations = 0;
-      let textMetadataMigrations = 0;
+  async getLocalLibrary(options = {}) {
+    const forceRefresh = Boolean(options?.forceRefresh);
+    const canUseCache =
+      !forceRefresh &&
+      Array.isArray(this.libraryCache) &&
+      this.getLibraryCacheAgeMs() <= LIBRARY_CACHE_TTL_MS;
 
-      const normalizedLibrary = [];
-      for (const song of parsedLibrary) {
-        let nextSong = song;
-        const sourceName =
-          song?.filename ||
-          String(song?.localPath || '')
-            .split('/')
-            .pop();
-        const inferred = parseMetadataFromFilename(sourceName);
+    if (canUseCache) {
+      return this.libraryCache;
+    }
 
-        const nextArtist = isUnknownValue(song?.artist)
-          ? inferred.artist || song?.artist
-          : song?.artist;
-        const nextTitle = isUnknownValue(song?.title)
-          ? inferred.title || song?.title
-          : song?.title;
+    if (!forceRefresh && this.libraryReadTask) {
+      return this.libraryReadTask;
+    }
 
-        if (nextArtist !== nextSong?.artist || nextTitle !== nextSong?.title) {
-          changed = true;
-          nextSong = {
-            ...nextSong,
-            artist: nextArtist,
-            title: nextTitle,
-          };
-        }
+    const readTask = (async () => {
+      try {
+        const library = await AsyncStorage.getItem(STORAGE_KEYS.LIBRARY);
+        const parsedLibrary = library ? JSON.parse(library) : [];
+        let changed = false;
+        let artworkMigrations = 0;
+        let textMetadataMigrations = 0;
 
-        const shouldAttemptTextMetadata =
-          textMetadataMigrations < MAX_TEXT_METADATA_MIGRATIONS_PER_READ &&
-          canExtractEmbeddedTextMetadata(nextSong) &&
-          (isUnknownValue(nextSong?.title) ||
-            isUnknownValue(nextSong?.artist) ||
-            isUnknownValue(nextSong?.album) ||
-            isLikelyNoisyMetadata(nextSong?.title) ||
-            isLikelyNoisyMetadata(nextSong?.artist) ||
-            isLikelyNoisyMetadata(nextSong?.album));
+        const normalizedLibrary = [];
+        for (const song of parsedLibrary) {
+          let nextSong = song;
+          const sourceName =
+            song?.filename ||
+            String(song?.localPath || '')
+              .split('/')
+              .pop();
+          const inferred = parseMetadataFromFilename(sourceName);
 
-        if (shouldAttemptTextMetadata) {
-          const embeddedTextMetadata = await extractEmbeddedTextMetadata(
-            nextSong,
-          );
-          const embeddedTitle = resolveMetadataField(
-            embeddedTextMetadata?.title,
-            nextSong?.title,
-          );
-          const embeddedArtist = resolveMetadataField(
-            embeddedTextMetadata?.artist,
-            nextSong?.artist,
-          );
-          const embeddedAlbum = resolveMetadataField(
-            embeddedTextMetadata?.album,
-            nextSong?.album,
-          );
+          const nextArtist = isUnknownValue(song?.artist)
+            ? inferred.artist || song?.artist
+            : song?.artist;
+          const nextTitle = isUnknownValue(song?.title)
+            ? inferred.title || song?.title
+            : song?.title;
 
           if (
-            embeddedTitle !== nextSong?.title ||
-            embeddedArtist !== nextSong?.artist ||
-            embeddedAlbum !== nextSong?.album
+            nextArtist !== nextSong?.artist ||
+            nextTitle !== nextSong?.title
           ) {
-            textMetadataMigrations += 1;
             changed = true;
             nextSong = {
               ...nextSong,
-              title: embeddedTitle,
-              artist: embeddedArtist,
-              album: embeddedAlbum,
+              artist: nextArtist,
+              title: nextTitle,
             };
           }
-        }
 
-        const currentArtwork = String(nextSong?.artwork || '').trim();
-        if (
-          currentArtwork.toLowerCase().startsWith('data:image/') &&
-          artworkMigrations < MAX_ARTWORK_MIGRATIONS_PER_READ
-        ) {
-          const optimizedArtwork = await optimizeArtworkUriForTrack(
-            nextSong,
-            currentArtwork,
-          );
+          const shouldAttemptTextMetadata =
+            textMetadataMigrations < MAX_TEXT_METADATA_MIGRATIONS_PER_READ &&
+            canExtractEmbeddedTextMetadata(nextSong) &&
+            (isUnknownValue(nextSong?.title) ||
+              isUnknownValue(nextSong?.artist) ||
+              isUnknownValue(nextSong?.album) ||
+              isLikelyNoisyMetadata(nextSong?.title) ||
+              isLikelyNoisyMetadata(nextSong?.artist) ||
+              isLikelyNoisyMetadata(nextSong?.album));
 
-          if (optimizedArtwork && optimizedArtwork !== currentArtwork) {
-            artworkMigrations += 1;
-            changed = true;
-            nextSong = {
-              ...nextSong,
-              artwork: optimizedArtwork,
-            };
-          }
-        }
+          if (shouldAttemptTextMetadata) {
+            const embeddedTextMetadata = await extractEmbeddedTextMetadata(
+              nextSong,
+            );
+            const embeddedTitle = resolveMetadataField(
+              embeddedTextMetadata?.title,
+              nextSong?.title,
+            );
+            const embeddedArtist = resolveMetadataField(
+              embeddedTextMetadata?.artist,
+              nextSong?.artist,
+            );
+            const embeddedAlbum = resolveMetadataField(
+              embeddedTextMetadata?.album,
+              nextSong?.album,
+            );
 
-        const currentUrl = String(nextSong?.url || '').trim();
-        const currentLocalPath = String(nextSong?.localPath || '').trim();
-        const needsPathResolve =
-          currentUrl.startsWith('content://') ||
-          currentLocalPath.startsWith('content://');
-
-        if (needsPathResolve) {
-          const contentUri = currentUrl.startsWith('content://')
-            ? currentUrl
-            : currentLocalPath;
-          const originalPath = await this.resolveContentUriToFilePath(
-            contentUri,
-            sourceName,
-            false,
-          );
-
-          if (originalPath) {
-            const nextUrl = toFileUriFromPath(originalPath);
-            if (nextSong.localPath !== originalPath || currentUrl !== nextUrl) {
+            if (
+              embeddedTitle !== nextSong?.title ||
+              embeddedArtist !== nextSong?.artist ||
+              embeddedAlbum !== nextSong?.album
+            ) {
+              textMetadataMigrations += 1;
               changed = true;
               nextSong = {
                 ...nextSong,
-                localPath: originalPath,
-                url: nextUrl,
+                title: embeddedTitle,
+                artist: embeddedArtist,
+                album: embeddedAlbum,
               };
             }
           }
-        }
 
-        const resolvedLocalPath = this.resolveSongLocalPath(nextSong);
-        if (resolvedLocalPath) {
-          const expectedUrl = toFileUriFromPath(resolvedLocalPath);
+          const currentArtwork = String(nextSong?.artwork || '').trim();
           if (
-            expectedUrl &&
-            (nextSong.localPath !== resolvedLocalPath ||
-              String(nextSong.url || '').trim() !== expectedUrl)
+            currentArtwork.toLowerCase().startsWith('data:image/') &&
+            artworkMigrations < MAX_ARTWORK_MIGRATIONS_PER_READ
+          ) {
+            const optimizedArtwork = await optimizeArtworkUriForTrack(
+              nextSong,
+              currentArtwork,
+            );
+
+            if (optimizedArtwork && optimizedArtwork !== currentArtwork) {
+              artworkMigrations += 1;
+              changed = true;
+              nextSong = {
+                ...nextSong,
+                artwork: optimizedArtwork,
+              };
+            }
+          }
+
+          const currentUrl = String(nextSong?.url || '').trim();
+          const currentLocalPath = String(nextSong?.localPath || '').trim();
+          const needsPathResolve =
+            currentUrl.startsWith('content://') ||
+            currentLocalPath.startsWith('content://');
+
+          if (needsPathResolve) {
+            const contentUri = currentUrl.startsWith('content://')
+              ? currentUrl
+              : currentLocalPath;
+            const originalPath = await this.resolveContentUriToFilePath(
+              contentUri,
+              sourceName,
+              false,
+            );
+
+            if (originalPath) {
+              const nextUrl = toFileUriFromPath(originalPath);
+              if (
+                nextSong.localPath !== originalPath ||
+                currentUrl !== nextUrl
+              ) {
+                changed = true;
+                nextSong = {
+                  ...nextSong,
+                  localPath: originalPath,
+                  url: nextUrl,
+                };
+              }
+            }
+          }
+
+          const resolvedLocalPath = this.resolveSongLocalPath(nextSong);
+          if (resolvedLocalPath) {
+            const expectedUrl = toFileUriFromPath(resolvedLocalPath);
+            if (
+              expectedUrl &&
+              (nextSong.localPath !== resolvedLocalPath ||
+                String(nextSong.url || '').trim() !== expectedUrl)
+            ) {
+              changed = true;
+              nextSong = {
+                ...nextSong,
+                localPath: resolvedLocalPath,
+                url: expectedUrl,
+              };
+            }
+          }
+
+          const normalizedSourcePath = this.inferSourcePathFromSong(
+            nextSong,
+            resolvedLocalPath,
+          );
+          const existingSourcePath = this.normalizeSourcePath(
+            nextSong?.sourcePath,
+          );
+          if (
+            normalizedSourcePath &&
+            existingSourcePath !== normalizedSourcePath
           ) {
             changed = true;
             nextSong = {
               ...nextSong,
-              localPath: resolvedLocalPath,
-              url: expectedUrl,
+              sourcePath: normalizedSourcePath,
             };
           }
+
+          const rawDuration = nextSong?.duration;
+          const normalizedDuration = Number(rawDuration) || 0;
+          if (rawDuration !== normalizedDuration) {
+            changed = true;
+            nextSong = {
+              ...nextSong,
+              duration: normalizedDuration,
+            };
+          }
+
+          normalizedLibrary.push(nextSong);
         }
 
-        const normalizedSourcePath = this.inferSourcePathFromSong(
-          nextSong,
-          resolvedLocalPath,
-        );
-        const existingSourcePath = this.normalizeSourcePath(
-          nextSong?.sourcePath,
-        );
-        if (
-          normalizedSourcePath &&
-          existingSourcePath !== normalizedSourcePath
-        ) {
-          changed = true;
-          nextSong = {
-            ...nextSong,
-            sourcePath: normalizedSourcePath,
-          };
+        if (changed) {
+          return this.saveLibrarySnapshot(normalizedLibrary);
         }
 
-        const rawDuration = nextSong?.duration;
-        const normalizedDuration = Number(rawDuration) || 0;
-        if (rawDuration !== normalizedDuration) {
-          changed = true;
-          nextSong = {
-            ...nextSong,
-            duration: normalizedDuration,
-          };
-        }
-
-        normalizedLibrary.push(nextSong);
+        this.setLibraryCache(normalizedLibrary);
+        return normalizedLibrary;
+      } catch (error) {
+        console.error('Error getting library:', error);
+        return [];
       }
+    })();
 
-      if (changed) {
-        await this.saveLibrarySnapshot(normalizedLibrary);
+    if (!forceRefresh) {
+      this.libraryReadTask = readTask;
+    }
+
+    try {
+      return await readTask;
+    } finally {
+      if (this.libraryReadTask === readTask) {
+        this.libraryReadTask = null;
       }
-
-      return normalizedLibrary;
-    } catch (error) {
-      console.error('Error getting library:', error);
-      return [];
     }
   },
 
@@ -262,6 +298,7 @@ export const libraryMethods = {
       STORAGE_KEYS.LIBRARY,
       JSON.stringify(normalized),
     );
+    this.setLibraryCache(normalized);
     return normalized;
   },
 
@@ -361,6 +398,7 @@ export const libraryMethods = {
         STORAGE_KEYS.LIBRARY,
         JSON.stringify(nextLibrary),
       );
+      this.setLibraryCache(nextLibrary);
       return true;
     } catch (error) {
       console.error('Error persisting duration for song:', error);
@@ -544,6 +582,7 @@ export const libraryMethods = {
           STORAGE_KEYS.LIBRARY,
           JSON.stringify(nextLibrary),
         );
+        this.setLibraryCache(nextLibrary);
       }
 
       return {

@@ -76,7 +76,10 @@ TrackPlayer.registerPlaybackService(() => PlaybackServiceHandler);
 function TabNavigator() {
   return (
     <View style={styles.container}>
-      <Tab.Navigator screenOptions={TAB_SCREEN_OPTIONS}>
+      <Tab.Navigator
+        detachInactiveScreens={false}
+        lazy={false}
+        screenOptions={TAB_SCREEN_OPTIONS}>
         <Tab.Screen
           name="Home"
           component={HomeScreen}
