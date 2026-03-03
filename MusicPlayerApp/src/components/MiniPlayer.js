@@ -1,6 +1,13 @@
 import { useNavigation } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Image,
+  Keyboard,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import {
   State,
   useActiveTrack,
@@ -13,6 +20,7 @@ import { MUSIC_HOME_THEME as C } from '../theme/musicHomeTheme';
 import { formatTime } from '../utils/formatTime';
 
 const TRACK_TRANSITION_HOLD_MS = 700;
+const TAB_BAR_HEIGHT = 68;
 
 const getTrackKey = track => String(track?.id || track?.url || '').trim();
 
@@ -22,6 +30,7 @@ const MiniPlayer = () => {
   const track = useActiveTrack();
   const { position, duration } = useProgress(500);
   const [displayTrack, setDisplayTrack] = useState(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const artworkCacheRef = useRef({ trackKey: '', uri: '' });
   const displayTrackRef = useRef(null);
@@ -77,6 +86,17 @@ const MiniPlayer = () => {
     [],
   );
 
+  useEffect(() => {
+    const onShow = () => setKeyboardVisible(true);
+    const onHide = () => setKeyboardVisible(false);
+    const showSub = Keyboard.addListener('keyboardDidShow', onShow);
+    const hideSub = Keyboard.addListener('keyboardDidHide', onHide);
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   const displayArtworkUri = useMemo(() => {
     const key = getTrackKey(displayTrack);
     const uri = String(displayTrack?.artwork || '').trim();
@@ -112,7 +132,11 @@ const MiniPlayer = () => {
   }
 
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        { bottom: keyboardVisible ? 0 : TAB_BAR_HEIGHT },
+      ]}>
       <View style={styles.progressTrack}>
         <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
       </View>
@@ -170,7 +194,7 @@ const MiniPlayer = () => {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 68,
+    bottom: TAB_BAR_HEIGHT,
     left: 0,
     right: 0,
     backgroundColor: C.bgPlayer,

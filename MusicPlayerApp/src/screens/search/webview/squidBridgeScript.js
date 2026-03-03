@@ -858,6 +858,21 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     var img = card.querySelector("img");
     var trackAnchor = card.querySelector('a[href*="/track/"],a[href*="/tracks/"]');
     var url = norm(trackAnchor && trackAnchor.getAttribute("href"));
+    var downloadToken = norm(btn.getAttribute("data-rb-download-token"));
+    if (!downloadToken) {
+      downloadToken =
+        "rbdl_" +
+        String(Date.now()) +
+        "_" +
+        String(index) +
+        "_" +
+        Math.random().toString(36).slice(2, 8);
+      btn.setAttribute("data-rb-download-token", downloadToken);
+    }
+    var downloadButtonSelector =
+      'button[data-rb-download-token="' +
+      cssAttrEscape(downloadToken) +
+      '"]';
 
     return {
       index: index,
@@ -870,6 +885,8 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
       artwork: norm(img && img.getAttribute("src")) || null,
       url: url || null,
       tidalId: trackId(url) || null,
+      downloadButtonToken: downloadToken || null,
+      downloadButtonSelector: downloadButtonSelector,
       downloadable: true,
     };
   }
@@ -1820,7 +1837,91 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
       else if (delta <= 6) scoreVal += 12;
     }
 
+    var targetIndex = Number.isInteger(song.requestIndex)
+      ? song.requestIndex
+      : Number.isInteger(song.index)
+        ? song.index
+        : null;
+    var candIndex = Number.isInteger(cand.index) ? cand.index : null;
+    if (targetIndex !== null && candIndex !== null) {
+      var indexDelta = Math.abs(targetIndex - candIndex);
+      if (indexDelta === 0) scoreVal += 220;
+      else if (indexDelta === 1) scoreVal += 35;
+      else if (indexDelta <= 2) scoreVal += 15;
+    }
+
     return scoreVal;
+  }
+
+  function indexOfButton(button, buttons) {
+    if (!button) return -1;
+    var list = Array.isArray(buttons) ? buttons : getDownloadButtons();
+    for (var i = 0; i < list.length; i += 1) {
+      if (list[i] === button) return i;
+    }
+    return -1;
+  }
+
+  function resolveExactTrackCandidate(song) {
+    if (!song) return null;
+
+    var targetSelector = norm(song.downloadButtonSelector);
+    var targetToken = norm(song.downloadButtonToken);
+    var requestedIndex = Number.isInteger(song.requestIndex)
+      ? song.requestIndex
+      : Number.isInteger(song.index)
+        ? song.index
+        : -1;
+    var buttons = getDownloadButtons();
+    var button = null;
+    var matchType = "";
+
+    if (targetSelector) {
+      try {
+        button = document.querySelector(targetSelector);
+      } catch (_) {
+        button = null;
+      }
+      if (button) {
+        matchType = "exact-selector";
+      }
+    }
+
+    if (!button && targetToken) {
+      try {
+        button = document.querySelector(
+          'button[data-rb-download-token="' + cssAttrEscape(targetToken) + '"]'
+        );
+      } catch (_) {
+        button = null;
+      }
+      if (button) {
+        matchType = "exact-token";
+      }
+    }
+
+    if (!button && requestedIndex >= 0 && requestedIndex < buttons.length) {
+      button = buttons[requestedIndex];
+      matchType = "exact-index";
+    }
+
+    if (!button || !isDownloadButton(button)) {
+      return null;
+    }
+
+    var buttonIndex = indexOfButton(button, buttons);
+    if (buttonIndex < 0) {
+      buttonIndex = requestedIndex >= 0 ? requestedIndex : 0;
+    }
+    var parsed = parseTrack(button, buttonIndex);
+    var parsedSong = parsed || song;
+    var exactScore = Math.max(2500, score(song, parsedSong) + 900);
+    return {
+      button: button,
+      song: parsedSong,
+      score: exactScore,
+      matchType: matchType || "exact",
+    };
   }
 
   function pickBestCandidate(song) {
@@ -1829,9 +1930,9 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     var buttons = getDownloadButtons();
 
     for (var i = 0; i < buttons.length; i += 1) {
-      var parsed = parseTrack(buttons[i], 0);
+      var parsed = parseTrack(buttons[i], i);
       if (!parsed) continue;
-      if (isCancelDownloadLabel(parsed.title)) continue;
+      if (isCancelDownloadLabel(buttonLabel(buttons[i]))) continue;
       var s = score(song, parsed);
       if (s > bestScore) {
         bestScore = s;
@@ -2346,7 +2447,10 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
         throw new Error("Convert AAC to MP3 toggle could not be verified.");
       }
     }
-    var candidate = await findCandidate(song);
+    var candidate = resolveExactTrackCandidate(song);
+    if (!candidate) {
+      candidate = await findCandidate(song);
+    }
     if (!candidate) {
       var cancelButton = findCancelButtonForSong(song);
       if (cancelButton) {
@@ -2355,7 +2459,10 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
         });
         cancelButton.click();
         await sleep(520);
-        candidate = await findCandidate(song);
+        candidate = resolveExactTrackCandidate(song);
+        if (!candidate) {
+          candidate = await findCandidate(song);
+        }
       }
     }
     if (candidate && Number(candidate.score) <= 0) {
@@ -2380,6 +2487,7 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
       matchedTitle: norm((candidate.song || {}).title),
       matchedArtist: norm((candidate.song || {}).artist),
       score: candidate.score,
+      matchType: candidate.matchType || "heuristic",
     });
 
     var started = Date.now();

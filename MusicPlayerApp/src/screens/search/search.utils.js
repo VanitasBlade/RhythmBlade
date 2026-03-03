@@ -105,8 +105,14 @@ export const getQueueSubtitle = job => {
   if (downloaded && total) {
     return `${downloaded} / ${total}`;
   }
+  if (downloaded) {
+    return `${downloaded} downloaded`;
+  }
   if (job.status === 'queued') {
     return 'Waiting in queue...';
+  }
+  if (job.phase === 'preparing') {
+    return 'Preparing download...';
   }
   if (job.phase === 'resolving') {
     return 'Resolving track...';

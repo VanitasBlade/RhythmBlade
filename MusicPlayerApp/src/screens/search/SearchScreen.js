@@ -33,7 +33,7 @@ import { toTrackKey } from './search.utils';
 import useSquidWebViewDownloader from './useSquidWebViewDownloader';
 
 const queueKeyExtractor = item => item.id;
-const AGGRESSIVE_QUEUE_POLL_MS = 1200;
+const AGGRESSIVE_QUEUE_POLL_MS = 450;
 const IDLE_QUEUE_POLL_MS = 4200;
 const SEARCH_RESULT_ESTIMATED_ITEM_SIZE = 88;
 const QUEUE_ESTIMATED_ITEM_SIZE = 90;
@@ -895,8 +895,8 @@ const SearchScreen = () => {
     () =>
       activeAlbum
         ? `album-${String(activeAlbum?.url || activeAlbum?.title || 'current')}`
-        : `search-${activeSearchType.toLowerCase()}-${query.trim().toLowerCase()}`,
-    [activeAlbum, activeSearchType, query],
+        : `search-${activeSearchType.toLowerCase()}`,
+    [activeAlbum, activeSearchType],
   );
   return (
     <View style={styles.container}>

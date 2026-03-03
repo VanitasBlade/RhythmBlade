@@ -31,6 +31,10 @@ const BRIDGE_DOWNLOAD_CHUNK_EVENT = 'bridge-download-chunk';
 const DUPLICATE_LOAD_DEBOUNCE_MS = 200;
 const MAX_ALBUM_TRACK_ATTEMPTS = 2;
 const NO_MATCH_FOUND_ERROR = 'NO_MATCH_FOUND';
+const DOWNLOAD_PROGRESS_START = 22;
+const DOWNLOAD_PROGRESS_VISIBLE_START = 26;
+const DOWNLOAD_PROGRESS_END = 97;
+const CHUNK_PROGRESS_PATCH_INTERVAL_MS = 120;
 
 // now() wrapper removed — use Date.now() directly
 
@@ -514,6 +518,7 @@ function useSquidWebViewDownloader() {
         const chunkState = {
           total: 0,
           totalBytes: 0,
+          receivedBytes: 0,
           filename: '',
           mimeType: '',
           parts: [],
@@ -549,6 +554,8 @@ function useSquidWebViewDownloader() {
           chunkState,
           type,
           jobId: jobId || null,
+          onChunk:
+            typeof options?.onChunk === 'function' ? options.onChunk : null,
         });
 
         log('Posting bridge command.', { id, type });
@@ -689,10 +696,27 @@ function useSquidWebViewDownloader() {
         }
 
         if (Number.isInteger(seq) && seq >= 0 && data) {
+          let chunkAccepted = false;
           if (!pending.chunkState.parts[seq]) {
             pending.chunkState.received += 1;
+            pending.chunkState.receivedBytes += base64ByteSize(data);
+            chunkAccepted = true;
           }
           pending.chunkState.parts[seq] = data;
+
+          if (chunkAccepted && pending.onChunk) {
+            try {
+              pending.onChunk({
+                seq,
+                received: pending.chunkState.received,
+                total: pending.chunkState.total || total || 0,
+                totalBytes: pending.chunkState.totalBytes || totalBytes || 0,
+                receivedBytes: pending.chunkState.receivedBytes,
+              });
+            } catch (error) {
+              // Ignore progress callback errors to avoid breaking bridge parsing.
+            }
+          }
         }
         return;
       }
@@ -748,6 +772,7 @@ function useSquidWebViewDownloader() {
               Number(result.totalBytes) ||
               Number(pending.chunkState.totalBytes) ||
               0,
+            receivedBytes: Number(pending.chunkState.receivedBytes) || 0,
             filename: String(
               result.filename || pending.chunkState.filename || '',
             ).trim(),
@@ -923,6 +948,49 @@ function useSquidWebViewDownloader() {
       let finalFileSize = 0;
       let attemptError = null;
       let fallbackToAacSource = false;
+      const toDownloadProgress = ratio => {
+        const boundedRatio = Math.max(0, Math.min(1, Number(ratio) || 0));
+        return Math.min(
+          DOWNLOAD_PROGRESS_END,
+          Math.round(
+            DOWNLOAD_PROGRESS_VISIBLE_START +
+              boundedRatio *
+                (DOWNLOAD_PROGRESS_END - DOWNLOAD_PROGRESS_VISIBLE_START),
+          ),
+        );
+      };
+
+      const createBridgeChunkProgressHandler = () => {
+        let lastPatchedAt = 0;
+        return chunkState => {
+          const totalChunks = Number(chunkState?.total) || 0;
+          const receivedChunks = Number(chunkState?.received) || 0;
+          if (totalChunks <= 0 || receivedChunks <= 0) {
+            return;
+          }
+
+          const now = Date.now();
+          const isComplete = receivedChunks >= totalChunks;
+          if (
+            !isComplete &&
+            now - lastPatchedAt < CHUNK_PROGRESS_PATCH_INTERVAL_MS
+          ) {
+            return;
+          }
+          lastPatchedAt = now;
+
+          const totalBytes = Number(chunkState?.totalBytes) || null;
+          const receivedBytes = Number(chunkState?.receivedBytes) || 0;
+          const ratio = receivedChunks / totalChunks;
+          patchJob(jobId, {
+            status: 'downloading',
+            phase: 'downloading',
+            progress: toDownloadProgress(ratio),
+            downloadedBytes: receivedBytes,
+            totalBytes,
+          });
+        };
+      };
 
       for (
         let attempt = 1;
@@ -943,6 +1011,7 @@ function useSquidWebViewDownloader() {
         const targetConvertToMp3 =
           requiresConvertSync && requestedConvertToMp3 && !fallbackToAacSource;
         const expectMp3Blob = targetConvertToMp3;
+        const onBridgeChunk = createBridgeChunkProgressHandler();
 
         try {
           assertJobActive(jobId);
@@ -1033,7 +1102,7 @@ function useSquidWebViewDownloader() {
                 attempt,
               },
               130000,
-              { jobId },
+              { jobId, onChunk: onBridgeChunk },
             );
           } else {
             bridgeDownload = await postBridgeCommand(
@@ -1045,7 +1114,7 @@ function useSquidWebViewDownloader() {
                 attempt,
               },
               130000,
-              { jobId },
+              { jobId, onChunk: onBridgeChunk },
             );
           }
 
@@ -1115,7 +1184,7 @@ function useSquidWebViewDownloader() {
             patchJob(jobId, {
               status: 'downloading',
               phase: 'downloading',
-              progress: 42,
+              progress: DOWNLOAD_PROGRESS_START,
               downloadedBytes: 0,
               totalBytes: totalBytesFromBridge,
             });
@@ -1125,7 +1194,7 @@ function useSquidWebViewDownloader() {
             patchJob(jobId, {
               status: 'downloading',
               phase: 'downloading',
-              progress: 46,
+              progress: DOWNLOAD_PROGRESS_VISIBLE_START,
               downloadedBytes: bytesWritten,
               totalBytes: totalBytesFromBridge,
             });
@@ -1142,9 +1211,8 @@ function useSquidWebViewDownloader() {
               }
               await RNFS.appendFile(destinationPath, chunkBase64, 'base64');
               bytesWritten += base64ByteSize(chunkBase64);
-              const progress = Math.min(
-                97,
-                Math.round(46 + ((chunkIndex + 1) / expectedChunks) * 50),
+              const progress = toDownloadProgress(
+                (chunkIndex + 1) / expectedChunks,
               );
               patchJob(jobId, {
                 status: 'downloading',
@@ -1209,7 +1277,7 @@ function useSquidWebViewDownloader() {
             patchJob(jobId, {
               status: 'downloading',
               phase: 'downloading',
-              progress: 42,
+              progress: DOWNLOAD_PROGRESS_START,
               downloadedBytes: 0,
               totalBytes: knownTotalBytes,
             });
@@ -1227,7 +1295,7 @@ function useSquidWebViewDownloader() {
                 patchJob(jobId, {
                   status: 'downloading',
                   phase: 'downloading',
-                  progress: 46,
+                  progress: DOWNLOAD_PROGRESS_VISIBLE_START,
                   downloadedBytes: 0,
                   totalBytes: total,
                 });
@@ -1240,7 +1308,7 @@ function useSquidWebViewDownloader() {
                 const ratio = total && total > 0 ? written / total : null;
                 const progress =
                   ratio !== null
-                    ? Math.min(97, Math.round(46 + ratio * 50))
+                    ? toDownloadProgress(ratio)
                     : undefined;
                 patchJob(jobId, {
                   status: 'downloading',
