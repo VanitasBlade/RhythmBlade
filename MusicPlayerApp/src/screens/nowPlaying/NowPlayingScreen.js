@@ -228,13 +228,22 @@ const NowPlayingScreen = ({ navigation, route }) => {
     await playbackService.setRepeatMode(RepeatMode.Off);
   }, [displayTrack]);
 
-  const repeatIcon = useMemo(
-    () => (loopMode === LOOP_MODE.ONE ? 'repeat-once' : 'repeat'),
-    [loopMode],
-  );
+  const repeatIcon = useMemo(() => {
+    if (loopMode === LOOP_MODE.ONE) {
+      return 'repeat-once';
+    }
+    if (loopMode === LOOP_MODE.ALL) {
+      return 'repeat';
+    }
+    return 'repeat-off';
+  }, [loopMode]);
   const repeatColor = useMemo(
     () => (loopMode !== LOOP_MODE.OFF ? C.accentFg : C.textDeep),
     [loopMode],
+  );
+  const shuffleIcon = useMemo(
+    () => (shuffleActive ? 'shuffle' : 'shuffle-disabled'),
+    [shuffleActive],
   );
   const shuffleColor = useMemo(
     () => (shuffleActive ? C.accentFg : C.textDeep),
@@ -281,6 +290,21 @@ const NowPlayingScreen = ({ navigation, route }) => {
 
     progressRef.current = {token, position, duration};
   }, [displayTrack, progress.duration, progress.position]);
+
+  useEffect(() => {
+    const unsubscribe = playbackService.subscribeLoopBehavior(mode => {
+      if (
+        mode === LOOP_MODE.ONE ||
+        mode === LOOP_MODE.ALL ||
+        mode === LOOP_MODE.OFF
+      ) {
+        setLoopMode(mode);
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const unsubscribe = playbackService.subscribeShuffleState(enabled => {
@@ -728,7 +752,7 @@ const NowPlayingScreen = ({ navigation, route }) => {
         </TouchableOpacity>
 
         <TouchableOpacity onPress={shuffleQueue}>
-          <Icon name="shuffle" size={28} color={shuffleColor} />
+          <Icon name={shuffleIcon} size={28} color={shuffleColor} />
         </TouchableOpacity>
       </View>
 

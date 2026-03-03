@@ -21,6 +21,46 @@ const VOLUME_RAMP_INTERVAL_MS = 80;
 const MIN_CROSSFADE_DURATION_SECONDS = 1;
 const MAX_CROSSFADE_DURATION_SECONDS = 12;
 const DEFAULT_CROSSFADE_DURATION_SECONDS = 5;
+const REMOTE_TOGGLE_DEBOUNCE_MS = 250;
+const TRACK_PLAYER_CAPABILITIES = [
+  Capability.Play,
+  Capability.Pause,
+  Capability.SkipToNext,
+  Capability.SkipToPrevious,
+  Capability.JumpBackward,
+  Capability.JumpForward,
+  Capability.SeekTo,
+];
+const TRACK_PLAYER_NOTIFICATION_CAPABILITIES = [
+  Capability.JumpBackward,
+  Capability.SkipToPrevious,
+  Capability.SeekTo,
+  Capability.Play,
+  Capability.Pause,
+  Capability.SkipToNext,
+  Capability.JumpForward,
+];
+const TRACK_PLAYER_COMPACT_CAPABILITIES = [
+  Capability.Play,
+  Capability.Pause,
+  Capability.SkipToNext,
+  Capability.SkipToPrevious,
+];
+const TRACK_PLAYER_BACKWARD_JUMP_INTERVAL = 15;
+const TRACK_PLAYER_FORWARD_JUMP_INTERVAL = 15;
+const TRACK_PLAYER_PROGRESS_UPDATE_INTERVAL = 1;
+const LOOP_BEHAVIOR = {
+  OFF: 'off',
+  ONE: 'one',
+  ALL: 'all',
+};
+const NOTIFICATION_LOOP_ICON_URI_BY_BEHAVIOR = {
+  [LOOP_BEHAVIOR.OFF]: 'ic_loop_off_notification',
+  [LOOP_BEHAVIOR.ONE]: 'ic_loop_one_notification',
+  [LOOP_BEHAVIOR.ALL]: 'ic_loop_all_notification',
+};
+const NOTIFICATION_SHUFFLE_ICON_URI_ENABLED = 'ic_shuffle_on_notification';
+const NOTIFICATION_SHUFFLE_ICON_URI_DISABLED = 'ic_shuffle_off_notification';
 
 function normalizeText(value) {
   return String(value || '')
@@ -195,6 +235,7 @@ class PlaybackService {
     this.artworkFallbackAttemptAt = new Map();
     this.autoContinueStopListeners = new Set();
     this.shuffleStateListeners = new Set();
+    this.loopBehaviorListeners = new Set();
     this.autoContinueEnabled = true;
     this.shuffleByDefaultEnabled = false;
     this.autoContinueInterceptionInFlight = false;
@@ -213,7 +254,19 @@ class PlaybackService {
     this.crossfadeFadeOutInProgress = false;
     this.crossfadeFadeInInProgress = false;
     this.repeatMode = null;
-    this.loopBehavior = 'off';
+    this.loopBehavior = LOOP_BEHAVIOR.OFF;
+    this.remoteLoopToggleGuardUntil = 0;
+    this.remoteShuffleToggleGuardUntil = 0;
+    this.notificationActionIcons = {
+      loopUri: '',
+      shuffleUri: '',
+    };
+    this.loopOneRuntime = {
+      trackIndex: null,
+      consumed: false,
+      position: 0,
+      duration: 0,
+    };
     this.shuffleState = {
       enabled: false,
       originalQueue: [],
@@ -221,15 +274,29 @@ class PlaybackService {
   }
 
   setLoopBehavior(mode) {
-    if (mode === 'one' || mode === 'all' || mode === 'off') {
-      this.loopBehavior = mode;
-      return;
+    const nextBehavior =
+      mode === LOOP_BEHAVIOR.ONE ||
+      mode === LOOP_BEHAVIOR.ALL ||
+      mode === LOOP_BEHAVIOR.OFF
+        ? mode
+        : LOOP_BEHAVIOR.OFF;
+    const changed = this.loopBehavior !== nextBehavior;
+    this.loopBehavior = nextBehavior;
+    if (nextBehavior !== LOOP_BEHAVIOR.ONE) {
+      this.loopOneRuntime.consumed = false;
+      this.loopOneRuntime.trackIndex = null;
+    } else {
+      this.loopOneRuntime.consumed = false;
     }
-    this.loopBehavior = 'off';
+    if (changed) {
+      this.emitLoopBehavior();
+      this.requestNotificationActionIconRefresh();
+    }
+    return this.loopBehavior;
   }
 
   getLoopBehavior() {
-    return this.loopBehavior;
+    return this.loopBehavior || LOOP_BEHAVIOR.OFF;
   }
 
   setAutoContinueEnabled(enabled) {
@@ -268,6 +335,21 @@ class PlaybackService {
     };
   }
 
+  subscribeLoopBehavior(listener) {
+    if (typeof listener !== 'function') {
+      return () => {};
+    }
+    this.loopBehaviorListeners.add(listener);
+    try {
+      listener(this.getLoopBehavior());
+    } catch (error) {
+      // Ignore listener errors.
+    }
+    return () => {
+      this.loopBehaviorListeners.delete(listener);
+    };
+  }
+
   emitShuffleState() {
     const listeners = Array.from(this.shuffleStateListeners);
     const enabled = this.isShuffleEnabled();
@@ -278,6 +360,78 @@ class PlaybackService {
         // Ignore listener errors.
       }
     }
+  }
+
+  emitLoopBehavior() {
+    const listeners = Array.from(this.loopBehaviorListeners);
+    const behavior = this.getLoopBehavior();
+    for (let index = 0; index < listeners.length; index += 1) {
+      try {
+        listeners[index](behavior);
+      } catch (error) {
+        // Ignore listener errors.
+      }
+    }
+  }
+
+  getNotificationLoopIconUri() {
+    return (
+      NOTIFICATION_LOOP_ICON_URI_BY_BEHAVIOR[this.getLoopBehavior()] ||
+      NOTIFICATION_LOOP_ICON_URI_BY_BEHAVIOR[LOOP_BEHAVIOR.OFF]
+    );
+  }
+
+  getNotificationShuffleIconUri() {
+    return this.isShuffleEnabled()
+      ? NOTIFICATION_SHUFFLE_ICON_URI_ENABLED
+      : NOTIFICATION_SHUFFLE_ICON_URI_DISABLED;
+  }
+
+  requestNotificationActionIconRefresh() {
+    runDetached(
+      () => this.refreshNotificationActionIcons(),
+      'refreshing notification action icons',
+    );
+  }
+
+  getTrackPlayerOptions(options = {}) {
+    const loopUri = options?.loopUri || this.getNotificationLoopIconUri();
+    const shuffleUri =
+      options?.shuffleUri || this.getNotificationShuffleIconUri();
+    return {
+      capabilities: TRACK_PLAYER_CAPABILITIES,
+      notificationCapabilities: TRACK_PLAYER_NOTIFICATION_CAPABILITIES,
+      compactCapabilities: TRACK_PLAYER_COMPACT_CAPABILITIES,
+      backwardJumpInterval: TRACK_PLAYER_BACKWARD_JUMP_INTERVAL,
+      forwardJumpInterval: TRACK_PLAYER_FORWARD_JUMP_INTERVAL,
+      rewindIcon: {uri: loopUri},
+      forwardIcon: {uri: shuffleUri},
+      progressUpdateEventInterval: TRACK_PLAYER_PROGRESS_UPDATE_INTERVAL,
+    };
+  }
+
+  async refreshNotificationActionIcons() {
+    if (!this.initialized) {
+      return;
+    }
+    const nextLoopUri = this.getNotificationLoopIconUri();
+    const nextShuffleUri = this.getNotificationShuffleIconUri();
+    if (
+      this.notificationActionIcons.loopUri === nextLoopUri &&
+      this.notificationActionIcons.shuffleUri === nextShuffleUri
+    ) {
+      return;
+    }
+    this.notificationActionIcons = {
+      loopUri: nextLoopUri,
+      shuffleUri: nextShuffleUri,
+    };
+    await TrackPlayer.updateOptions(
+      this.getTrackPlayerOptions({
+        loopUri: nextLoopUri,
+        shuffleUri: nextShuffleUri,
+      }),
+    );
   }
 
   setCrossfadeEnabled(enabled) {
@@ -452,6 +606,8 @@ class PlaybackService {
   }
 
   handleCrossfadeProgress(event = {}) {
+    this.handleLoopOneProgress(event || {});
+
     if (!this.shouldUseSimpleCrossfade()) {
       return;
     }
@@ -503,6 +659,59 @@ class PlaybackService {
       this.crossfadeFadeOutTrackIndex = trackIndex;
     }
     this.startCrossfadeFadeOut(remaining);
+  }
+
+  handleLoopOneProgress(event = {}) {
+    const position = Number(event?.position);
+    const duration = coerceDuration(event?.duration);
+    const trackIndex = Number.isInteger(event?.track)
+      ? Number(event.track)
+      : null;
+
+    const previousTrackIndex = this.loopOneRuntime.trackIndex;
+    const previousPosition = Number(this.loopOneRuntime.position) || 0;
+    const previousDuration = coerceDuration(this.loopOneRuntime.duration);
+
+    this.loopOneRuntime.position = Number.isFinite(position) ? position : 0;
+    this.loopOneRuntime.duration = duration;
+    if (trackIndex !== null) {
+      this.loopOneRuntime.trackIndex = trackIndex;
+    }
+
+    if (this.getLoopBehavior() !== LOOP_BEHAVIOR.ONE) {
+      this.loopOneRuntime.consumed = false;
+      return;
+    }
+
+    if (trackIndex === null || !Number.isFinite(position) || duration <= 0) {
+      return;
+    }
+
+    if (previousTrackIndex !== trackIndex) {
+      this.loopOneRuntime.consumed = false;
+      return;
+    }
+
+    if (this.loopOneRuntime.consumed) {
+      return;
+    }
+
+    const baselineDuration = Math.max(duration, previousDuration);
+    const nearEndFloor = Math.max(0, Math.max(3, baselineDuration - 1.2));
+    const wrapped =
+      previousPosition >= nearEndFloor &&
+      position <= 1.2 &&
+      previousPosition - position >= 2;
+    if (!wrapped) {
+      return;
+    }
+
+    this.loopOneRuntime.consumed = true;
+    this.setLoopBehavior(LOOP_BEHAVIOR.OFF);
+    runDetached(
+      () => this.setRepeatMode(RepeatMode.Off),
+      'disabling one-shot loop after first replay',
+    );
   }
 
   handleCrossfadeTrackChange(event = {}) {
@@ -802,6 +1011,9 @@ class PlaybackService {
     if (emit && (wasEnabled || hadOriginalQueue)) {
       this.emitShuffleState();
     }
+    if (wasEnabled || hadOriginalQueue) {
+      this.requestNotificationActionIconRefresh();
+    }
   }
 
   isShuffleEnabled() {
@@ -810,6 +1022,7 @@ class PlaybackService {
 
   setShuffleState(enabled, originalQueue = [], options = {}) {
     const emit = options?.emit !== false;
+    const previousEnabled = this.isShuffleEnabled();
     this.shuffleState = {
       enabled: Boolean(enabled),
       originalQueue: Array.isArray(originalQueue)
@@ -818,6 +1031,9 @@ class PlaybackService {
     };
     if (emit) {
       this.emitShuffleState();
+    }
+    if (previousEnabled !== this.isShuffleEnabled()) {
+      this.requestNotificationActionIconRefresh();
     }
   }
 
@@ -1188,23 +1404,7 @@ class PlaybackService {
         maxCacheSize: 1024 * 10, // 10 MB
       });
 
-      await TrackPlayer.updateOptions({
-        capabilities: [
-          Capability.Play,
-          Capability.Pause,
-          Capability.SkipToNext,
-          Capability.SkipToPrevious,
-          Capability.SeekTo,
-          Capability.Stop,
-        ],
-        compactCapabilities: [
-          Capability.Play,
-          Capability.Pause,
-          Capability.SkipToNext,
-          Capability.SkipToPrevious,
-        ],
-        progressUpdateEventInterval: 1,
-      });
+      await TrackPlayer.updateOptions(this.getTrackPlayerOptions());
 
       await Promise.all([
         this.loadAutoContinueSetting(),
@@ -1215,6 +1415,7 @@ class PlaybackService {
       this.bindMetadataListeners();
       this.repeatMode = await TrackPlayer.getRepeatMode().catch(() => null);
       this.initialized = true;
+      await this.refreshNotificationActionIcons().catch(() => null);
       await TrackPlayer.setVolume(this.currentVolumeLevel).catch(() => null);
       console.log('TrackPlayer initialized');
     } catch (error) {
@@ -1298,7 +1499,7 @@ class PlaybackService {
       await TrackPlayer.setRepeatMode(mode);
       this.repeatMode = mode;
       if (mode === RepeatMode.Off) {
-        this.loopBehavior = 'off';
+        this.setLoopBehavior(LOOP_BEHAVIOR.OFF);
       }
     } catch (error) {
       console.error('Error setting repeat mode:', error);
@@ -1569,6 +1770,63 @@ class PlaybackService {
     return this.enableShufflePreservingCurrent();
   }
 
+  canRunRemoteLoopToggle() {
+    const now = Date.now();
+    if (this.remoteLoopToggleGuardUntil > now) {
+      return false;
+    }
+    this.remoteLoopToggleGuardUntil = now + REMOTE_TOGGLE_DEBOUNCE_MS;
+    return true;
+  }
+
+  canRunRemoteShuffleToggle() {
+    const now = Date.now();
+    if (this.remoteShuffleToggleGuardUntil > now) {
+      return false;
+    }
+    this.remoteShuffleToggleGuardUntil = now + REMOTE_TOGGLE_DEBOUNCE_MS;
+    return true;
+  }
+
+  getNextLoopBehavior() {
+    switch (this.getLoopBehavior()) {
+      case LOOP_BEHAVIOR.OFF:
+        return LOOP_BEHAVIOR.ONE;
+      case LOOP_BEHAVIOR.ONE:
+        return LOOP_BEHAVIOR.ALL;
+      case LOOP_BEHAVIOR.ALL:
+      default:
+        return LOOP_BEHAVIOR.OFF;
+    }
+  }
+
+  async cycleLoopBehaviorFromRemote() {
+    if (!this.canRunRemoteLoopToggle()) {
+      return this.getLoopBehavior();
+    }
+
+    const nextLoopBehavior = this.getNextLoopBehavior();
+    this.setLoopBehavior(nextLoopBehavior);
+
+    if (nextLoopBehavior === LOOP_BEHAVIOR.OFF) {
+      await this.setRepeatMode(RepeatMode.Off);
+      return nextLoopBehavior;
+    }
+
+    await this.setRepeatMode(RepeatMode.Track);
+    return nextLoopBehavior;
+  }
+
+  async toggleShuffleFromRemote() {
+    if (!this.canRunRemoteShuffleToggle()) {
+      return this.isShuffleEnabled();
+    }
+
+    const shouldEnable = !this.isShuffleEnabled();
+    await this.setShuffleEnabled(shouldEnable);
+    return this.isShuffleEnabled();
+  }
+
   async getCurrentTrack() {
     try {
       const index = await TrackPlayer.getActiveTrackIndex();
@@ -1602,6 +1860,8 @@ class PlaybackService {
   }
 }
 
+const playbackService = new PlaybackService();
+
 // Service for TrackPlayer background playback
 export const PlaybackServiceHandler = async () => {
   TrackPlayer.addEventListener(Event.RemotePlay, () => TrackPlayer.play());
@@ -1615,6 +1875,18 @@ export const PlaybackServiceHandler = async () => {
   TrackPlayer.addEventListener(Event.RemoteSeek, event =>
     TrackPlayer.seekTo(event.position),
   );
+  TrackPlayer.addEventListener(Event.RemoteJumpBackward, () => {
+    runDetached(
+      () => playbackService.cycleLoopBehaviorFromRemote(),
+      'handling remote loop toggle',
+    );
+  });
+  TrackPlayer.addEventListener(Event.RemoteJumpForward, () => {
+    runDetached(
+      () => playbackService.toggleShuffleFromRemote(),
+      'handling remote shuffle toggle',
+    );
+  });
 };
 
-export default new PlaybackService();
+export default playbackService;
