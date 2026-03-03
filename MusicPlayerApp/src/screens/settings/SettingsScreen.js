@@ -15,11 +15,42 @@ import RNFS from 'react-native-fs';
 import Slider from '@react-native-community/slider';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-import {toPathFromUri} from '../../services/storage/storage.helpers';
+import storageService from '../../services/storage/StorageService';
+import {
+  toFileUriFromPath,
+  toPathFromUri,
+} from '../../services/storage/storage.helpers';
 import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
 import styles from './settings.styles';
 
 const CROSSFade_EXPANDED_MAX_HEIGHT = 56;
+const PROFILE_AVATAR_DIR = `${RNFS.DocumentDirectoryPath}/profile`;
+
+function toAvatarExtension(file = {}) {
+  const fromName = String(file?.name || '').match(/\.([a-z0-9]{2,5})$/i);
+  if (fromName?.[1]) {
+    return fromName[1].toLowerCase();
+  }
+  const fromMime = String(file?.type || '').split('/')[1] || '';
+  const sanitized = fromMime.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  if (sanitized) {
+    if (sanitized === 'jpeg') {
+      return 'jpg';
+    }
+    return sanitized.slice(0, 5);
+  }
+  return 'jpg';
+}
+
+function isManagedAvatarPath(pathValue = '') {
+  const normalizedPath = String(pathValue || '').trim();
+  if (!normalizedPath) {
+    return false;
+  }
+  const normalizedDir = String(PROFILE_AVATAR_DIR || '').replace(/\\/g, '/');
+  const normalizedCandidate = normalizedPath.replace(/\\/g, '/');
+  return normalizedCandidate.indexOf(normalizedDir + '/') === 0;
+}
 
 const ToggleSwitch = ({value, onValueChange, disabled = false}) => (
   <Switch
@@ -117,7 +148,22 @@ const SettingsScreen = () => {
   const editingLocation = activeInput === 'location';
 
   const onAvatarChange = useCallback(nextAvatarDataUri => {
-    setAvatarDataUri(String(nextAvatarDataUri || '').trim());
+    const normalizedAvatar = String(nextAvatarDataUri || '').trim();
+    setAvatarDataUri(normalizedAvatar);
+    (async () => {
+      try {
+        const previousAvatar = await storageService.getProfileAvatar();
+        await storageService.saveProfileAvatar(normalizedAvatar);
+        if (previousAvatar && previousAvatar !== normalizedAvatar) {
+          const previousPath = toPathFromUri(previousAvatar);
+          if (isManagedAvatarPath(previousPath)) {
+            await RNFS.unlink(previousPath).catch(() => null);
+          }
+        }
+      } catch (error) {
+        console.error('Could not persist profile avatar:', error);
+      }
+    })();
   }, []);
 
   const handleAvatarUpload = useCallback(async () => {
@@ -131,13 +177,11 @@ const SettingsScreen = () => {
       if (!sourcePath) {
         throw new Error('Selected image is not accessible.');
       }
-      const imageBase64 = await RNFS.readFile(sourcePath, 'base64');
-      if (!imageBase64) {
-        throw new Error('Image file is empty.');
-      }
-      const mimeType =
-        String(file?.type || 'image/jpeg').trim() || 'image/jpeg';
-      onAvatarChange(`data:${mimeType};base64,${imageBase64}`);
+      await RNFS.mkdir(PROFILE_AVATAR_DIR).catch(() => null);
+      const extension = toAvatarExtension(file);
+      const destinationPath = `${PROFILE_AVATAR_DIR}/avatar_${Date.now()}.${extension}`;
+      await RNFS.copyFile(sourcePath, destinationPath);
+      onAvatarChange(toFileUriFromPath(destinationPath));
     } catch (error) {
       if (!DocumentPicker.isCancel(error)) {
         console.error('Avatar upload failed:', error);
@@ -172,7 +216,7 @@ const SettingsScreen = () => {
   }, [displayName, downloadLocation]);
 
   const clearCacheFeedback = useCallback(() => {
-    setCacheStatusSubtitle('Cache cleared ✓');
+    setCacheStatusSubtitle('Cache cleared \u2713');
     if (clearCacheTimerRef.current) {
       clearTimeout(clearCacheTimerRef.current);
     }
@@ -212,6 +256,24 @@ const SettingsScreen = () => {
     [],
   );
 
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const savedAvatar = await storageService.getProfileAvatar();
+        if (!active) {
+          return;
+        }
+        setAvatarDataUri(savedAvatar);
+      } catch (error) {
+        console.error('Could not load profile avatar:', error);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const crossfadeOpacity = useMemo(
     () =>
       crossfadeExpandAnim.interpolate({
@@ -246,7 +308,7 @@ const SettingsScreen = () => {
                 />
               ) : (
                 <View style={styles.avatarFallbackWrap}>
-                  <Text style={styles.avatarFallbackEmoji}>👤</Text>
+                  <Text style={styles.avatarFallbackEmoji}>{'\u{1F464}'}</Text>
                 </View>
               )}
               <View style={styles.avatarOverlay}>
@@ -454,12 +516,12 @@ const SettingsScreen = () => {
           <SettingsRow
             icon="information-outline"
             title="Version"
-            subtitle="1.0.0 — Build 42"
+            subtitle="1.0.0 - Build 42"
           />
           <SettingsRow
             icon="file-music-outline"
             title="Supported Formats"
-            subtitle="MP3 · FLAC · AAC · OGG · WAV"
+            subtitle="MP3 - FLAC - AAC - OGG - WAV"
           />
           <SettingsRow
             icon="database-outline"

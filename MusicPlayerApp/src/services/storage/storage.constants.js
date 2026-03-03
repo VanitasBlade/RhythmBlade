@@ -3,6 +3,7 @@ export const STORAGE_KEYS = {
   PLAYLISTS: '@playlists',
   ALBUMS: '@albums',
   SETTINGS: '@settings',
+  PROFILE_AVATAR: '@profile_avatar',
   LAST_LIBRARY_SYNC_AT: '@library_last_synced_at',
 };
 

@@ -29,14 +29,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   headerAction: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: C.border,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: C.bgCard,
+    backgroundColor: '#271a46',
+    alignSelf: 'center',
+    marginLeft: 12,
   },
   profilePlaceholder: {
     width: 28,
@@ -48,9 +51,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.accent,
   },
+  profileImage: {
+    width: 64,
+    height: 64,
+  },
   profileInitial: {
     color: '#f0eaff',
-    fontSize: 12,
+    fontSize: 24,
     fontWeight: '700',
   },
   searchWrap: {

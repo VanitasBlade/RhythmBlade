@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Dimensions,
+  Image,
   InteractionManager,
   RefreshControl,
   Text,
@@ -135,6 +136,7 @@ const HomeListHeader = React.memo(
     onOpenDownloader,
     onOpenPlaylists,
     playlists,
+    profileAvatarDataUri,
     renderPlaylistCard,
     playlistKeyExtractor,
     onRefresh,
@@ -151,9 +153,14 @@ const HomeListHeader = React.memo(
         <TouchableOpacity
           style={styles.headerAction}
           onPress={onOpenSettings}>
-          <View style={styles.profilePlaceholder}>
+          {profileAvatarDataUri ? (
+            <Image
+              source={{ uri: profileAvatarDataUri }}
+              style={styles.profileImage}
+            />
+          ) : (
             <Text style={styles.profileInitial}>U</Text>
-          </View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -247,6 +254,7 @@ const HomeScreen = ({ navigation }) => {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [profileAvatarDataUri, setProfileAvatarDataUri] = useState('');
   const [syncState, setSyncState] = useState(() =>
     storageService.getLibrarySyncState(),
   );
@@ -257,9 +265,10 @@ const HomeScreen = ({ navigation }) => {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [library, playlistData] = await Promise.all([
+      const [library, playlistData, avatarUri] = await Promise.all([
         storageService.getLocalLibrary(),
         storageService.getPlaylists(),
+        storageService.getProfileAvatar(),
       ]);
 
       const recent = [...library]
@@ -279,6 +288,8 @@ const HomeScreen = ({ navigation }) => {
       setFavoriteIds(prev =>
         areSetsEqual(prev, nextFavoriteIds) ? prev : nextFavoriteIds,
       );
+      const nextAvatar = String(avatarUri || '').trim();
+      setProfileAvatarDataUri(prev => (prev === nextAvatar ? prev : nextAvatar));
     } catch (error) {
       console.error('Error loading home data:', error);
     } finally {
@@ -451,6 +462,7 @@ const HomeScreen = ({ navigation }) => {
         onOpenDownloader={openDownloader}
         onOpenPlaylists={openPlaylistsTab}
         playlists={playlists}
+        profileAvatarDataUri={profileAvatarDataUri}
         renderPlaylistCard={renderPlaylistCard}
         playlistKeyExtractor={playlistKeyExtractor}
         onRefresh={onRefresh}
@@ -464,6 +476,7 @@ const HomeScreen = ({ navigation }) => {
       openSettings,
       playlistKeyExtractor,
       playlists,
+      profileAvatarDataUri,
       renderPlaylistCard,
       search,
       syncState?.isRunning,

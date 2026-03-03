@@ -11,6 +11,20 @@ import {
   normalizeText,
 } from '../storage.helpers';
 
+const CURSOR_WINDOW_OVERFLOW_PATTERN = /row too big|cursorwindow/i;
+const MAX_PROFILE_AVATAR_VALUE_LENGTH = 8192;
+
+function normalizeProfileAvatarValue(value = '') {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return '';
+  }
+  if (normalized.length > MAX_PROFILE_AVATAR_VALUE_LENGTH) {
+    return '';
+  }
+  return normalized;
+}
+
 export const settingsMethods = {
   buildDefaultFileSources() {
     return cloneDefaultFileSources(this.getPreferredMusicDir());
@@ -64,6 +78,33 @@ export const settingsMethods = {
     return deduped;
   },
 
+  async getProfileAvatar() {
+    try {
+      const avatarValue = await AsyncStorage.getItem(
+        STORAGE_KEYS.PROFILE_AVATAR,
+      );
+      return normalizeProfileAvatarValue(avatarValue);
+    } catch (error) {
+      console.error('Error getting profile avatar:', error);
+      return '';
+    }
+  },
+
+  async saveProfileAvatar(value = '') {
+    try {
+      const normalizedAvatar = normalizeProfileAvatarValue(value);
+      if (!normalizedAvatar) {
+        await AsyncStorage.removeItem(STORAGE_KEYS.PROFILE_AVATAR);
+        return '';
+      }
+      await AsyncStorage.setItem(STORAGE_KEYS.PROFILE_AVATAR, normalizedAvatar);
+      return normalizedAvatar;
+    } catch (error) {
+      console.error('Error saving profile avatar:', error);
+      return '';
+    }
+  },
+
   async getSettings() {
     try {
       const settings = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);
@@ -71,13 +112,34 @@ export const settingsMethods = {
         return this.getDefaultSettings();
       }
       const parsed = JSON.parse(settings);
-      return {
+      const legacyAvatar = normalizeProfileAvatarValue(
+        parsed?.profileAvatarDataUri || parsed?.profileAvatarUri,
+      );
+      if (legacyAvatar) {
+        await this.saveProfileAvatar(legacyAvatar);
+      }
+      const merged = {
         ...this.getDefaultSettings(),
         ...(parsed || {}),
         fileSources: this.normalizeFileSources(parsed?.fileSources),
       };
+      delete merged.profileAvatarDataUri;
+      delete merged.profileAvatarUri;
+      return merged;
     } catch (error) {
       console.error('Error getting settings:', error);
+      const message = String(error?.message || error || '');
+      if (CURSOR_WINDOW_OVERFLOW_PATTERN.test(message)) {
+        try {
+          await AsyncStorage.removeItem(STORAGE_KEYS.SETTINGS);
+          console.warn('Settings payload was too large and has been reset.');
+        } catch (removeError) {
+          console.error(
+            'Could not reset oversized settings payload:',
+            removeError,
+          );
+        }
+      }
       return this.getDefaultSettings();
     }
   },
@@ -88,6 +150,14 @@ export const settingsMethods = {
         ...this.getDefaultSettings(),
         ...(settings || {}),
       };
+      const legacyAvatar = normalizeProfileAvatarValue(
+        normalized.profileAvatarDataUri || normalized.profileAvatarUri,
+      );
+      if (legacyAvatar) {
+        await this.saveProfileAvatar(legacyAvatar);
+      }
+      delete normalized.profileAvatarDataUri;
+      delete normalized.profileAvatarUri;
       normalized.fileSources = this.normalizeFileSources(
         normalized.fileSources,
       );
@@ -133,7 +203,7 @@ export const settingsMethods = {
     }
 
     const nextSources = sources.map(source =>
-      source.id === targetId ? { ...source, on: !source.on } : source,
+      source.id === targetId ? {...source, on: !source.on} : source,
     );
     return this.saveFileSources(nextSources);
   },
