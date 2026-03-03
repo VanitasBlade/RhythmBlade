@@ -1,5 +1,6 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
+  ActivityIndicator,
   Image,
   ScrollView,
   Switch,
@@ -14,6 +15,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import storageService from '../../services/storage/StorageService';
 import {
+  getExtensionFromSong,
   normalizeFileSourcePath,
   toFileUriFromPath,
   toPathFromUri,
@@ -21,7 +23,141 @@ import {
 import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
 import PlaybackSettingsSection from './components/PlaybackSettingsSection';
 import styles from './settings.styles';
+
 const PROFILE_AVATAR_DIR = `${RNFS.DocumentDirectoryPath}/profile`;
+const STORAGE_USAGE_STALE_MS = 30000;
+const STORAGE_USAGE_BAR_COLORS = [
+  '#7c3aed',
+  '#06b6d4',
+  '#22c55e',
+  '#f59e0b',
+  '#ec4899',
+  '#ef4444',
+];
+const PRIVACY_POLICY_ITEMS = [
+  {
+    heading: 'File Access',
+    details:
+      'Read access is used only for folders and files you choose to scan or import.',
+  },
+  {
+    heading: 'Media & Audio Access',
+    details:
+      'Audio output access is required to play tracks through your device speakers, headphones, or connected audio devices.',
+  },
+  {
+    heading: 'Write Access',
+    details:
+      'Downloaded songs and app-generated media files are written only to your selected save location.',
+  },
+  {
+    heading: 'Notification Access',
+    details:
+      'Notifications are used for playback and download status updates when enabled by you.',
+  },
+  {
+    heading: 'Background Activity',
+    details:
+      'Active downloads may continue while the app is in the background, subject to device battery and OS limits.',
+  },
+  {
+    heading: 'Internet Usage',
+    details:
+      'An internet connection is required for search, bridge communication, and downloading tracks.',
+  },
+  {
+    heading: 'Downloader Bridge',
+    details:
+      'When enabled, the downloader bridge loads and automates requests through tidal.squid.wtf.',
+  },
+  {
+    heading: 'Third-Party Services',
+    details:
+      'Downloader features may rely on third-party services. Their own privacy policies and terms apply to their platforms.',
+  },
+  {
+    heading: 'Local Data',
+    details:
+      'Settings, library metadata, and cached artwork are stored locally on your device.',
+  },
+  {
+    heading: 'Data Collection',
+    details:
+      'The app does not upload your library or downloaded files to our servers. Online requests are only made to the services you use.',
+  },
+  {
+    heading: 'Analytics & Crash Logs',
+    details:
+      'No built-in analytics or crash reporting service is enabled by default unless explicitly added in a future update.',
+  },
+  {
+    heading: 'Copyright & DMCA',
+    details:
+      'You are responsible for ensuring your downloads and usage comply with copyright law, DMCA rules, and local regulations.',
+  },
+  {
+    heading: 'Terms of Use',
+    details:
+      'By using downloader features, you agree to use them only for lawful, authorized, and personal purposes.',
+  },
+  {
+    heading: 'Age Requirement',
+    details:
+      'This app is intended for users aged 13 and above. If local law requires a higher age, that rule applies.',
+  },
+  {
+    heading: 'User Control',
+    details:
+      'You can disable bridge features, change save paths, and revoke storage permissions anytime.',
+  },
+  {
+    heading: 'Your Privacy Rights',
+    details:
+      'You may request access, deletion, or export of app-stored data where applicable under laws such as GDPR or CCPA.',
+  },
+  {
+    heading: 'Contact & Requests',
+    details:
+      'For privacy or data-rights requests, contact support@rhythmblade.app and include your request details.',
+  },
+];
+
+function normalizeFormatLabel(value = '') {
+  const compact = String(value || '')
+    .replace(/^\./, '')
+    .trim()
+    .toUpperCase();
+  return compact || 'OTHER';
+}
+
+function formatStorageBytes(bytes) {
+  const size = Number(bytes) || 0;
+  if (!Number.isFinite(size) || size <= 0) {
+    return '0 MB';
+  }
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = size;
+  let index = 0;
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024;
+    index += 1;
+  }
+  const decimals = value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(decimals)} ${units[index]}`;
+}
+
+function formatFileCount(count) {
+  const total = Math.max(0, Number(count) || 0);
+  return `${total} file${total === 1 ? '' : 's'}`;
+}
+
+function toBarWidthPercent(percent) {
+  const value = Number(percent) || 0;
+  if (value <= 0) {
+    return 0;
+  }
+  return Math.max(6, Math.min(100, Math.round(value * 100)));
+}
 
 function toAvatarExtension(file = {}) {
   const fromName = String(file?.name || '').match(/\.([a-z0-9]{2,5})$/i);
@@ -130,20 +266,41 @@ const SettingsScreen = () => {
   const [autoConvertAacToMp3, setAutoConvertAacToMp3] = useState(false);
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [highQualityStreaming, setHighQualityStreaming] = useState(false);
   const [darkModeEnabled] = useState(true);
-  const [showLyrics, setShowLyrics] = useState(true);
+  const [storageUsageExpanded, setStorageUsageExpanded] = useState(false);
+  const [storageUsageLoading, setStorageUsageLoading] = useState(false);
+  const [storageUsageError, setStorageUsageError] = useState('');
+  const [storageUsageTotalBytes, setStorageUsageTotalBytes] = useState(0);
+  const [storageUsageTotalFiles, setStorageUsageTotalFiles] = useState(0);
+  const [storageUsageUpdatedAt, setStorageUsageUpdatedAt] = useState(0);
+  const [storageUsageBreakdown, setStorageUsageBreakdown] = useState([]);
+  const [privacyPolicyExpanded, setPrivacyPolicyExpanded] = useState(false);
 
-  const [cacheStatusSubtitle, setCacheStatusSubtitle] = useState(
-    'Frees up temporary storage',
-  );
-
-  const clearCacheTimerRef = useRef(null);
   const nameInputRef = useRef(null);
   const locationInputRef = useRef(null);
+  const storageUsageRequestRef = useRef(0);
 
   const editingName = activeInput === 'name';
   const editingLocation = activeInput === 'location';
+  const storageUsageSubtitle = useMemo(() => {
+    if (storageUsageLoading) {
+      return 'Calculating file usage...';
+    }
+    if (storageUsageError) {
+      return 'Could not read storage usage';
+    }
+    if (storageUsageTotalFiles <= 0) {
+      return 'No local music files indexed yet';
+    }
+    const totalBytesLabel = formatStorageBytes(storageUsageTotalBytes);
+    const totalFilesLabel = formatFileCount(storageUsageTotalFiles);
+    return `${totalBytesLabel} across ${totalFilesLabel}`;
+  }, [
+    storageUsageError,
+    storageUsageLoading,
+    storageUsageTotalBytes,
+    storageUsageTotalFiles,
+  ]);
 
   const onAvatarChange = useCallback(nextAvatarDataUri => {
     const normalizedAvatar = String(nextAvatarDataUri || '').trim();
@@ -300,15 +457,146 @@ const SettingsScreen = () => {
     }
   }, [displayName, downloadLocation, editingLocation, persistDownloadLocation]);
 
-  const clearCacheFeedback = useCallback(() => {
-    setCacheStatusSubtitle('Cache cleared \u2713');
-    if (clearCacheTimerRef.current) {
-      clearTimeout(clearCacheTimerRef.current);
+  const loadStorageUsage = useCallback(async () => {
+    const requestId = storageUsageRequestRef.current + 1;
+    storageUsageRequestRef.current = requestId;
+    setStorageUsageLoading(true);
+    setStorageUsageError('');
+    try {
+      const library = await storageService.getLocalLibrary();
+      const songs = Array.isArray(library) ? library : [];
+      const usageByFormat = new Map();
+      const unresolvedSongs = [];
+
+      songs.forEach(song => {
+        const format = normalizeFormatLabel(getExtensionFromSong(song));
+        const current = usageByFormat.get(format) || {
+          format,
+          bytes: 0,
+          count: 0,
+        };
+        current.count += 1;
+        const knownSize = Math.max(0, Number(song?.fileSizeBytes) || 0);
+        if (knownSize > 0) {
+          current.bytes += knownSize;
+        } else {
+          const path = storageService.resolveSongLocalPath(song);
+          if (path) {
+            unresolvedSongs.push({format, path});
+          }
+        }
+        usageByFormat.set(format, current);
+      });
+
+      const STAT_BATCH_SIZE = 8;
+      for (
+        let index = 0;
+        index < unresolvedSongs.length;
+        index += STAT_BATCH_SIZE
+      ) {
+        const batch = unresolvedSongs.slice(index, index + STAT_BATCH_SIZE);
+        const stats = await Promise.all(
+          batch.map(async entry => {
+            const stat = await RNFS.stat(entry.path).catch(() => null);
+            return {
+              format: entry.format,
+              bytes: Math.max(0, Number(stat?.size) || 0),
+            };
+          }),
+        );
+
+        stats.forEach(statEntry => {
+          if (!statEntry.bytes) {
+            return;
+          }
+          const target = usageByFormat.get(statEntry.format);
+          if (target) {
+            target.bytes += statEntry.bytes;
+          }
+        });
+      }
+
+      const usageItems = Array.from(usageByFormat.values()).filter(
+        item => item.count > 0,
+      );
+      usageItems.sort(
+        (left, right) =>
+          right.bytes - left.bytes ||
+          right.count - left.count ||
+          left.format.localeCompare(right.format),
+      );
+
+      const totalBytes = usageItems.reduce(
+        (sum, item) => sum + (Number(item.bytes) || 0),
+        0,
+      );
+      const totalFiles = usageItems.reduce(
+        (sum, item) => sum + (Number(item.count) || 0),
+        0,
+      );
+
+      const breakdown = usageItems.map((item, index) => ({
+        ...item,
+        percent:
+          totalBytes > 0 ? Math.max(0, Number(item.bytes) / totalBytes) : 0,
+        color:
+          STORAGE_USAGE_BAR_COLORS[index % STORAGE_USAGE_BAR_COLORS.length],
+      }));
+
+      if (storageUsageRequestRef.current !== requestId) {
+        return;
+      }
+      setStorageUsageBreakdown(breakdown);
+      setStorageUsageTotalBytes(totalBytes);
+      setStorageUsageTotalFiles(totalFiles);
+      setStorageUsageUpdatedAt(Date.now());
+    } catch (error) {
+      if (storageUsageRequestRef.current !== requestId) {
+        return;
+      }
+      setStorageUsageError('Could not calculate usage from local library.');
+    } finally {
+      if (storageUsageRequestRef.current === requestId) {
+        setStorageUsageLoading(false);
+      }
     }
-    clearCacheTimerRef.current = setTimeout(() => {
-      setCacheStatusSubtitle('Frees up temporary storage');
-      clearCacheTimerRef.current = null;
-    }, 2000);
+  }, []);
+
+  const toggleStorageUsageExpanded = useCallback(() => {
+    const nextExpanded = !storageUsageExpanded;
+    setStorageUsageExpanded(nextExpanded);
+    if (nextExpanded) {
+      setPrivacyPolicyExpanded(false);
+    }
+    if (!nextExpanded) {
+      return;
+    }
+    const staleByTime =
+      Date.now() - storageUsageUpdatedAt > STORAGE_USAGE_STALE_MS;
+    const hasNoData = storageUsageTotalFiles <= 0 && !storageUsageError;
+    if (
+      !storageUsageLoading &&
+      (staleByTime || hasNoData || storageUsageError)
+    ) {
+      loadStorageUsage();
+    }
+  }, [
+    loadStorageUsage,
+    storageUsageError,
+    storageUsageExpanded,
+    storageUsageLoading,
+    storageUsageTotalFiles,
+    storageUsageUpdatedAt,
+  ]);
+
+  const togglePrivacyPolicyExpanded = useCallback(() => {
+    setPrivacyPolicyExpanded(current => {
+      const nextExpanded = !current;
+      if (nextExpanded) {
+        setStorageUsageExpanded(false);
+      }
+      return nextExpanded;
+    });
   }, []);
 
   useEffect(() => {
@@ -325,9 +613,7 @@ const SettingsScreen = () => {
 
   useEffect(
     () => () => {
-      if (clearCacheTimerRef.current) {
-        clearTimeout(clearCacheTimerRef.current);
-      }
+      storageUsageRequestRef.current += 1;
     },
     [],
   );
@@ -515,17 +801,6 @@ const SettingsScreen = () => {
             }
           />
           <SettingsRow
-            icon="music-note-eighth"
-            title="High Quality Streaming"
-            subtitle="Uses more data on mobile"
-            rightElement={
-              <ToggleSwitch
-                value={highQualityStreaming}
-                onValueChange={setHighQualityStreaming}
-              />
-            }
-          />
-          <SettingsRow
             icon="theme-light-dark"
             title="Dark Mode"
             subtitle="Always on"
@@ -537,14 +812,6 @@ const SettingsScreen = () => {
               />
             }
             disabled
-          />
-          <SettingsRow
-            icon="script-text-outline"
-            title="Show Lyrics"
-            subtitle="Display lyrics when available"
-            rightElement={
-              <ToggleSwitch value={showLyrics} onValueChange={setShowLyrics} />
-            }
             isLast
           />
         </SettingsSection>
@@ -563,25 +830,105 @@ const SettingsScreen = () => {
           <SettingsRow
             icon="database-outline"
             title="Storage Used"
-            subtitle="2.4 GB of music cached locally"
+            subtitle={storageUsageSubtitle}
+            onPress={toggleStorageUsageExpanded}
+            rightElement={
+              <Icon
+                name={storageUsageExpanded ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={C.textDeep}
+              />
+            }
           />
-          <SettingsRow
-            icon="delete-sweep-outline"
-            title="Clear Cache"
-            subtitle={cacheStatusSubtitle}
-            onPress={clearCacheFeedback}
-            showChevron
-          />
+          {storageUsageExpanded ? (
+            <View style={styles.storageUsageDropdown}>
+              {storageUsageLoading ? (
+                <View style={styles.storageUsageLoadingWrap}>
+                  <ActivityIndicator size="small" color={C.accentFg} />
+                  <Text style={styles.storageUsageLoadingText}>
+                    Reading local library usage...
+                  </Text>
+                </View>
+              ) : null}
+              {!storageUsageLoading && storageUsageError ? (
+                <Text style={styles.storageUsageErrorText}>
+                  {storageUsageError}
+                </Text>
+              ) : null}
+              {!storageUsageLoading &&
+              !storageUsageError &&
+              storageUsageBreakdown.length === 0 ? (
+                <Text style={styles.storageUsageEmptyText}>
+                  No indexed audio files available.
+                </Text>
+              ) : null}
+              {!storageUsageLoading && !storageUsageError
+                ? storageUsageBreakdown.map(item => {
+                    const itemMeta = `${formatStorageBytes(
+                      item.bytes,
+                    )} \u2022 ${formatFileCount(item.count)}`;
+                    return (
+                      <View key={item.format} style={styles.storageUsageItem}>
+                        <View style={styles.storageUsageItemHeader}>
+                          <Text style={styles.storageUsageFormatText}>
+                            {item.format}
+                          </Text>
+                          <Text style={styles.storageUsageItemMetaText}>
+                            {itemMeta}
+                          </Text>
+                        </View>
+                        <View style={styles.storageUsageBarTrack}>
+                          <View
+                            style={[
+                              styles.storageUsageBarFill,
+                              {
+                                width: `${toBarWidthPercent(item.percent)}%`,
+                                backgroundColor: item.color,
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    );
+                  })
+                : null}
+            </View>
+          ) : null}
           <SettingsRow
             icon="shield-lock-outline"
             title="Privacy Policy"
             subtitle="View our data & privacy terms"
-            onPress={() => {
-              console.log('Privacy Policy tapped');
-            }}
-            showChevron
-            isLast
+            onPress={togglePrivacyPolicyExpanded}
+            rightElement={
+              <Icon
+                name={privacyPolicyExpanded ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={C.textDeep}
+              />
+            }
+            isLast={!privacyPolicyExpanded}
           />
+          {privacyPolicyExpanded ? (
+            <View style={styles.privacyPolicyDropdown}>
+              <Text style={styles.privacyPolicyIntro}>
+                We use only the permissions required for playback, import, and
+                downloading.
+              </Text>
+              <Text style={styles.privacyPolicyLastUpdated}>
+                Last updated: March 3, 2026
+              </Text>
+              {PRIVACY_POLICY_ITEMS.map(item => (
+                <View key={item.heading} style={styles.privacyPolicyItem}>
+                  <Text style={styles.privacyPolicyItemHeading}>
+                    {item.heading}
+                  </Text>
+                  <Text style={styles.privacyPolicyItemDetails}>
+                    {item.details}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
         </SettingsSection>
       </ScrollView>
     </View>

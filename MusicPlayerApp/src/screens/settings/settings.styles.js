@@ -258,6 +258,90 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  storageUsageDropdown: {
+    borderTopWidth: 1,
+    borderTopColor: C.borderDim,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#140d2a',
+  },
+  storageUsageLoadingWrap: {
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  storageUsageLoadingText: {
+    marginLeft: 8,
+    color: C.textMute,
+    fontSize: 11,
+  },
+  storageUsageErrorText: {
+    color: '#fca5a5',
+    fontSize: 11,
+  },
+  storageUsageEmptyText: {
+    color: C.textMute,
+    fontSize: 11,
+  },
+  storageUsageItem: {
+    marginTop: 10,
+  },
+  storageUsageItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  storageUsageFormatText: {
+    color: C.text,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  storageUsageItemMetaText: {
+    color: C.textMute,
+    fontSize: 11,
+    marginLeft: 12,
+  },
+  storageUsageBarTrack: {
+    marginTop: 6,
+    height: 6,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: '#2a1d49',
+  },
+  storageUsageBarFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  privacyPolicyDropdown: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#140d2a',
+  },
+  privacyPolicyIntro: {
+    color: C.textMute,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  privacyPolicyLastUpdated: {
+    marginTop: 6,
+    color: C.textDeep,
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  privacyPolicyItem: {
+    marginTop: 10,
+  },
+  privacyPolicyItemHeading: {
+    color: C.text,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  privacyPolicyItemDetails: {
+    marginTop: 3,
+    color: C.textMute,
+    fontSize: 11,
+    lineHeight: 16,
+  },
 });
 
 export default styles;
