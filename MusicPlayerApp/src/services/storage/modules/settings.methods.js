@@ -38,6 +38,8 @@ export const settingsMethods = {
       serverUrl: '',
       autoDownload: false,
       theme: 'dark',
+      autoContinueEnabled: true,
+      loopLibraryPlaylistEnabled: false,
       downloadSetting: 'Hi-Res',
       convertAacToMp3: false,
       downloadSaveLocation: defaultDownloadSaveLocation,
@@ -165,6 +167,9 @@ export const settingsMethods = {
       normalized.downloadSaveLocation =
         normalizeFileSourcePath(normalized.downloadSaveLocation) ||
         this.getPreferredMusicDir();
+      normalized.autoContinueEnabled = normalized.autoContinueEnabled !== false;
+      normalized.loopLibraryPlaylistEnabled =
+        normalized.loopLibraryPlaylistEnabled === true;
       normalized.fileSources = this.normalizeFileSources(
         normalized.fileSources,
       );

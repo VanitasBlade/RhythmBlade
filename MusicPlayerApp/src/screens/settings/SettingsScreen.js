@@ -1,7 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
-  Animated,
-  Easing,
   Image,
   ScrollView,
   Switch,
@@ -12,7 +10,6 @@ import {
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import RNFS from 'react-native-fs';
-import Slider from '@react-native-community/slider';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import storageService from '../../services/storage/StorageService';
@@ -22,9 +19,8 @@ import {
   toPathFromUri,
 } from '../../services/storage/storage.helpers';
 import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
+import PlaybackSettingsSection from './components/PlaybackSettingsSection';
 import styles from './settings.styles';
-
-const CROSSFade_EXPANDED_MAX_HEIGHT = 56;
 const PROFILE_AVATAR_DIR = `${RNFS.DocumentDirectoryPath}/profile`;
 
 function toAvatarExtension(file = {}) {
@@ -131,12 +127,6 @@ const SettingsScreen = () => {
   );
   const [locationDraft, setLocationDraft] = useState(defaultDownloadLocation);
 
-  const [autoPlay, setAutoPlay] = useState(true);
-  const [normalizeVolume, setNormalizeVolume] = useState(true);
-  const [crossfadeEnabled, setCrossfadeEnabled] = useState(false);
-  const [crossfadeDuration, setCrossfadeDuration] = useState(5);
-  const [shuffleByDefault, setShuffleByDefault] = useState(false);
-
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [highQualityStreaming, setHighQualityStreaming] = useState(false);
   const [darkModeEnabled] = useState(true);
@@ -149,7 +139,6 @@ const SettingsScreen = () => {
   const clearCacheTimerRef = useRef(null);
   const nameInputRef = useRef(null);
   const locationInputRef = useRef(null);
-  const crossfadeExpandAnim = useRef(new Animated.Value(0)).current;
 
   const editingName = activeInput === 'name';
   const editingLocation = activeInput === 'location';
@@ -294,15 +283,6 @@ const SettingsScreen = () => {
     }
   }, [editingLocation]);
 
-  useEffect(() => {
-    Animated.timing(crossfadeExpandAnim, {
-      toValue: crossfadeEnabled ? CROSSFade_EXPANDED_MAX_HEIGHT : 0,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [crossfadeEnabled, crossfadeExpandAnim]);
-
   useEffect(
     () => () => {
       if (clearCacheTimerRef.current) {
@@ -337,16 +317,6 @@ const SettingsScreen = () => {
       active = false;
     };
   }, [defaultDownloadLocation]);
-
-  const crossfadeOpacity = useMemo(
-    () =>
-      crossfadeExpandAnim.interpolate({
-        inputRange: [0, CROSSFade_EXPANDED_MAX_HEIGHT],
-        outputRange: [0, 1],
-        extrapolate: 'clamp',
-      }),
-    [crossfadeExpandAnim],
-  );
 
   return (
     <View style={styles.container}>
@@ -455,79 +425,11 @@ const SettingsScreen = () => {
           ) : null}
         </SettingsSection>
 
-        <SettingsSection title="PLAYBACK">
-          <SettingsRow
-            icon="play-circle-outline"
-            title="Auto-play"
-            subtitle="Continue playing after queue ends"
-            rightElement={
-              <ToggleSwitch value={autoPlay} onValueChange={setAutoPlay} />
-            }
-          />
-          <SettingsRow
-            icon="volume-high"
-            title="Normalize Volume"
-            subtitle="Balance loudness across tracks"
-            rightElement={
-              <ToggleSwitch
-                value={normalizeVolume}
-                onValueChange={setNormalizeVolume}
-              />
-            }
-          />
-          <SettingsRow
-            icon="transition"
-            title="Crossfade"
-            subtitle="Smooth transition between tracks"
-            rightElement={
-              <ToggleSwitch
-                value={crossfadeEnabled}
-                onValueChange={setCrossfadeEnabled}
-              />
-            }
-            isLast={!crossfadeEnabled}
-          />
-          <Animated.View
-            style={[
-              styles.crossfadeExpandWrap,
-              crossfadeEnabled
-                ? styles.crossfadeExpandWrapOpen
-                : styles.crossfadeExpandWrapClosed,
-              {
-                maxHeight: crossfadeExpandAnim,
-                opacity: crossfadeOpacity,
-              },
-            ]}>
-            <View style={styles.crossfadeExpandContent}>
-              <Slider
-                minimumValue={1}
-                maximumValue={12}
-                step={1}
-                value={crossfadeDuration}
-                onValueChange={setCrossfadeDuration}
-                minimumTrackTintColor={C.accent}
-                maximumTrackTintColor={C.border}
-                thumbTintColor={C.accentFg}
-                style={styles.crossfadeSlider}
-              />
-              <Text style={styles.crossfadeDurationText}>
-                {crossfadeDuration}s
-              </Text>
-            </View>
-          </Animated.View>
-          <SettingsRow
-            icon="shuffle-variant"
-            title="Shuffle by default"
-            subtitle="Start every session in shuffle mode"
-            rightElement={
-              <ToggleSwitch
-                value={shuffleByDefault}
-                onValueChange={setShuffleByDefault}
-              />
-            }
-            isLast
-          />
-        </SettingsSection>
+        <PlaybackSettingsSection
+          SectionComponent={SettingsSection}
+          RowComponent={SettingsRow}
+          ToggleComponent={ToggleSwitch}
+        />
 
         <SettingsSection title="APP">
           <SettingsRow

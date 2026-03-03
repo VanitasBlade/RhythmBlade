@@ -322,6 +322,19 @@ const NowPlayingScreen = ({ navigation, route }) => {
     refreshFavoriteState();
   }, [refreshFavoriteState]);
 
+  useEffect(() => {
+    const unsubscribe = playbackService.subscribeAutoContinueStop(() => {
+      if (navigation?.canGoBack?.()) {
+        navigation.goBack();
+        return;
+      }
+      navigation?.navigate?.('MainTabs');
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [navigation]);
+
   useFocusEffect(
     useCallback(() => {
       syncRepeatMode();

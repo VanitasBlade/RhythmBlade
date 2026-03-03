@@ -31,10 +31,13 @@ const MiniPlayer = () => {
   const { position, duration } = useProgress(500);
   const [displayTrack, setDisplayTrack] = useState(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [hiddenByAutoContinueStop, setHiddenByAutoContinueStop] =
+    useState(false);
 
   const artworkCacheRef = useRef({ trackKey: '', uri: '' });
   const displayTrackRef = useRef(null);
   const hideTimerRef = useRef(null);
+  const previousPlaybackStateRef = useRef(playbackState?.state);
 
   useEffect(() => {
     const nextKey = getTrackKey(track);
@@ -97,6 +100,26 @@ const MiniPlayer = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = playbackService.subscribeAutoContinueStop(() => {
+      setHiddenByAutoContinueStop(true);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    const currentState = playbackState?.state;
+    const previousState = previousPlaybackStateRef.current;
+    const becamePlaying =
+      currentState === State.Playing && previousState !== State.Playing;
+    if (hiddenByAutoContinueStop && becamePlaying) {
+      setHiddenByAutoContinueStop(false);
+    }
+    previousPlaybackStateRef.current = currentState;
+  }, [hiddenByAutoContinueStop, playbackState?.state]);
+
   const displayArtworkUri = useMemo(() => {
     const key = getTrackKey(displayTrack);
     const uri = String(displayTrack?.artwork || '').trim();
@@ -127,7 +150,7 @@ const MiniPlayer = () => {
   const skipToNext = useCallback(() => playbackService.skipToNext(), []);
   const skipToPrevious = useCallback(() => playbackService.skipToPrevious(), []);
 
-  if (!displayTrack) {
+  if (!displayTrack || hiddenByAutoContinueStop) {
     return null;
   }
 

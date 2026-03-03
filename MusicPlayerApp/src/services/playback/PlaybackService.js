@@ -1,4 +1,8 @@
-import TrackPlayer, {Capability, Event, RepeatMode} from 'react-native-track-player';
+import TrackPlayer, {
+  Capability,
+  Event,
+  RepeatMode,
+} from 'react-native-track-player';
 import {
   canExtractEmbeddedArtwork,
   extractEmbeddedArtworkDataUri,
@@ -165,6 +169,14 @@ class PlaybackService {
     this.metadataSubscriptions = [];
     this.artworkFallbackInFlight = new Set();
     this.artworkFallbackAttemptAt = new Map();
+    this.autoContinueStopListeners = new Set();
+    this.autoContinueEnabled = true;
+    this.autoContinueInterceptionInFlight = false;
+    this.autoContinueGuardUntil = 0;
+    this.metadataSuppressedUntil = 0;
+    this.loopLibraryPlaylistEnabled = false;
+    this.loopRestartInFlight = false;
+    this.loopRestartGuardUntil = 0;
     this.repeatMode = null;
     this.loopBehavior = 'off';
     this.shuffleState = {
@@ -183,6 +195,212 @@ class PlaybackService {
 
   getLoopBehavior() {
     return this.loopBehavior;
+  }
+
+  setAutoContinueEnabled(enabled) {
+    this.autoContinueEnabled = enabled !== false;
+    return this.autoContinueEnabled;
+  }
+
+  isAutoContinueEnabled() {
+    return this.autoContinueEnabled !== false;
+  }
+
+  setLoopLibraryPlaylistEnabled(enabled) {
+    this.loopLibraryPlaylistEnabled = enabled === true;
+    return this.loopLibraryPlaylistEnabled;
+  }
+
+  isLoopLibraryPlaylistEnabled() {
+    return this.loopLibraryPlaylistEnabled === true;
+  }
+
+  subscribeAutoContinueStop(listener) {
+    if (typeof listener !== 'function') {
+      return () => {};
+    }
+    this.autoContinueStopListeners.add(listener);
+    return () => {
+      this.autoContinueStopListeners.delete(listener);
+    };
+  }
+
+  emitAutoContinueStop(payload = {}) {
+    const listeners = Array.from(this.autoContinueStopListeners);
+    for (let index = 0; index < listeners.length; index += 1) {
+      try {
+        listeners[index](payload);
+      } catch (error) {
+        // Ignore listener errors.
+      }
+    }
+  }
+
+  async loadAutoContinueSetting() {
+    try {
+      const settings = await storageService.getSettings();
+      const enabled = settings?.autoContinueEnabled !== false;
+      this.setAutoContinueEnabled(enabled);
+      return enabled;
+    } catch (error) {
+      console.error('Error loading auto-continue setting:', error);
+      this.setAutoContinueEnabled(true);
+      return true;
+    }
+  }
+
+  async loadLoopLibraryPlaylistSetting() {
+    try {
+      const settings = await storageService.getSettings();
+      const enabled = settings?.loopLibraryPlaylistEnabled === true;
+      this.setLoopLibraryPlaylistEnabled(enabled);
+      return enabled;
+    } catch (error) {
+      console.error('Error loading loop library/playlist setting:', error);
+      this.setLoopLibraryPlaylistEnabled(false);
+      return false;
+    }
+  }
+
+  isTrackCompletionTransition(event = {}) {
+    const previousIndex = Number.isInteger(event?.lastIndex)
+      ? Number(event.lastIndex)
+      : null;
+    const nextIndex = Number.isInteger(event?.index)
+      ? Number(event.index)
+      : null;
+    if (
+      previousIndex === null ||
+      nextIndex === null ||
+      previousIndex === nextIndex
+    ) {
+      return false;
+    }
+
+    const lastPosition = Number(event?.lastPosition);
+    if (!Number.isFinite(lastPosition) || lastPosition <= 0) {
+      return false;
+    }
+
+    const duration = coerceDuration(event?.lastTrack?.duration);
+    if (duration <= 0) {
+      return false;
+    }
+
+    return lastPosition >= Math.max(0, duration - 1.1);
+  }
+
+  shouldIgnoreMetadataUpdate() {
+    if (this.isAutoContinueEnabled()) {
+      return false;
+    }
+    return Date.now() < this.metadataSuppressedUntil;
+  }
+
+  metadataLooksLikeActiveTrack(activeTrack = {}, metadata = {}) {
+    const metadataTitle = normalizeMetadataValue(metadata?.title);
+    const metadataArtist = normalizeMetadataValue(metadata?.artist);
+    const metadataAlbum = normalizeMetadataValue(
+      metadata?.albumTitle || metadata?.albumName || metadata?.album,
+    );
+
+    if (!metadataTitle && !metadataArtist && !metadataAlbum) {
+      return true;
+    }
+
+    const activeTitle = normalizeMetadataValue(activeTrack?.title);
+    const activeArtist = normalizeMetadataValue(activeTrack?.artist);
+    const activeAlbum = normalizeMetadataValue(activeTrack?.album);
+    const sameText = (left, right) =>
+      Boolean(left && right && left.toLowerCase() === right.toLowerCase());
+
+    const titleMatches =
+      !metadataTitle || !activeTitle || sameText(metadataTitle, activeTitle);
+    const artistMatches =
+      !metadataArtist ||
+      !activeArtist ||
+      sameText(metadataArtist, activeArtist);
+    const albumMatches =
+      !metadataAlbum || !activeAlbum || sameText(metadataAlbum, activeAlbum);
+    return titleMatches && artistMatches && albumMatches;
+  }
+
+  async enforceAutoContinueDisabled(event = {}) {
+    if (this.isAutoContinueEnabled()) {
+      return;
+    }
+
+    if (this.autoContinueInterceptionInFlight) {
+      return;
+    }
+
+    const now = Date.now();
+    if (this.autoContinueGuardUntil > now) {
+      return;
+    }
+
+    if (!this.isTrackCompletionTransition(event)) {
+      return;
+    }
+
+    const previousIndex = Number.isInteger(event?.lastIndex)
+      ? Number(event.lastIndex)
+      : null;
+    this.autoContinueInterceptionInFlight = true;
+    this.autoContinueGuardUntil = now + 2200;
+    this.metadataSuppressedUntil = now + 3200;
+
+    try {
+      this.emitAutoContinueStop({
+        previousIndex,
+        trigger: 'track-ended',
+      });
+
+      await TrackPlayer.pause().catch(() => null);
+
+      if (previousIndex !== null && previousIndex >= 0) {
+        await TrackPlayer.skip(previousIndex).catch(() => null);
+        await TrackPlayer.seekTo(0).catch(() => null);
+      }
+
+      await TrackPlayer.pause().catch(() => null);
+    } catch (error) {
+      console.error('Error enforcing auto-continue disabled state:', error);
+    } finally {
+      this.autoContinueInterceptionInFlight = false;
+    }
+  }
+
+  async handleQueueEnded() {
+    if (!this.isLoopLibraryPlaylistEnabled()) {
+      return;
+    }
+
+    if (!this.isAutoContinueEnabled()) {
+      return;
+    }
+
+    const now = Date.now();
+    if (this.loopRestartInFlight || this.loopRestartGuardUntil > now) {
+      return;
+    }
+    this.loopRestartInFlight = true;
+    this.loopRestartGuardUntil = now + 2200;
+
+    try {
+      const queue = await TrackPlayer.getQueue().catch(() => []);
+      if (!Array.isArray(queue) || queue.length === 0) {
+        return;
+      }
+
+      await TrackPlayer.skip(0).catch(() => null);
+      await TrackPlayer.seekTo(0).catch(() => null);
+      await TrackPlayer.play().catch(() => null);
+    } catch (error) {
+      console.error('Error looping queue from beginning:', error);
+    } finally {
+      this.loopRestartInFlight = false;
+    }
   }
 
   clearShuffleState() {
@@ -371,6 +589,9 @@ class PlaybackService {
 
   async applyEmbeddedMetadata(metadata = {}) {
     try {
+      if (this.shouldIgnoreMetadataUpdate()) {
+        return;
+      }
       const trackIndex = await TrackPlayer.getActiveTrackIndex();
       if (trackIndex === null || trackIndex === undefined) {
         return;
@@ -387,6 +608,11 @@ class PlaybackService {
       );
       const activeTrack = await TrackPlayer.getActiveTrack().catch(() => null);
       const existingArtwork = normalizeArtworkUri(activeTrack?.artwork);
+      if (
+        !this.metadataLooksLikeActiveTrack(activeTrack || {}, metadata || {})
+      ) {
+        return;
+      }
 
       if (title) {
         patch.title = title;
@@ -507,10 +733,23 @@ class PlaybackService {
 
     const activeTrackChangedSubscription = TrackPlayer.addEventListener(
       Event.PlaybackActiveTrackChanged,
-      () => {
+      event => {
         runDetached(
           () => this.applyArtworkFallbackForActiveTrack(),
           'applying active-track artwork fallback',
+        );
+        this.enforceAutoContinueDisabled(event || {}).catch(error => {
+          console.error('Error enforcing auto-continue behavior:', error);
+        });
+      },
+    );
+
+    const queueEndedSubscription = TrackPlayer.addEventListener(
+      Event.PlaybackQueueEnded,
+      () => {
+        runDetached(
+          () => this.handleQueueEnded(),
+          'handling queue-end loop behavior',
         );
       },
     );
@@ -519,6 +758,7 @@ class PlaybackService {
       commonMetadataSubscription,
       legacyMetadataSubscription,
       activeTrackChangedSubscription,
+      queueEndedSubscription,
     );
   }
 
@@ -550,6 +790,10 @@ class PlaybackService {
         progressUpdateEventInterval: 1,
       });
 
+      await Promise.all([
+        this.loadAutoContinueSetting(),
+        this.loadLoopLibraryPlaylistSetting(),
+      ]);
       this.bindMetadataListeners();
       this.repeatMode = await TrackPlayer.getRepeatMode().catch(() => null);
       this.initialized = true;
@@ -727,7 +971,10 @@ class PlaybackService {
       const currentIndex = Number.isInteger(activeIndex)
         ? Number(activeIndex)
         : 0;
-      const boundedIndex = Math.max(0, Math.min(currentIndex, queue.length - 1));
+      const boundedIndex = Math.max(
+        0,
+        Math.min(currentIndex, queue.length - 1),
+      );
       const upcoming = queue.slice(boundedIndex + 1);
       this.setShuffleState(true, queue);
       if (upcoming.length <= 1) {
@@ -743,10 +990,7 @@ class PlaybackService {
       do {
         shuffledUpcoming = shuffleInPlace([...upcoming]);
         attempts += 1;
-      } while (
-        attempts < 5 &&
-        isSameTrackOrder(shuffledUpcoming, upcoming)
-      );
+      } while (attempts < 5 && isSameTrackOrder(shuffledUpcoming, upcoming));
 
       if (isSameTrackOrder(shuffledUpcoming, upcoming)) {
         return {
@@ -817,7 +1061,10 @@ class PlaybackService {
       const currentIndex = Number.isInteger(activeIndex)
         ? Number(activeIndex)
         : 0;
-      const boundedIndex = Math.max(0, Math.min(currentIndex, queue.length - 1));
+      const boundedIndex = Math.max(
+        0,
+        Math.min(currentIndex, queue.length - 1),
+      );
       const currentTrack = queue[boundedIndex] || null;
       const targetIndex = findTrackIndexByKey(sourceQueue, currentTrack);
       if (targetIndex < 0) {
