@@ -8,6 +8,20 @@ import {MUSIC_HOME_THEME as C} from '../../../theme/musicHomeTheme';
 import styles from '../settings.styles';
 
 const CROSSFADE_EXPANDED_MAX_HEIGHT = 56;
+const CROSSFADE_DURATION_MIN = 1;
+const CROSSFADE_DURATION_MAX = 12;
+const CROSSFADE_DURATION_DEFAULT = 5;
+
+function normalizeCrossfadeDuration(value) {
+  const numeric = Math.round(Number(value));
+  if (!Number.isFinite(numeric)) {
+    return CROSSFADE_DURATION_DEFAULT;
+  }
+  return Math.max(
+    CROSSFADE_DURATION_MIN,
+    Math.min(CROSSFADE_DURATION_MAX, numeric),
+  );
+}
 
 const PlaybackSettingsSection = ({
   SectionComponent,
@@ -18,7 +32,9 @@ const PlaybackSettingsSection = ({
   const [loopLibraryPlaylist, setLoopLibraryPlaylist] = useState(false);
   const [normalizeVolume, setNormalizeVolume] = useState(true);
   const [crossfadeEnabled, setCrossfadeEnabled] = useState(false);
-  const [crossfadeDuration, setCrossfadeDuration] = useState(5);
+  const [crossfadeDuration, setCrossfadeDuration] = useState(
+    CROSSFADE_DURATION_DEFAULT,
+  );
   const [shuffleByDefault, setShuffleByDefault] = useState(false);
   const crossfadeExpandAnim = useRef(new Animated.Value(0)).current;
 
@@ -73,6 +89,60 @@ const PlaybackSettingsSection = ({
     [persistLoopLibraryPlaylistSetting],
   );
 
+  const persistCrossfadeSetting = useCallback(async (enabled, durationSec) => {
+    const normalizedEnabled = enabled === true;
+    const normalizedDuration = normalizeCrossfadeDuration(durationSec);
+    const settings = await storageService.getSettings();
+    await storageService.saveSettings({
+      ...settings,
+      crossfadeEnabled: normalizedEnabled,
+      crossfadeDurationSec: normalizedDuration,
+    });
+    return {
+      crossfadeEnabled: normalizedEnabled,
+      crossfadeDurationSec: normalizedDuration,
+    };
+  }, []);
+
+  const onCrossfadeToggle = useCallback(
+    async nextValue => {
+      const normalizedEnabled = nextValue === true;
+      const normalizedDuration = normalizeCrossfadeDuration(crossfadeDuration);
+      setCrossfadeEnabled(normalizedEnabled);
+      playbackService.setCrossfadeConfig({
+        enabled: normalizedEnabled,
+        durationSeconds: normalizedDuration,
+      });
+      try {
+        await persistCrossfadeSetting(normalizedEnabled, normalizedDuration);
+      } catch (error) {
+        console.error('Could not persist crossfade setting:', error);
+      }
+    },
+    [crossfadeDuration, persistCrossfadeSetting],
+  );
+
+  const onCrossfadeDurationChange = useCallback(nextValue => {
+    setCrossfadeDuration(normalizeCrossfadeDuration(nextValue));
+  }, []);
+
+  const onCrossfadeDurationComplete = useCallback(
+    async nextValue => {
+      const normalizedDuration = normalizeCrossfadeDuration(nextValue);
+      setCrossfadeDuration(normalizedDuration);
+      playbackService.setCrossfadeConfig({
+        enabled: crossfadeEnabled,
+        durationSeconds: normalizedDuration,
+      });
+      try {
+        await persistCrossfadeSetting(crossfadeEnabled, normalizedDuration);
+      } catch (error) {
+        console.error('Could not persist crossfade duration:', error);
+      }
+    },
+    [crossfadeEnabled, persistCrossfadeSetting],
+  );
+
   useEffect(() => {
     let active = true;
     (async () => {
@@ -83,10 +153,20 @@ const PlaybackSettingsSection = ({
         }
         const enabled = settings?.autoContinueEnabled !== false;
         const loopEnabled = settings?.loopLibraryPlaylistEnabled === true;
+        const fadeEnabled = settings?.crossfadeEnabled === true;
+        const fadeDuration = normalizeCrossfadeDuration(
+          settings?.crossfadeDurationSec,
+        );
         setAutoContinueEnabled(enabled);
         setLoopLibraryPlaylist(loopEnabled);
+        setCrossfadeEnabled(fadeEnabled);
+        setCrossfadeDuration(fadeDuration);
         playbackService.setAutoContinueEnabled(enabled);
         playbackService.setLoopLibraryPlaylistEnabled(loopEnabled);
+        playbackService.setCrossfadeConfig({
+          enabled: fadeEnabled,
+          durationSeconds: fadeDuration,
+        });
       } catch (error) {
         console.error('Could not load playback settings:', error);
       }
@@ -165,7 +245,7 @@ const PlaybackSettingsSection = ({
         rightElement={
           <ToggleComponent
             value={crossfadeEnabled}
-            onValueChange={setCrossfadeEnabled}
+            onValueChange={onCrossfadeToggle}
           />
         }
         isLast={!crossfadeEnabled}
@@ -187,7 +267,8 @@ const PlaybackSettingsSection = ({
             maximumValue={12}
             step={1}
             value={crossfadeDuration}
-            onValueChange={setCrossfadeDuration}
+            onValueChange={onCrossfadeDurationChange}
+            onSlidingComplete={onCrossfadeDurationComplete}
             minimumTrackTintColor={C.accent}
             maximumTrackTintColor={C.border}
             thumbTintColor={C.accentFg}

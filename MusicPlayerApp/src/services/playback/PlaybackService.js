@@ -16,6 +16,11 @@ const PLACEHOLDER_VALUES = new Set([
 ]);
 const INLINE_ARTWORK_URI_PREFIX = 'data:image/';
 const ARTWORK_FALLBACK_COOLDOWN_MS = 3000;
+const DEFAULT_PLAYER_VOLUME = 1;
+const VOLUME_RAMP_INTERVAL_MS = 80;
+const MIN_CROSSFADE_DURATION_SECONDS = 1;
+const MAX_CROSSFADE_DURATION_SECONDS = 12;
+const DEFAULT_CROSSFADE_DURATION_SECONDS = 5;
 
 function normalizeText(value) {
   return String(value || '')
@@ -70,6 +75,25 @@ function runDetached(task, label) {
 function coerceDuration(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+}
+
+function clampUnitVolume(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return DEFAULT_PLAYER_VOLUME;
+  }
+  return Math.max(0, Math.min(1, numeric));
+}
+
+function normalizeCrossfadeDurationSeconds(value) {
+  const numeric = Math.round(Number(value));
+  if (!Number.isFinite(numeric)) {
+    return DEFAULT_CROSSFADE_DURATION_SECONDS;
+  }
+  return Math.max(
+    MIN_CROSSFADE_DURATION_SECONDS,
+    Math.min(MAX_CROSSFADE_DURATION_SECONDS, numeric),
+  );
 }
 
 function shuffleInPlace(items = []) {
@@ -177,6 +201,15 @@ class PlaybackService {
     this.loopLibraryPlaylistEnabled = false;
     this.loopRestartInFlight = false;
     this.loopRestartGuardUntil = 0;
+    this.crossfadeEnabled = false;
+    this.crossfadeDurationSeconds = DEFAULT_CROSSFADE_DURATION_SECONDS;
+    this.currentVolumeLevel = DEFAULT_PLAYER_VOLUME;
+    this.volumeRampInterval = null;
+    this.volumeRampToken = 0;
+    this.crossfadeFadeOutTrackIndex = null;
+    this.crossfadePendingFadeIn = false;
+    this.crossfadeFadeOutInProgress = false;
+    this.crossfadeFadeInInProgress = false;
     this.repeatMode = null;
     this.loopBehavior = 'off';
     this.shuffleState = {
@@ -199,11 +232,286 @@ class PlaybackService {
 
   setAutoContinueEnabled(enabled) {
     this.autoContinueEnabled = enabled !== false;
+    if (!this.autoContinueEnabled) {
+      this.resetCrossfadeRuntime({resetVolume: true});
+    }
     return this.autoContinueEnabled;
   }
 
   isAutoContinueEnabled() {
     return this.autoContinueEnabled !== false;
+  }
+
+  setCrossfadeEnabled(enabled) {
+    this.crossfadeEnabled = enabled === true;
+    if (!this.crossfadeEnabled) {
+      this.resetCrossfadeRuntime({resetVolume: true});
+    }
+    return this.crossfadeEnabled;
+  }
+
+  isCrossfadeEnabled() {
+    return this.crossfadeEnabled === true;
+  }
+
+  setCrossfadeDurationSeconds(durationSeconds) {
+    this.crossfadeDurationSeconds =
+      normalizeCrossfadeDurationSeconds(durationSeconds);
+    return this.crossfadeDurationSeconds;
+  }
+
+  getCrossfadeDurationSeconds() {
+    return normalizeCrossfadeDurationSeconds(this.crossfadeDurationSeconds);
+  }
+
+  setCrossfadeConfig(config = {}) {
+    const nextEnabled = config?.enabled === true;
+    const nextDuration = normalizeCrossfadeDurationSeconds(
+      config?.durationSeconds,
+    );
+    this.setCrossfadeDurationSeconds(nextDuration);
+    this.setCrossfadeEnabled(nextEnabled);
+    if (nextEnabled && this.currentVolumeLevel < 0.98) {
+      this.startCrossfadeFadeIn();
+    }
+    return {
+      enabled: this.crossfadeEnabled,
+      durationSeconds: this.crossfadeDurationSeconds,
+    };
+  }
+
+  shouldUseSimpleCrossfade() {
+    return this.isCrossfadeEnabled() && this.isAutoContinueEnabled();
+  }
+
+  stopVolumeRamp() {
+    if (this.volumeRampInterval) {
+      clearInterval(this.volumeRampInterval);
+      this.volumeRampInterval = null;
+    }
+    this.volumeRampToken += 1;
+  }
+
+  setPlayerVolume(level) {
+    const nextLevel = clampUnitVolume(level);
+    if (Math.abs(nextLevel - this.currentVolumeLevel) < 0.005) {
+      return;
+    }
+    this.currentVolumeLevel = nextLevel;
+    if (!this.initialized) {
+      return;
+    }
+    TrackPlayer.setVolume(nextLevel).catch(() => null);
+  }
+
+  runVolumeRamp({targetVolume, durationMs, onComplete = null}) {
+    const fromLevel = clampUnitVolume(this.currentVolumeLevel);
+    const toLevel = clampUnitVolume(targetVolume);
+    const safeDurationMs = Math.max(0, Number(durationMs) || 0);
+    this.stopVolumeRamp();
+
+    if (safeDurationMs <= 0 || Math.abs(toLevel - fromLevel) < 0.01) {
+      this.setPlayerVolume(toLevel);
+      if (typeof onComplete === 'function') {
+        onComplete();
+      }
+      return;
+    }
+
+    const token = this.volumeRampToken;
+    const totalSteps = Math.max(
+      1,
+      Math.ceil(safeDurationMs / VOLUME_RAMP_INTERVAL_MS),
+    );
+    let step = 0;
+    const intervalId = setInterval(() => {
+      if (token !== this.volumeRampToken) {
+        clearInterval(intervalId);
+        if (this.volumeRampInterval === intervalId) {
+          this.volumeRampInterval = null;
+        }
+        return;
+      }
+      step += 1;
+      const progress = Math.min(1, step / totalSteps);
+      const nextLevel = fromLevel + (toLevel - fromLevel) * progress;
+      this.setPlayerVolume(nextLevel);
+      if (progress >= 1) {
+        clearInterval(intervalId);
+        if (this.volumeRampInterval === intervalId) {
+          this.volumeRampInterval = null;
+        }
+        if (typeof onComplete === 'function') {
+          onComplete();
+        }
+      }
+    }, VOLUME_RAMP_INTERVAL_MS);
+    this.volumeRampInterval = intervalId;
+  }
+
+  resetCrossfadeRuntime({resetVolume = false} = {}) {
+    this.crossfadeFadeOutTrackIndex = null;
+    this.crossfadePendingFadeIn = false;
+    this.crossfadeFadeOutInProgress = false;
+    this.crossfadeFadeInInProgress = false;
+    this.stopVolumeRamp();
+    if (resetVolume) {
+      this.setPlayerVolume(DEFAULT_PLAYER_VOLUME);
+    }
+  }
+
+  startCrossfadeFadeOut(remainingSeconds = 0) {
+    if (!this.shouldUseSimpleCrossfade()) {
+      return;
+    }
+    if (this.crossfadeFadeOutInProgress) {
+      return;
+    }
+
+    const requestedDuration = this.getCrossfadeDurationSeconds();
+    const boundedRemaining = Math.max(0.25, Number(remainingSeconds) || 0);
+    const fadeSeconds = Math.max(
+      0.25,
+      Math.min(requestedDuration, boundedRemaining),
+    );
+    this.crossfadeFadeOutInProgress = true;
+    this.crossfadeFadeInInProgress = false;
+    this.runVolumeRamp({
+      targetVolume: 0,
+      durationMs: Math.round(fadeSeconds * 1000),
+      onComplete: () => {
+        this.crossfadeFadeOutInProgress = false;
+      },
+    });
+  }
+
+  startCrossfadeFadeIn() {
+    if (!this.shouldUseSimpleCrossfade()) {
+      if (
+        this.crossfadePendingFadeIn ||
+        this.crossfadeFadeOutInProgress ||
+        this.crossfadeFadeInInProgress ||
+        this.currentVolumeLevel < 0.98
+      ) {
+        this.resetCrossfadeRuntime({resetVolume: true});
+      }
+      return;
+    }
+    if (this.crossfadeFadeInInProgress) {
+      return;
+    }
+
+    this.crossfadePendingFadeIn = false;
+    this.crossfadeFadeOutInProgress = false;
+    this.crossfadeFadeInInProgress = true;
+    this.runVolumeRamp({
+      targetVolume: DEFAULT_PLAYER_VOLUME,
+      durationMs: Math.round(this.getCrossfadeDurationSeconds() * 1000),
+      onComplete: () => {
+        this.crossfadeFadeInInProgress = false;
+      },
+    });
+  }
+
+  handleCrossfadeProgress(event = {}) {
+    if (!this.shouldUseSimpleCrossfade()) {
+      return;
+    }
+
+    const position = Number(event?.position);
+    if (!Number.isFinite(position) || position < 0) {
+      return;
+    }
+    const trackIndex = Number.isInteger(event?.track)
+      ? Number(event.track)
+      : null;
+
+    if (this.crossfadePendingFadeIn && position <= 0.45) {
+      this.startCrossfadeFadeIn();
+      if (trackIndex !== null) {
+        this.crossfadeFadeOutTrackIndex = trackIndex;
+      }
+      return;
+    }
+
+    if (
+      this.crossfadePendingFadeIn ||
+      this.crossfadeFadeOutInProgress ||
+      this.crossfadeFadeInInProgress
+    ) {
+      return;
+    }
+
+    const duration = coerceDuration(event?.duration);
+    if (duration <= 0) {
+      return;
+    }
+    const remaining = duration - position;
+    if (!Number.isFinite(remaining) || remaining <= 0) {
+      return;
+    }
+
+    const fadeWindowSeconds = this.getCrossfadeDurationSeconds();
+    if (remaining > fadeWindowSeconds) {
+      return;
+    }
+
+    if (trackIndex !== null && this.crossfadeFadeOutTrackIndex === trackIndex) {
+      return;
+    }
+
+    this.crossfadePendingFadeIn = true;
+    if (trackIndex !== null) {
+      this.crossfadeFadeOutTrackIndex = trackIndex;
+    }
+    this.startCrossfadeFadeOut(remaining);
+  }
+
+  handleCrossfadeTrackChange(event = {}) {
+    const previousIndex = Number.isInteger(event?.lastIndex)
+      ? Number(event.lastIndex)
+      : null;
+    const nextIndex = Number.isInteger(event?.index)
+      ? Number(event.index)
+      : null;
+
+    if (
+      previousIndex !== null &&
+      nextIndex !== null &&
+      previousIndex !== nextIndex
+    ) {
+      this.crossfadeFadeOutTrackIndex = null;
+    }
+
+    if (!this.shouldUseSimpleCrossfade()) {
+      if (
+        this.crossfadePendingFadeIn ||
+        this.crossfadeFadeOutInProgress ||
+        this.crossfadeFadeInInProgress ||
+        this.currentVolumeLevel < 0.98
+      ) {
+        this.resetCrossfadeRuntime({resetVolume: true});
+      }
+      return;
+    }
+
+    const switchedToAnotherTrack =
+      previousIndex !== null &&
+      nextIndex !== null &&
+      previousIndex !== nextIndex;
+    if (
+      switchedToAnotherTrack &&
+      (this.crossfadePendingFadeIn ||
+        this.crossfadeFadeOutInProgress ||
+        this.currentVolumeLevel < 0.98)
+    ) {
+      this.startCrossfadeFadeIn();
+      return;
+    }
+
+    if (nextIndex === null && !this.isLoopLibraryPlaylistEnabled()) {
+      this.resetCrossfadeRuntime({resetVolume: true});
+    }
   }
 
   setLoopLibraryPlaylistEnabled(enabled) {
@@ -259,6 +567,34 @@ class PlaybackService {
       console.error('Error loading loop library/playlist setting:', error);
       this.setLoopLibraryPlaylistEnabled(false);
       return false;
+    }
+  }
+
+  async loadCrossfadeSetting() {
+    try {
+      const settings = await storageService.getSettings();
+      const enabled = settings?.crossfadeEnabled === true;
+      const durationSeconds = normalizeCrossfadeDurationSeconds(
+        settings?.crossfadeDurationSec,
+      );
+      this.setCrossfadeConfig({
+        enabled,
+        durationSeconds,
+      });
+      return {
+        enabled,
+        durationSeconds,
+      };
+    } catch (error) {
+      console.error('Error loading crossfade setting:', error);
+      this.setCrossfadeConfig({
+        enabled: false,
+        durationSeconds: DEFAULT_CROSSFADE_DURATION_SECONDS,
+      });
+      return {
+        enabled: false,
+        durationSeconds: DEFAULT_CROSSFADE_DURATION_SECONDS,
+      };
     }
   }
 
@@ -364,6 +700,7 @@ class PlaybackService {
       }
 
       await TrackPlayer.pause().catch(() => null);
+      this.resetCrossfadeRuntime({resetVolume: true});
     } catch (error) {
       console.error('Error enforcing auto-continue disabled state:', error);
     } finally {
@@ -372,11 +709,8 @@ class PlaybackService {
   }
 
   async handleQueueEnded() {
-    if (!this.isLoopLibraryPlaylistEnabled()) {
-      return;
-    }
-
-    if (!this.isAutoContinueEnabled()) {
+    if (!this.isLoopLibraryPlaylistEnabled() || !this.isAutoContinueEnabled()) {
+      this.resetCrossfadeRuntime({resetVolume: true});
       return;
     }
 
@@ -390,6 +724,7 @@ class PlaybackService {
     try {
       const queue = await TrackPlayer.getQueue().catch(() => []);
       if (!Array.isArray(queue) || queue.length === 0) {
+        this.resetCrossfadeRuntime({resetVolume: true});
         return;
       }
 
@@ -518,6 +853,7 @@ class PlaybackService {
     if (queueTracks.length === 0) {
       return false;
     }
+    this.resetCrossfadeRuntime({resetVolume: true});
 
     const repeatModeBeforeReset = await this.getRepeatMode();
     this.repeatMode = repeatModeBeforeReset;
@@ -577,6 +913,7 @@ class PlaybackService {
     if (!track) {
       return false;
     }
+    this.resetCrossfadeRuntime({resetVolume: true});
 
     const repeatModeBeforeReset = await this.getRepeatMode();
     this.repeatMode = repeatModeBeforeReset;
@@ -734,6 +1071,7 @@ class PlaybackService {
     const activeTrackChangedSubscription = TrackPlayer.addEventListener(
       Event.PlaybackActiveTrackChanged,
       event => {
+        this.handleCrossfadeTrackChange(event || {});
         runDetached(
           () => this.applyArtworkFallbackForActiveTrack(),
           'applying active-track artwork fallback',
@@ -744,11 +1082,18 @@ class PlaybackService {
       },
     );
 
+    const progressSubscription = TrackPlayer.addEventListener(
+      Event.PlaybackProgressUpdated,
+      event => {
+        this.handleCrossfadeProgress(event || {});
+      },
+    );
+
     const queueEndedSubscription = TrackPlayer.addEventListener(
       Event.PlaybackQueueEnded,
-      () => {
+      event => {
         runDetached(
-          () => this.handleQueueEnded(),
+          () => this.handleQueueEnded(event || {}),
           'handling queue-end loop behavior',
         );
       },
@@ -758,6 +1103,7 @@ class PlaybackService {
       commonMetadataSubscription,
       legacyMetadataSubscription,
       activeTrackChangedSubscription,
+      progressSubscription,
       queueEndedSubscription,
     );
   }
@@ -793,10 +1139,12 @@ class PlaybackService {
       await Promise.all([
         this.loadAutoContinueSetting(),
         this.loadLoopLibraryPlaylistSetting(),
+        this.loadCrossfadeSetting(),
       ]);
       this.bindMetadataListeners();
       this.repeatMode = await TrackPlayer.getRepeatMode().catch(() => null);
       this.initialized = true;
+      await TrackPlayer.setVolume(this.currentVolumeLevel).catch(() => null);
       console.log('TrackPlayer initialized');
     } catch (error) {
       console.error('Error initializing TrackPlayer:', error);
@@ -850,6 +1198,7 @@ class PlaybackService {
 
   async skipToNext() {
     try {
+      this.resetCrossfadeRuntime({resetVolume: true});
       await TrackPlayer.skipToNext();
     } catch (error) {
       console.error('Error skipping to next:', error);
@@ -858,6 +1207,7 @@ class PlaybackService {
 
   async skipToPrevious() {
     try {
+      this.resetCrossfadeRuntime({resetVolume: true});
       await TrackPlayer.skipToPrevious();
     } catch (error) {
       console.error('Error skipping to previous:', error);
@@ -928,6 +1278,7 @@ class PlaybackService {
     try {
       await TrackPlayer.reset();
       this.clearShuffleState();
+      this.resetCrossfadeRuntime({resetVolume: true});
       console.log('Queue reset');
     } catch (error) {
       console.error('Error resetting queue:', error);
@@ -936,6 +1287,7 @@ class PlaybackService {
 
   async skipTo(index) {
     try {
+      this.resetCrossfadeRuntime({resetVolume: true});
       await TrackPlayer.skip(index);
       await TrackPlayer.play();
     } catch (error) {

@@ -13,6 +13,9 @@ import {
 
 const CURSOR_WINDOW_OVERFLOW_PATTERN = /row too big|cursorwindow/i;
 const MAX_PROFILE_AVATAR_VALUE_LENGTH = 8192;
+const MIN_CROSSFADE_DURATION_SEC = 1;
+const MAX_CROSSFADE_DURATION_SEC = 12;
+const DEFAULT_CROSSFADE_DURATION_SEC = 5;
 
 function normalizeProfileAvatarValue(value = '') {
   const normalized = String(value || '').trim();
@@ -23,6 +26,17 @@ function normalizeProfileAvatarValue(value = '') {
     return '';
   }
   return normalized;
+}
+
+function normalizeCrossfadeDurationSec(value) {
+  const numeric = Math.round(Number(value));
+  if (!Number.isFinite(numeric)) {
+    return DEFAULT_CROSSFADE_DURATION_SEC;
+  }
+  return Math.max(
+    MIN_CROSSFADE_DURATION_SEC,
+    Math.min(MAX_CROSSFADE_DURATION_SEC, numeric),
+  );
 }
 
 export const settingsMethods = {
@@ -40,6 +54,8 @@ export const settingsMethods = {
       theme: 'dark',
       autoContinueEnabled: true,
       loopLibraryPlaylistEnabled: false,
+      crossfadeEnabled: false,
+      crossfadeDurationSec: DEFAULT_CROSSFADE_DURATION_SEC,
       downloadSetting: 'Hi-Res',
       convertAacToMp3: false,
       downloadSaveLocation: defaultDownloadSaveLocation,
@@ -129,6 +145,13 @@ export const settingsMethods = {
         ...(parsed || {}),
         fileSources: this.normalizeFileSources(parsed?.fileSources),
       };
+      merged.autoContinueEnabled = merged.autoContinueEnabled !== false;
+      merged.loopLibraryPlaylistEnabled =
+        merged.loopLibraryPlaylistEnabled === true;
+      merged.crossfadeEnabled = merged.crossfadeEnabled === true;
+      merged.crossfadeDurationSec = normalizeCrossfadeDurationSec(
+        merged.crossfadeDurationSec,
+      );
       delete merged.profileAvatarDataUri;
       delete merged.profileAvatarUri;
       return merged;
@@ -170,6 +193,10 @@ export const settingsMethods = {
       normalized.autoContinueEnabled = normalized.autoContinueEnabled !== false;
       normalized.loopLibraryPlaylistEnabled =
         normalized.loopLibraryPlaylistEnabled === true;
+      normalized.crossfadeEnabled = normalized.crossfadeEnabled === true;
+      normalized.crossfadeDurationSec = normalizeCrossfadeDurationSec(
+        normalized.crossfadeDurationSec,
+      );
       normalized.fileSources = this.normalizeFileSources(
         normalized.fileSources,
       );
