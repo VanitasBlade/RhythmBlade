@@ -17,6 +17,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import storageService from '../../services/storage/StorageService';
 import {
+  normalizeFileSourcePath,
   toFileUriFromPath,
   toPathFromUri,
 } from '../../services/storage/storage.helpers';
@@ -117,12 +118,18 @@ const SettingsSection = ({title, children}) => (
 );
 
 const SettingsScreen = () => {
+  const defaultDownloadLocation = useMemo(
+    () => storageService.getPreferredMusicDir(),
+    [],
+  );
   const [avatarDataUri, setAvatarDataUri] = useState('');
   const [displayName, setDisplayName] = useState('Your Name');
   const [nameDraft, setNameDraft] = useState('Your Name');
   const [activeInput, setActiveInput] = useState(null);
-  const [downloadLocation, setDownloadLocation] = useState('/Music/Downloads');
-  const [locationDraft, setLocationDraft] = useState('/Music/Downloads');
+  const [downloadLocation, setDownloadLocation] = useState(
+    defaultDownloadLocation,
+  );
+  const [locationDraft, setLocationDraft] = useState(defaultDownloadLocation);
 
   const [autoPlay, setAutoPlay] = useState(true);
   const [normalizeVolume, setNormalizeVolume] = useState(true);
@@ -201,19 +208,68 @@ const SettingsScreen = () => {
     setActiveInput('name');
   }, [downloadLocation]);
 
-  const saveLocationEdit = useCallback(() => {
-    const nextLocation =
-      String(locationDraft || '').trim() || '/Music/Downloads';
-    setDownloadLocation(nextLocation);
-    setLocationDraft(nextLocation);
-    setActiveInput(current => (current === 'location' ? null : current));
-  }, [locationDraft]);
+  const persistDownloadLocation = useCallback(
+    async nextLocationInput => {
+      const nextLocation =
+        normalizeFileSourcePath(nextLocationInput) || defaultDownloadLocation;
+      const settings = await storageService.getSettings();
+      await storageService.saveSettings({
+        ...settings,
+        downloadSaveLocation: nextLocation,
+      });
+      setDownloadLocation(nextLocation);
+      setLocationDraft(nextLocation);
+      return nextLocation;
+    },
+    [defaultDownloadLocation],
+  );
 
-  const toggleLocationEdit = useCallback(() => {
-    setNameDraft(displayName);
-    setLocationDraft(downloadLocation);
-    setActiveInput(current => (current === 'location' ? null : 'location'));
-  }, [displayName, downloadLocation]);
+  const saveLocationEdit = useCallback(async () => {
+    try {
+      await persistDownloadLocation(locationDraft);
+    } catch (error) {
+      console.error('Could not save download location:', error);
+    } finally {
+      setActiveInput(current => (current === 'location' ? null : current));
+    }
+  }, [locationDraft, persistDownloadLocation]);
+
+  const pickDownloadLocation = useCallback(async () => {
+    if (editingLocation) {
+      setActiveInput(current => (current === 'location' ? null : current));
+      return;
+    }
+
+    if (typeof DocumentPicker.pickDirectory !== 'function') {
+      setNameDraft(displayName);
+      setLocationDraft(downloadLocation);
+      setActiveInput('location');
+      return;
+    }
+
+    try {
+      const pickedDirectory = await DocumentPicker.pickDirectory();
+      const sourceUri =
+        typeof pickedDirectory === 'string'
+          ? pickedDirectory
+          : pickedDirectory?.uri;
+      const resolvedPath = await storageService.resolveDirectoryUriToFilePath(
+        sourceUri,
+        true,
+      );
+      if (!resolvedPath) {
+        throw new Error('Unable to resolve selected folder.');
+      }
+      await persistDownloadLocation(resolvedPath);
+    } catch (error) {
+      if (!DocumentPicker.isCancel(error)) {
+        console.error('Could not pick download location:', error);
+        setNameDraft(displayName);
+        setLocationDraft(downloadLocation);
+        setActiveInput('location');
+      }
+    }
+  }, [displayName, downloadLocation, editingLocation, persistDownloadLocation]);
 
   const clearCacheFeedback = useCallback(() => {
     setCacheStatusSubtitle('Cache cleared \u2713');
@@ -260,11 +316,19 @@ const SettingsScreen = () => {
     let active = true;
     (async () => {
       try {
-        const savedAvatar = await storageService.getProfileAvatar();
+        const [savedAvatar, settings] = await Promise.all([
+          storageService.getProfileAvatar(),
+          storageService.getSettings(),
+        ]);
         if (!active) {
           return;
         }
         setAvatarDataUri(savedAvatar);
+        const savedDownloadLocation =
+          normalizeFileSourcePath(settings?.downloadSaveLocation) ||
+          defaultDownloadLocation;
+        setDownloadLocation(savedDownloadLocation);
+        setLocationDraft(savedDownloadLocation);
       } catch (error) {
         console.error('Could not load profile avatar:', error);
       }
@@ -272,7 +336,7 @@ const SettingsScreen = () => {
     return () => {
       active = false;
     };
-  }, []);
+  }, [defaultDownloadLocation]);
 
   const crossfadeOpacity = useMemo(
     () =>
@@ -358,7 +422,7 @@ const SettingsScreen = () => {
             rightElement={
               <TouchableOpacity
                 activeOpacity={0.75}
-                onPress={toggleLocationEdit}
+                onPress={pickDownloadLocation}
                 style={styles.changeButton}>
                 <Text style={styles.changeButtonText}>
                   {editingLocation ? 'Close' : 'Change'}
@@ -374,7 +438,7 @@ const SettingsScreen = () => {
                 value={locationDraft}
                 onChangeText={setLocationDraft}
                 onSubmitEditing={saveLocationEdit}
-                placeholder="/Music/Downloads"
+                placeholder={defaultDownloadLocation}
                 placeholderTextColor={C.textMute}
                 returnKeyType="done"
                 autoCapitalize="none"

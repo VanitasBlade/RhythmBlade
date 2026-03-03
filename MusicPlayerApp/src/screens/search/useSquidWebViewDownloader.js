@@ -151,6 +151,11 @@ function normalizeSong(item = {}) {
 
 function normalizeResultItem(item, index, fallbackType = 'track') {
   const normalized = normalizeSong(item);
+  const requestIndex = Number.isInteger(item?.requestIndex)
+    ? item.requestIndex
+    : Number.isInteger(item?.index)
+      ? item.index
+      : index;
   const trackPosition = normalizeTrackPositionValue(
     item?.trackPosition || item?.position,
   );
@@ -160,12 +165,14 @@ function normalizeResultItem(item, index, fallbackType = 'track') {
   const downloadButtonSelector = String(
     item?.downloadButtonSelector || '',
   ).trim();
+  const downloadButtonToken = String(item?.downloadButtonToken || '').trim();
   const sourceType = String(item?.sourceType || '')
     .trim()
     .toLowerCase();
 
   return {
     index: Number.isInteger(item?.index) ? item.index : index,
+    ...(Number.isInteger(requestIndex) ? {requestIndex} : null),
     type: String(item?.type || fallbackType || 'track').toLowerCase(),
     title: normalized.title,
     artist: normalized.artist,
@@ -179,6 +186,7 @@ function normalizeResultItem(item, index, fallbackType = 'track') {
     ...(trackPosition ? { trackPosition } : null),
     ...(albumUrl ? { albumUrl } : null),
     ...(downloadButtonSelector ? { downloadButtonSelector } : null),
+    ...(downloadButtonToken ? {downloadButtonToken} : null),
     ...(sourceType ? { sourceType } : null),
   };
 }
@@ -866,7 +874,9 @@ function useSquidWebViewDownloader() {
       const resolvedConvertAacToMp3Enabled = Boolean(convertAacToMp3Enabled);
       const createdAt = Date.now();
       const id = `${createdAt}_${Math.random().toString(36).slice(2, 8)}`;
-      const requestIndex = Number.isInteger(index)
+      const requestIndex = Number.isInteger(song?.requestIndex)
+        ? song.requestIndex
+        : Number.isInteger(index)
         ? index
         : Number.isInteger(song?.index)
           ? song.index

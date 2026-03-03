@@ -31,12 +31,16 @@ export const settingsMethods = {
   },
 
   getDefaultSettings() {
+    const defaultDownloadSaveLocation =
+      normalizeFileSourcePath(this.getPreferredMusicDir()) ||
+      this.getPreferredMusicDir();
     return {
       serverUrl: '',
       autoDownload: false,
       theme: 'dark',
       downloadSetting: 'Hi-Res',
       convertAacToMp3: false,
+      downloadSaveLocation: defaultDownloadSaveLocation,
       fileSources: this.buildDefaultFileSources(),
     };
   },
@@ -158,6 +162,9 @@ export const settingsMethods = {
       }
       delete normalized.profileAvatarDataUri;
       delete normalized.profileAvatarUri;
+      normalized.downloadSaveLocation =
+        normalizeFileSourcePath(normalized.downloadSaveLocation) ||
+        this.getPreferredMusicDir();
       normalized.fileSources = this.normalizeFileSources(
         normalized.fileSources,
       );

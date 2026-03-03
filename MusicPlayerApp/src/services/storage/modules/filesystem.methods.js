@@ -1177,15 +1177,52 @@ export const filesystemMethods = {
 
   async getWritableMusicDir() {
     const fallbackDir = `${this.musicDir}/RhythmBlade`;
+    const fallbackExternalDir = normalizeFileSourcePath(this.rhythmBladeDir);
     await this.ensureDirectory(this.musicDir);
 
-    const hasPermission = await this.requestStoragePermission();
-    if (hasPermission) {
+    let configuredDir = '';
+    try {
+      const settings = await this.getSettings();
+      configuredDir = normalizeFileSourcePath(
+        settings?.downloadSaveLocation || '',
+      );
+    } catch (error) {
+      configuredDir = '';
+    }
+    const preferredDir =
+      configuredDir || fallbackExternalDir || this.rhythmBladeDir;
+
+    const externalBase = normalizeFileSourcePath(
+      this.getExternalStorageBasePath(),
+    );
+    const isAndroidExternalTarget =
+      Platform.OS === 'android' &&
+      externalBase &&
+      normalizeFileSourcePath(preferredDir).startsWith(`${externalBase}/`);
+
+    if (!isAndroidExternalTarget) {
       try {
-        await this.ensureDirectory(this.rhythmBladeDir);
-        return this.rhythmBladeDir;
+        await this.ensureDirectory(preferredDir);
+        return preferredDir;
       } catch (error) {
-        // Fall through to app-internal directory.
+        // Fall through to fallback handling.
+      }
+    } else {
+      const hasPermission = await this.requestStoragePermission();
+      if (hasPermission) {
+        try {
+          await this.ensureDirectory(preferredDir);
+          return preferredDir;
+        } catch (error) {
+          // Fall through to default external then internal fallback.
+        }
+
+        try {
+          await this.ensureDirectory(this.rhythmBladeDir);
+          return this.rhythmBladeDir;
+        } catch (error) {
+          // Fall through to app-internal directory.
+        }
       }
     }
 

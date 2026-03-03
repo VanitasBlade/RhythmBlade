@@ -440,7 +440,6 @@ const SearchScreen = () => {
     activeSearchType,
     closeAlbumView,
     bridgeEnabled,
-    getSearchResultKey,
     query,
     searchSongsFromWebView,
   ]);
@@ -465,8 +464,10 @@ const SearchScreen = () => {
         return { status: 'bridge-disabled' };
       }
 
-      const resolvedIndex = Number.isInteger(item?.index)
-        ? item.index
+      const resolvedIndex = Number.isInteger(item?.requestIndex)
+        ? item.requestIndex
+        : Number.isInteger(item?.index)
+          ? item.index
         : Number.isInteger(index)
           ? index
           : null;

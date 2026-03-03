@@ -787,7 +787,7 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     }
     return source;
   }
-  function parseTrack(btn, index) {
+  function parseTrack(btn, index, requestIndex) {
     var card = cardFromButton(btn);
     if (!card) return null;
 
@@ -864,7 +864,7 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
         "rbdl_" +
         String(Date.now()) +
         "_" +
-        String(index) +
+        String(Number.isInteger(requestIndex) ? requestIndex : index) +
         "_" +
         Math.random().toString(36).slice(2, 8);
       btn.setAttribute("data-rb-download-token", downloadToken);
@@ -876,6 +876,7 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
 
     return {
       index: index,
+      requestIndex: Number.isInteger(requestIndex) ? requestIndex : index,
       type: "track",
       title: title,
       artist: artist || "Unknown",
@@ -911,6 +912,7 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
 
     return {
       index: index,
+      requestIndex: index,
       type: "track",
       title: title,
       artist: artist,
@@ -930,7 +932,7 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     var buttons = getDownloadButtons();
 
     for (var i = 0; i < buttons.length && out.length < 80; i += 1) {
-      var parsed = parseTrack(buttons[i], out.length);
+      var parsed = parseTrack(buttons[i], out.length, i);
       if (!parsed) continue;
 
       if (mode.indexOf("album") === 0) {
@@ -1862,6 +1864,38 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     return -1;
   }
 
+  function normalizeTitleForExactMatch(value, dropParenthetical) {
+    var text = norm(value);
+    if (!text) return "";
+    if (dropParenthetical) {
+      text = text.replace(/\([^)]*\)/g, " ");
+    }
+    return lower(text).replace(/[^a-z0-9]+/g, " ").trim();
+  }
+
+  function titlesMatchStrictly(targetTitle, candidateTitle) {
+    var targetCore = normalizeTitleForExactMatch(targetTitle, true);
+    var candidateCore = normalizeTitleForExactMatch(candidateTitle, true);
+    if (targetCore && candidateCore) {
+      if (
+        targetCore === candidateCore ||
+        targetCore.indexOf(candidateCore) >= 0 ||
+        candidateCore.indexOf(targetCore) >= 0
+      ) {
+        return true;
+      }
+    }
+
+    var targetFull = normalizeTitleForExactMatch(targetTitle, false);
+    var candidateFull = normalizeTitleForExactMatch(candidateTitle, false);
+    if (!targetFull || !candidateFull) return false;
+    return (
+      targetFull === candidateFull ||
+      targetFull.indexOf(candidateFull) >= 0 ||
+      candidateFull.indexOf(targetFull) >= 0
+    );
+  }
+
   function resolveExactTrackCandidate(song) {
     if (!song) return null;
 
@@ -1913,8 +1947,32 @@ const SQUID_BRIDGE_SCRIPT = String.raw`
     if (buttonIndex < 0) {
       buttonIndex = requestedIndex >= 0 ? requestedIndex : 0;
     }
-    var parsed = parseTrack(button, buttonIndex);
+    var parsed = parseTrack(button, buttonIndex, buttonIndex);
     var parsedSong = parsed || song;
+    if (matchType === "exact-index") {
+      var targetTrackId = trackId(song.tidalId || song.url);
+      var parsedTrackId = trackId(parsedSong.tidalId || parsedSong.url);
+      if (targetTrackId && parsedTrackId && targetTrackId !== parsedTrackId) {
+        blog("Exact-index candidate rejected due to track id mismatch", {
+          targetTitle: norm(song.title),
+          matchedTitle: norm(parsedSong.title),
+          requestedIndex: requestedIndex,
+          buttonIndex: buttonIndex,
+        });
+        return null;
+      }
+
+      if (!titlesMatchStrictly(song.title, parsedSong.title)) {
+        blog("Exact-index candidate rejected due to title mismatch", {
+          targetTitle: norm(song.title),
+          matchedTitle: norm(parsedSong.title),
+          matchedArtist: norm(parsedSong.artist),
+          requestedIndex: requestedIndex,
+          buttonIndex: buttonIndex,
+        });
+        return null;
+      }
+    }
     var exactScore = Math.max(2500, score(song, parsedSong) + 900);
     return {
       button: button,
