@@ -126,6 +126,8 @@ const SettingsScreen = () => {
     defaultDownloadLocation,
   );
   const [locationDraft, setLocationDraft] = useState(defaultDownloadLocation);
+  const [autoEnableBridge, setAutoEnableBridge] = useState(true);
+  const [autoConvertAacToMp3, setAutoConvertAacToMp3] = useState(false);
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [highQualityStreaming, setHighQualityStreaming] = useState(false);
@@ -211,6 +213,44 @@ const SettingsScreen = () => {
       return nextLocation;
     },
     [defaultDownloadLocation],
+  );
+
+  const persistDownloadPreferences = useCallback(async updates => {
+    const settings = await storageService.getSettings();
+    await storageService.saveSettings({
+      ...settings,
+      ...(updates || {}),
+    });
+  }, []);
+
+  const onAutoEnableBridgeToggle = useCallback(
+    async nextValue => {
+      const enabled = nextValue !== false;
+      setAutoEnableBridge(enabled);
+      try {
+        await persistDownloadPreferences({
+          autoEnableBridge: enabled,
+        });
+      } catch (error) {
+        console.error('Could not persist auto bridge setting:', error);
+      }
+    },
+    [persistDownloadPreferences],
+  );
+
+  const onAutoConvertAacToMp3Toggle = useCallback(
+    async nextValue => {
+      const enabled = nextValue === true;
+      setAutoConvertAacToMp3(enabled);
+      try {
+        await persistDownloadPreferences({
+          autoConvertAacToMp3: enabled,
+        });
+      } catch (error) {
+        console.error('Could not persist auto AAC conversion setting:', error);
+      }
+    },
+    [persistDownloadPreferences],
   );
 
   const saveLocationEdit = useCallback(async () => {
@@ -307,8 +347,15 @@ const SettingsScreen = () => {
         const savedDownloadLocation =
           normalizeFileSourcePath(settings?.downloadSaveLocation) ||
           defaultDownloadLocation;
+        const savedAutoEnableBridge = settings?.autoEnableBridge !== false;
+        const savedAutoConvertAacToMp3 =
+          typeof settings?.autoConvertAacToMp3 === 'boolean'
+            ? settings.autoConvertAacToMp3
+            : settings?.convertAacToMp3 === true;
         setDownloadLocation(savedDownloadLocation);
         setLocationDraft(savedDownloadLocation);
+        setAutoEnableBridge(savedAutoEnableBridge);
+        setAutoConvertAacToMp3(savedAutoConvertAacToMp3);
       } catch (error) {
         console.error('Could not load profile avatar:', error);
       }
@@ -399,7 +446,6 @@ const SettingsScreen = () => {
                 </Text>
               </TouchableOpacity>
             }
-            isLast={!editingLocation}
           />
           {editingLocation ? (
             <View style={styles.inlineInputWrap}>
@@ -423,6 +469,31 @@ const SettingsScreen = () => {
               </TouchableOpacity>
             </View>
           ) : null}
+          <SettingsRow
+            icon="lan-connect"
+            title="Auto Enable Bridge"
+            subtitle="Automatically enables bridge on start"
+            rightElement={
+              <ToggleSwitch
+                value={autoEnableBridge}
+                onValueChange={onAutoEnableBridgeToggle}
+                disabled={editingLocation}
+              />
+            }
+          />
+          <SettingsRow
+            icon="shuffle-variant"
+            title="Auto Convert AAC -> mp3"
+            subtitle="Default convert to MP3 for AAC downloads"
+            rightElement={
+              <ToggleSwitch
+                value={autoConvertAacToMp3}
+                onValueChange={onAutoConvertAacToMp3Toggle}
+                disabled={editingLocation}
+              />
+            }
+            isLast
+          />
         </SettingsSection>
 
         <PlaybackSettingsSection

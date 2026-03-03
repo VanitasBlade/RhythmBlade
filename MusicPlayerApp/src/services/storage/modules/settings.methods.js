@@ -52,11 +52,14 @@ export const settingsMethods = {
       serverUrl: '',
       autoDownload: false,
       theme: 'dark',
+      autoEnableBridge: true,
       autoContinueEnabled: true,
       loopLibraryPlaylistEnabled: false,
+      shuffleByDefaultEnabled: false,
       crossfadeEnabled: false,
       crossfadeDurationSec: DEFAULT_CROSSFADE_DURATION_SEC,
       downloadSetting: 'Hi-Res',
+      autoConvertAacToMp3: false,
       convertAacToMp3: false,
       downloadSaveLocation: defaultDownloadSaveLocation,
       fileSources: this.buildDefaultFileSources(),
@@ -146,12 +149,19 @@ export const settingsMethods = {
         fileSources: this.normalizeFileSources(parsed?.fileSources),
       };
       merged.autoContinueEnabled = merged.autoContinueEnabled !== false;
+      merged.autoEnableBridge = merged.autoEnableBridge !== false;
       merged.loopLibraryPlaylistEnabled =
         merged.loopLibraryPlaylistEnabled === true;
+      merged.shuffleByDefaultEnabled = merged.shuffleByDefaultEnabled === true;
       merged.crossfadeEnabled = merged.crossfadeEnabled === true;
       merged.crossfadeDurationSec = normalizeCrossfadeDurationSec(
         merged.crossfadeDurationSec,
       );
+      merged.autoConvertAacToMp3 =
+        typeof merged.autoConvertAacToMp3 === 'boolean'
+          ? merged.autoConvertAacToMp3
+          : merged.convertAacToMp3 === true;
+      merged.convertAacToMp3 = merged.convertAacToMp3 === true;
       delete merged.profileAvatarDataUri;
       delete merged.profileAvatarUri;
       return merged;
@@ -191,12 +201,17 @@ export const settingsMethods = {
         normalizeFileSourcePath(normalized.downloadSaveLocation) ||
         this.getPreferredMusicDir();
       normalized.autoContinueEnabled = normalized.autoContinueEnabled !== false;
+      normalized.autoEnableBridge = normalized.autoEnableBridge !== false;
       normalized.loopLibraryPlaylistEnabled =
         normalized.loopLibraryPlaylistEnabled === true;
+      normalized.shuffleByDefaultEnabled =
+        normalized.shuffleByDefaultEnabled === true;
       normalized.crossfadeEnabled = normalized.crossfadeEnabled === true;
       normalized.crossfadeDurationSec = normalizeCrossfadeDurationSec(
         normalized.crossfadeDurationSec,
       );
+      normalized.autoConvertAacToMp3 = normalized.autoConvertAacToMp3 === true;
+      normalized.convertAacToMp3 = normalized.convertAacToMp3 === true;
       normalized.fileSources = this.normalizeFileSources(
         normalized.fileSources,
       );

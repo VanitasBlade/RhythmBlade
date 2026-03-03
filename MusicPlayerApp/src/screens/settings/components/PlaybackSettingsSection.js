@@ -30,7 +30,6 @@ const PlaybackSettingsSection = ({
 }) => {
   const [autoContinueEnabled, setAutoContinueEnabled] = useState(true);
   const [loopLibraryPlaylist, setLoopLibraryPlaylist] = useState(false);
-  const [normalizeVolume, setNormalizeVolume] = useState(true);
   const [crossfadeEnabled, setCrossfadeEnabled] = useState(false);
   const [crossfadeDuration, setCrossfadeDuration] = useState(
     CROSSFADE_DURATION_DEFAULT,
@@ -87,6 +86,30 @@ const PlaybackSettingsSection = ({
       }
     },
     [persistLoopLibraryPlaylistSetting],
+  );
+
+  const persistShuffleByDefaultSetting = useCallback(async enabled => {
+    const normalizedEnabled = enabled === true;
+    const settings = await storageService.getSettings();
+    await storageService.saveSettings({
+      ...settings,
+      shuffleByDefaultEnabled: normalizedEnabled,
+    });
+    return normalizedEnabled;
+  }, []);
+
+  const onShuffleByDefaultToggle = useCallback(
+    async nextValue => {
+      const normalizedEnabled = nextValue === true;
+      setShuffleByDefault(normalizedEnabled);
+      playbackService.setShuffleByDefaultEnabled(normalizedEnabled);
+      try {
+        await persistShuffleByDefaultSetting(normalizedEnabled);
+      } catch (error) {
+        console.error('Could not persist shuffle-by-default setting:', error);
+      }
+    },
+    [persistShuffleByDefaultSetting],
   );
 
   const persistCrossfadeSetting = useCallback(async (enabled, durationSec) => {
@@ -153,16 +176,20 @@ const PlaybackSettingsSection = ({
         }
         const enabled = settings?.autoContinueEnabled !== false;
         const loopEnabled = settings?.loopLibraryPlaylistEnabled === true;
+        const shuffleDefaultEnabled =
+          settings?.shuffleByDefaultEnabled === true;
         const fadeEnabled = settings?.crossfadeEnabled === true;
         const fadeDuration = normalizeCrossfadeDuration(
           settings?.crossfadeDurationSec,
         );
         setAutoContinueEnabled(enabled);
         setLoopLibraryPlaylist(loopEnabled);
+        setShuffleByDefault(shuffleDefaultEnabled);
         setCrossfadeEnabled(fadeEnabled);
         setCrossfadeDuration(fadeDuration);
         playbackService.setAutoContinueEnabled(enabled);
         playbackService.setLoopLibraryPlaylistEnabled(loopEnabled);
+        playbackService.setShuffleByDefaultEnabled(shuffleDefaultEnabled);
         playbackService.setCrossfadeConfig({
           enabled: fadeEnabled,
           durationSeconds: fadeDuration,
@@ -228,17 +255,6 @@ const PlaybackSettingsSection = ({
         }
       />
       <RowComponent
-        icon="volume-high"
-        title="Normalize Volume"
-        subtitle="Balance loudness across tracks"
-        rightElement={
-          <ToggleComponent
-            value={normalizeVolume}
-            onValueChange={setNormalizeVolume}
-          />
-        }
-      />
-      <RowComponent
         icon="transition"
         title="Crossfade"
         subtitle="Smooth transition between tracks"
@@ -284,7 +300,7 @@ const PlaybackSettingsSection = ({
         rightElement={
           <ToggleComponent
             value={shuffleByDefault}
-            onValueChange={setShuffleByDefault}
+            onValueChange={onShuffleByDefaultToggle}
           />
         }
         isLast

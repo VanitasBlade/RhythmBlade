@@ -194,7 +194,9 @@ class PlaybackService {
     this.artworkFallbackInFlight = new Set();
     this.artworkFallbackAttemptAt = new Map();
     this.autoContinueStopListeners = new Set();
+    this.shuffleStateListeners = new Set();
     this.autoContinueEnabled = true;
+    this.shuffleByDefaultEnabled = false;
     this.autoContinueInterceptionInFlight = false;
     this.autoContinueGuardUntil = 0;
     this.metadataSuppressedUntil = 0;
@@ -240,6 +242,42 @@ class PlaybackService {
 
   isAutoContinueEnabled() {
     return this.autoContinueEnabled !== false;
+  }
+
+  setShuffleByDefaultEnabled(enabled) {
+    this.shuffleByDefaultEnabled = enabled === true;
+    return this.shuffleByDefaultEnabled;
+  }
+
+  isShuffleByDefaultEnabled() {
+    return this.shuffleByDefaultEnabled === true;
+  }
+
+  subscribeShuffleState(listener) {
+    if (typeof listener !== 'function') {
+      return () => {};
+    }
+    this.shuffleStateListeners.add(listener);
+    try {
+      listener(this.isShuffleEnabled());
+    } catch (error) {
+      // Ignore listener errors.
+    }
+    return () => {
+      this.shuffleStateListeners.delete(listener);
+    };
+  }
+
+  emitShuffleState() {
+    const listeners = Array.from(this.shuffleStateListeners);
+    const enabled = this.isShuffleEnabled();
+    for (let index = 0; index < listeners.length; index += 1) {
+      try {
+        listeners[index](enabled);
+      } catch (error) {
+        // Ignore listener errors.
+      }
+    }
   }
 
   setCrossfadeEnabled(enabled) {
@@ -557,6 +595,19 @@ class PlaybackService {
     }
   }
 
+  async loadShuffleByDefaultSetting() {
+    try {
+      const settings = await storageService.getSettings();
+      const enabled = settings?.shuffleByDefaultEnabled === true;
+      this.setShuffleByDefaultEnabled(enabled);
+      return enabled;
+    } catch (error) {
+      console.error('Error loading shuffle-by-default setting:', error);
+      this.setShuffleByDefaultEnabled(false);
+      return false;
+    }
+  }
+
   async loadLoopLibraryPlaylistSetting() {
     try {
       const settings = await storageService.getSettings();
@@ -738,24 +789,36 @@ class PlaybackService {
     }
   }
 
-  clearShuffleState() {
+  clearShuffleState(options = {}) {
+    const emit = options?.emit !== false;
+    const wasEnabled = Boolean(this.shuffleState?.enabled);
+    const hadOriginalQueue =
+      Array.isArray(this.shuffleState?.originalQueue) &&
+      this.shuffleState.originalQueue.length > 0;
     this.shuffleState = {
       enabled: false,
       originalQueue: [],
     };
+    if (emit && (wasEnabled || hadOriginalQueue)) {
+      this.emitShuffleState();
+    }
   }
 
   isShuffleEnabled() {
     return Boolean(this.shuffleState?.enabled);
   }
 
-  setShuffleState(enabled, originalQueue = []) {
+  setShuffleState(enabled, originalQueue = [], options = {}) {
+    const emit = options?.emit !== false;
     this.shuffleState = {
       enabled: Boolean(enabled),
       originalQueue: Array.isArray(originalQueue)
         ? originalQueue.map(track => ({...track}))
         : [],
     };
+    if (emit) {
+      this.emitShuffleState();
+    }
   }
 
   normalizeTrackForQueue(track = {}, options = {}) {
@@ -840,9 +903,13 @@ class PlaybackService {
   async playSongs(songs = [], options = {}) {
     const {
       startIndex = 0,
-      shuffleEnabled = false,
+      shuffleEnabled = null,
       shuffleOriginalQueue = null,
     } = options;
+    const shouldShuffle =
+      typeof shuffleEnabled === 'boolean'
+        ? shuffleEnabled
+        : this.isShuffleByDefaultEnabled();
     const boundedIndex = Math.max(
       0,
       Math.min(Number(startIndex) || 0, songs.length - 1),
@@ -893,12 +960,15 @@ class PlaybackService {
       }
     }
 
-    if (shuffleEnabled) {
-      const sourceQueue =
-        Array.isArray(shuffleOriginalQueue) && shuffleOriginalQueue.length
-          ? this.buildQueueTracks(shuffleOriginalQueue)
-          : queueTracks;
-      this.setShuffleState(true, sourceQueue);
+    if (shouldShuffle) {
+      const hasExplicitOriginalQueue =
+        Array.isArray(shuffleOriginalQueue) && shuffleOriginalQueue.length > 0;
+      if (hasExplicitOriginalQueue) {
+        const sourceQueue = this.buildQueueTracks(shuffleOriginalQueue);
+        this.setShuffleState(true, sourceQueue);
+      } else {
+        await this.enableShufflePreservingCurrent();
+      }
     } else {
       this.clearShuffleState();
     }
@@ -1138,6 +1208,7 @@ class PlaybackService {
 
       await Promise.all([
         this.loadAutoContinueSetting(),
+        this.loadShuffleByDefaultSetting(),
         this.loadLoopLibraryPlaylistSetting(),
         this.loadCrossfadeSetting(),
       ]);

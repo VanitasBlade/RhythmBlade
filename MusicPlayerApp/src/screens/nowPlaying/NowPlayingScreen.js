@@ -283,11 +283,13 @@ const NowPlayingScreen = ({ navigation, route }) => {
   }, [displayTrack, progress.duration, progress.position]);
 
   useEffect(() => {
-    const incomingShuffleState = route?.params?.shuffleActive;
-    if (typeof incomingShuffleState === 'boolean') {
-      setShuffleActive(incomingShuffleState);
-    }
-  }, [route?.params?.shuffleActive]);
+    const unsubscribe = playbackService.subscribeShuffleState(enabled => {
+      setShuffleActive(Boolean(enabled));
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (loopMode !== LOOP_MODE.ONE) {

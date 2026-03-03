@@ -39,6 +39,12 @@ const SEARCH_RESULT_ESTIMATED_ITEM_SIZE = 88;
 const QUEUE_ESTIMATED_ITEM_SIZE = 90;
 
 const toComparableNumber = value => Number(value) || 0;
+const resolveAutoConvertAacToMp3Default = settings => {
+  if (typeof settings?.autoConvertAacToMp3 === 'boolean') {
+    return settings.autoConvertAacToMp3;
+  }
+  return settings?.convertAacToMp3 === true;
+};
 
 const areQueueItemsEquivalent = (left, right) => {
   if (left === right) {
@@ -100,6 +106,7 @@ const SearchScreen = () => {
   const pollInFlightRef = useRef(false);
   const persistedJobsRef = useRef(new Set());
   const dismissedDoneJobsRef = useRef(new Set());
+  const downloadDefaultsAppliedRef = useRef(false);
   const activeDownloaderTabRef = useRef('Search');
   const activeQueueCountRef = useRef(0);
   const {
@@ -227,7 +234,19 @@ const SearchScreen = () => {
           applyDownloadSetting(
             settings?.downloadSetting || DEFAULT_DOWNLOAD_SETTING,
           );
-          setConvertAacToMp3(Boolean(settings?.convertAacToMp3));
+          if (!downloadDefaultsAppliedRef.current) {
+            const autoBridgeEnabled = settings?.autoEnableBridge !== false;
+            const autoConvertEnabled =
+              resolveAutoConvertAacToMp3Default(settings);
+            setBridgeEnabled(currentValue => {
+              if (!autoBridgeEnabled && activeQueueCountRef.current > 0) {
+                return currentValue;
+              }
+              return autoBridgeEnabled;
+            });
+            setConvertAacToMp3(autoConvertEnabled);
+            downloadDefaultsAppliedRef.current = true;
+          }
         }
         await refreshQueue();
       };
@@ -341,15 +360,10 @@ const SearchScreen = () => {
     [downloadSetting],
   );
 
-  const toggleConvertAacToMp3 = useCallback(async (nextValue) => {
+  const toggleConvertAacToMp3 = useCallback(nextValue => {
     const enabled = Boolean(nextValue);
     setConvertAacToMp3(enabled);
-    const settings = await storageService.getSettings();
-    await storageService.saveSettings({
-      ...settings,
-      convertAacToMp3: enabled,
-    });
-    syncConvertToMp3FromWebView(enabled).catch(() => { });
+    syncConvertToMp3FromWebView(enabled).catch(() => {});
   }, [syncConvertToMp3FromWebView]);
 
   const toggleBridgeEnabled = useCallback(() => {
