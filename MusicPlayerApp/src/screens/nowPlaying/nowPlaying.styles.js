@@ -102,6 +102,10 @@ const styles = StyleSheet.create({
   playButton: {
     marginHorizontal: 20,
   },
+  shuffleControlIcon: {
+    width: 28,
+    height: 28,
+  },
   bottomActions: {
     flexDirection: 'row',
     justifyContent: 'space-around',

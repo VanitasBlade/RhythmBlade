@@ -36,6 +36,8 @@ const LOOP_MODE = {
   ONE: 'one',
   ALL: 'all',
 };
+const SHUFFLE_ICON_ON = require('../../assets/icons/ic_shuffle_on_player.png');
+const SHUFFLE_ICON_OFF = require('../../assets/icons/ic_shuffle_off_player.png');
 
 function toLoopMode(value) {
   const preferred = playbackService.getLoopBehavior?.();
@@ -240,10 +242,6 @@ const NowPlayingScreen = ({ navigation, route }) => {
   const repeatColor = useMemo(
     () => (loopMode !== LOOP_MODE.OFF ? C.accentFg : C.textDeep),
     [loopMode],
-  );
-  const shuffleIcon = useMemo(
-    () => (shuffleActive ? 'shuffle' : 'shuffle-disabled'),
-    [shuffleActive],
   );
   const shuffleColor = useMemo(
     () => (shuffleActive ? C.accentFg : C.textDeep),
@@ -752,7 +750,11 @@ const NowPlayingScreen = ({ navigation, route }) => {
         </TouchableOpacity>
 
         <TouchableOpacity onPress={shuffleQueue}>
-          <Icon name={shuffleIcon} size={28} color={shuffleColor} />
+          <Image
+            source={shuffleActive ? SHUFFLE_ICON_ON : SHUFFLE_ICON_OFF}
+            style={[styles.shuffleControlIcon, {tintColor: shuffleColor}]}
+            resizeMode="contain"
+          />
         </TouchableOpacity>
       </View>
 
