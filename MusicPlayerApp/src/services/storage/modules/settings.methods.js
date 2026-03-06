@@ -18,12 +18,15 @@ const MIN_CROSSFADE_DURATION_SEC = 1;
 const MAX_CROSSFADE_DURATION_SEC = 12;
 const DEFAULT_CROSSFADE_DURATION_SEC = 5;
 const LIBRARY_PROVIDER_VALUES = new Set([
-  'legacy_fs',
   'media_store',
-  'dual_shadow',
+  'legacy_fs',
 ]);
 
 function normalizeLibraryProvider(value) {
+  if (Platform.OS === 'android') {
+    return 'media_store';
+  }
+
   const candidate = String(value || '')
     .trim()
     .toLowerCase();
@@ -84,6 +87,7 @@ export const settingsMethods = {
       mediaStoreSelectedFoldersOnly: true,
       mediaStoreConsecutiveFailures: 0,
       playlistMediaStoreMigrationDone: false,
+      mediaStoreOnlyMigrationDone: Platform.OS !== 'android',
     };
   },
 
@@ -194,6 +198,8 @@ export const settingsMethods = {
       );
       merged.playlistMediaStoreMigrationDone =
         merged.playlistMediaStoreMigrationDone === true;
+      merged.mediaStoreOnlyMigrationDone =
+        merged.mediaStoreOnlyMigrationDone === true;
       delete merged.profileAvatarDataUri;
       delete merged.profileAvatarUri;
       return merged;
@@ -257,6 +263,8 @@ export const settingsMethods = {
       );
       normalized.playlistMediaStoreMigrationDone =
         normalized.playlistMediaStoreMigrationDone === true;
+      normalized.mediaStoreOnlyMigrationDone =
+        normalized.mediaStoreOnlyMigrationDone === true;
       normalized.fileSources = this.normalizeFileSources(
         normalized.fileSources,
       );
@@ -357,7 +365,6 @@ export const settingsMethods = {
       await AsyncStorage.multiRemove([
         STORAGE_KEYS.LIBRARY,
         STORAGE_KEYS.PLAYLISTS,
-        STORAGE_KEYS.ALBUMS,
         STORAGE_KEYS.LAST_LIBRARY_SYNC_AT,
         STORAGE_KEYS.MEDIASTORE_SYNC_META,
         STORAGE_KEYS.HIDDEN_MEDIASTORE_IDS,

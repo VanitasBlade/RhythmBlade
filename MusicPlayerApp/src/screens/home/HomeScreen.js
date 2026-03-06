@@ -341,9 +341,7 @@ const HomeScreen = ({ navigation }) => {
   const triggerLibrarySync = useCallback(async () => {
     try {
       await storageService.runLibrarySyncInBackground({
-        recursive: true,
         promptForPermission: true,
-        readEmbeddedTextMetadata: true,
       });
     } catch (error) {
       console.error('Manual library sync failed:', error);

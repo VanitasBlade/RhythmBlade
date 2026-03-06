@@ -37,9 +37,7 @@ class StorageService {
     this.libraryCacheUpdatedAt = 0;
     this.libraryReadTask = null;
     this.artworkHydrationTasks = new Map();
-    this.artworkMigrationTask = null;
     this.durationHydrationTasks = new Map();
-    this.durationMigrationTask = null;
     this.librarySyncListeners = new Set();
     this.librarySyncTask = null;
     this.librarySyncState = {
@@ -225,43 +223,45 @@ class StorageService {
     const task = (async () => {
       try {
         const provider = await this.getLibraryProvider();
-        const prefersMediaStore =
+        const canUseMediaStore =
           this.isMediaStoreProvider(provider) &&
           (await this.shouldUseMediaStoreProvider({provider}));
         let summary = null;
 
-        if (prefersMediaStore) {
+        if (!canUseMediaStore) {
+          await this.hydrateLibraryStoreFromDisk();
+          summary = {
+            status: 'skipped',
+            provider: 'media_store',
+            reason: this.mediaStoreSessionFallback
+              ? 'session-fallback'
+              : 'provider-unavailable',
+            totalFiles: this.getLibraryStoreSnapshot().length,
+            importedCount: 0,
+            removedCount: 0,
+            skippedCount: 0,
+            errorCount: 0,
+            removedSongIds: [],
+            removedPathKeys: [],
+            lastSyncedAt: Date.now(),
+          };
+        } else {
           try {
             summary = await this.syncLibraryFromMediaStore(options);
-            if (provider === 'dual_shadow') {
-              this.syncEnabledFileSourcesToLibrary({
-                ...options,
-                promptForPermission: false,
-              })
-                .then(legacySummary => {
-                  const mediaCount = Number(summary?.totalFiles) || 0;
-                  const legacyCount = Number(legacySummary?.totalFiles) || 0;
-                  if (mediaCount !== legacyCount) {
-                    console.log('[MediaStoreShadow] library-count-delta', {
-                      mediaCount,
-                      legacyCount,
-                    });
-                  }
-                })
-                .catch(() => {});
-            }
           } catch (error) {
             await this.onMediaStoreSyncFailure(error, options);
-            summary = await this.syncEnabledFileSourcesToLibrary(options);
-            summary = {
-              ...(summary || {}),
-              provider: 'legacy_fs',
-              fallbackUsed: true,
-              fallbackReason: String(error?.message || error),
-            };
+            throw error;
           }
-        } else {
-          summary = await this.syncEnabledFileSourcesToLibrary(options);
+
+          if (
+            summary?.status === 'unexpected-empty' &&
+            options.launchSync === true
+          ) {
+            await this.onMediaStoreSyncFailure(
+              new Error('MediaStore returned an unexpected empty library result'),
+              options,
+            );
+          }
         }
 
         this.setLibrarySyncState({

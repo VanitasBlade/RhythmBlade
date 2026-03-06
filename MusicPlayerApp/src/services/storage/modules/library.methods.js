@@ -1,9 +1,5 @@
 import RNFS from 'react-native-fs';
 import {
-  canExtractEmbeddedArtwork,
-  extractEmbeddedArtworkDataUri,
-} from '../../artwork/ArtworkService';
-import {
   canExtractEmbeddedDuration,
   extractEmbeddedDurationSeconds,
 } from '../../metadata/DurationService';
@@ -14,15 +10,12 @@ import {
 import {DEFAULT_AUDIO_EXTENSION} from '../storage.constants';
 import {
   getExtensionFromSong,
-  getFileNameFromUriOrPath,
   isUnknownValue,
   parseMetadataFromFilename,
   sanitizeFileSegment,
   toFileUriFromPath,
-  toPathFromUri,
 } from '../storage.helpers';
 
-const DEFAULT_DURATION_MIGRATION_BATCH_SIZE = 10;
 const LIBRARY_CACHE_TTL_MS = 30000;
 
 function resolveMetadataField(candidate, fallback) {
@@ -32,27 +25,6 @@ function resolveMetadataField(candidate, fallback) {
   }
   return text;
 }
-
-
-function toTimestampMs(value) {
-  if (!value) {
-    return 0;
-  }
-
-  if (value instanceof Date) {
-    const time = value.getTime();
-    return Number.isFinite(time) ? time : 0;
-  }
-
-  const numeric = Number(value);
-  if (Number.isFinite(numeric) && numeric > 0) {
-    return numeric < 100000000000 ? Math.round(numeric * 1000) : Math.round(numeric);
-  }
-
-  const parsed = Date.parse(String(value));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 export const libraryMethods = {
   async getLocalLibrary(options = {}) {
     const forceRefresh = Boolean(options?.forceRefresh);
@@ -183,8 +155,7 @@ export const libraryMethods = {
           }
 
           const nextProvider =
-            provider ||
-            (mediaStoreId ? 'media_store' : 'legacy_fs');
+            provider || 'media_store';
           if (provider !== nextProvider) {
             changed = true;
             nextSong = {
@@ -397,154 +368,6 @@ export const libraryMethods = {
     return task;
   },
 
-  async hydrateDurationForLibrary(librarySongs = [], maxSongs = 6) {
-    if (!Array.isArray(librarySongs) || librarySongs.length === 0) {
-      return [];
-    }
-
-    const candidates = librarySongs
-      .filter(song => {
-        const duration = Number(song?.duration) || 0;
-        if (duration > 0) {
-          return false;
-        }
-        const localPath = this.resolveSongLocalPath(song);
-        return Boolean(localPath && canExtractEmbeddedDuration(localPath));
-      })
-      .slice(0, Math.max(0, maxSongs));
-
-    if (candidates.length === 0) {
-      return [];
-    }
-
-    let changed = false;
-    for (const candidate of candidates) {
-      const hydratedDuration = await this.hydrateDurationForSong(candidate, {
-        persist: true,
-      });
-      if (hydratedDuration > 0) {
-        changed = true;
-      }
-
-      // Yield between parsing tasks to keep UI responsive.
-      await new Promise(resolve => setTimeout(resolve, 0));
-    }
-
-    if (!changed) {
-      return [];
-    }
-
-    return this.getLocalLibrary();
-  },
-
-  async migrateAllDurationsNow(options = {}) {
-    if (this.durationMigrationTask) {
-      return this.durationMigrationTask;
-    }
-
-    const {
-      batchSize = DEFAULT_DURATION_MIGRATION_BATCH_SIZE,
-      yieldMs = 0,
-      onlySongIds = null,
-    } = options;
-    const effectiveBatchSize = Math.max(1, Number(batchSize) || 1);
-    const effectiveYieldMs = Math.max(0, Number(yieldMs) || 0);
-    const onlyIdsSet = Array.isArray(onlySongIds)
-      ? new Set(onlySongIds.map(id => String(id || '').trim()).filter(Boolean))
-      : null;
-
-    const task = (async () => {
-      const library = await this.getLocalLibrary({
-        forceRefresh: true,
-      });
-      if (!Array.isArray(library) || library.length === 0) {
-        return {
-          totalSongs: 0,
-          processedCount: 0,
-          updatedCount: 0,
-          skippedCount: 0,
-          errorCount: 0,
-        };
-      }
-
-      const targets = library
-        .map((song, index) => ({song, index}))
-        .filter(({song}) => {
-          const id = String(song?.id || '').trim();
-          if (onlyIdsSet && !onlyIdsSet.has(id)) {
-            return false;
-          }
-
-          const duration = Number(song?.duration) || 0;
-          if (duration > 0) {
-            return false;
-          }
-
-          const localPath = this.resolveSongLocalPath(song);
-          return Boolean(localPath && canExtractEmbeddedDuration(localPath));
-        });
-
-      if (targets.length === 0) {
-        return {
-          totalSongs: library.length,
-          processedCount: 0,
-          updatedCount: 0,
-          skippedCount: 0,
-          errorCount: 0,
-        };
-      }
-
-      let processedCount = 0;
-      let updatedCount = 0;
-      let skippedCount = 0;
-      let errorCount = 0;
-      let changed = false;
-      const nextLibrary = [...library];
-
-      for (const {song, index} of targets) {
-        processedCount += 1;
-        try {
-          const localPath = this.resolveSongLocalPath(song);
-          const duration = await extractEmbeddedDurationSeconds(localPath);
-
-          if (duration > 0) {
-            nextLibrary[index] = {
-              ...song,
-              duration,
-            };
-            updatedCount += 1;
-            changed = true;
-          } else {
-            skippedCount += 1;
-          }
-        } catch (error) {
-          errorCount += 1;
-        }
-
-        if (processedCount % effectiveBatchSize === 0) {
-          await new Promise(resolve => setTimeout(resolve, effectiveYieldMs));
-        }
-      }
-
-      if (changed) {
-        await this.saveLibrarySnapshot(nextLibrary);
-      }
-
-      return {
-        totalSongs: library.length,
-        processedCount,
-        updatedCount,
-        skippedCount,
-        errorCount,
-      };
-    })().finally(() => {
-      this.durationMigrationTask = null;
-    });
-
-    this.durationMigrationTask = task;
-    return task;
-  },
-
   async addToLibrary(song, options = {}) {
     try {
       const summary = await this.upsertLibrarySongs([song], options);
@@ -576,63 +399,6 @@ export const libraryMethods = {
     } catch (error) {
       console.error('Error removing from library:', error);
       return [];
-    }
-  },
-
-  async getAlbums() {
-    try {
-      const library = await this.getLocalLibrary();
-      const albumMap = {};
-
-      library.forEach(song => {
-        if (song.album) {
-          if (!albumMap[song.album]) {
-            albumMap[song.album] = {
-              name: song.album,
-              artist: song.artist,
-              songs: [],
-              artwork: song.artwork,
-            };
-          }
-          albumMap[song.album].songs.push(song);
-        }
-      });
-
-      return Object.values(albumMap);
-    } catch (error) {
-      console.error('Error getting albums:', error);
-      return [];
-    }
-  },
-
-  async saveSongLocally(song, filepath) {
-    try {
-      const dir = await this.getWritableMusicDir();
-      const filename = `${Date.now()}_${song.title.replace(
-        /[^a-z0-9]/gi,
-        '_',
-      )}.flac`;
-      const destPath = `${dir}/${filename}`;
-
-      await RNFS.copyFile(filepath, destPath);
-      const extractedDuration = await extractEmbeddedDurationSeconds(destPath);
-
-      const updatedSong = {
-        ...song,
-        id: Date.now().toString(),
-        url: toFileUriFromPath(destPath),
-        localPath: destPath,
-        sourcePath: this.inferSourcePathFromSong({localPath: destPath}),
-        duration: Number(song?.duration) || extractedDuration,
-        isLocal: true,
-      };
-
-      await this.addToLibrary(updatedSong);
-      console.log('Song saved locally:', filename);
-      return updatedSong;
-    } catch (error) {
-      console.error('Error saving song locally:', error);
-      return null;
     }
   },
 
@@ -821,171 +587,6 @@ export const libraryMethods = {
     await this.addToLibrary(localSong);
     this.hydrateArtworkForSong(localSong, {persist: true}).catch(() => {});
     return localSong;
-  },
-
-  async importLocalAudioFile(file, options = {}) {
-    const {
-      skipArtworkHydration = false,
-      skipDurationHydration = false,
-      persistToLibrary = true,
-      readEmbeddedTextMetadata = true,
-      sourcePath = '',
-      existingSong = null,
-      fileChanged = false,
-    } = options;
-    try {
-      const sourceUri = file?.fileCopyUri || file?.uri;
-      if (!sourceUri) {
-        throw new Error('Invalid file selected');
-      }
-
-      const usesContentUri =
-        sourceUri.startsWith('content://') && !file.fileCopyUri;
-      const initialPath = usesContentUri ? '' : toPathFromUri(sourceUri);
-      let resolvedPath = initialPath;
-      let resolvedUrl = usesContentUri
-        ? sourceUri
-        : toFileUriFromPath(initialPath);
-
-      if (usesContentUri) {
-        const originalPath = await this.resolveContentUriToFilePath(
-          sourceUri,
-          file?.name || '',
-          true,
-        );
-        if (originalPath) {
-          resolvedPath = originalPath;
-          resolvedUrl = toFileUriFromPath(originalPath);
-        }
-      }
-
-      if (resolvedPath) {
-        const sourceExists = await RNFS.exists(resolvedPath);
-        if (!sourceExists) {
-          throw new Error('Selected audio file is not accessible');
-        }
-      }
-
-      const fileStat = resolvedPath
-        ? await RNFS.stat(resolvedPath).catch(() => null)
-        : null;
-      const fileSizeBytes = Number(fileStat?.size) || 0;
-      const fileMtimeMs = toTimestampMs(fileStat?.mtime);
-
-      const originalName =
-        file.name ||
-        getFileNameFromUriOrPath(sourceUri) ||
-        `audio_${Date.now()}.flac`;
-
-      const inferred = parseMetadataFromFilename(originalName);
-      let extractedDuration = 0;
-      const durationReadProbe = {};
-      if (!skipDurationHydration && resolvedPath) {
-        extractedDuration = await extractEmbeddedDurationSeconds(resolvedPath, {
-          readProbe: durationReadProbe,
-        });
-      }
-      const metadataReadProbe = {};
-      const embeddedTextMetadata =
-        readEmbeddedTextMetadata &&
-        resolvedPath &&
-        canExtractEmbeddedTextMetadata(resolvedPath)
-          ? await extractEmbeddedTextMetadata(resolvedPath, {
-              readProbe: metadataReadProbe,
-            })
-          : null;
-      const detectedRequiredSeek =
-        Boolean(metadataReadProbe?.requiredSeek) ||
-        Boolean(durationReadProbe?.requiredSeek);
-      const requiredSeek =
-        Boolean(existingSong?.requiredSeek) || detectedRequiredSeek;
-      if (detectedRequiredSeek && resolvedPath) {
-        console.warn(
-          '[LibrarySync] Tail seek required (non-faststart optimized media):',
-          resolvedPath,
-        );
-      }
-
-      const existingArtwork = String(existingSong?.artwork || '').trim();
-      let artwork = '';
-      if (
-        !fileChanged &&
-        existingArtwork &&
-        (await this.hasReusableArtwork(existingSong))
-      ) {
-        artwork = existingArtwork;
-      } else if (
-        !skipArtworkHydration &&
-        resolvedPath &&
-        canExtractEmbeddedArtwork(resolvedPath)
-      ) {
-        artwork = (await extractEmbeddedArtworkDataUri({
-          ...existingSong,
-          localPath: resolvedPath,
-          url: resolvedUrl,
-        })) || '';
-      }
-
-      const resolvedSourcePath = this.inferSourcePathFromSong(
-        {
-          sourcePath,
-          localPath: resolvedPath,
-          url: resolvedUrl,
-        },
-        resolvedPath,
-      );
-      const track = {
-        id:
-          existingSong?.id ||
-          `local_${Date.now()}_${Math.floor(Math.random() * 1000000)}`,
-        title: resolveMetadataField(
-          embeddedTextMetadata?.title,
-          inferred.title ||
-            originalName.replace(/\.[^/.]+$/, '') ||
-            'Local Audio',
-        ),
-        artist: resolveMetadataField(
-          embeddedTextMetadata?.artist,
-          inferred.artist || 'Unknown Artist',
-        ),
-        album: resolveMetadataField(embeddedTextMetadata?.album, ''),
-        url: resolvedUrl,
-        localPath: resolvedPath,
-        sourcePath: resolvedSourcePath,
-        filename: originalName,
-        sourceFilename: originalName,
-        isLocal: true,
-        duration: extractedDuration || 0,
-        artwork,
-        fileSizeBytes,
-        fileMtimeMs,
-        requiredSeek,
-        addedAt: Number(existingSong?.addedAt) || Date.now(),
-      };
-
-      if (!persistToLibrary) {
-        return track;
-      }
-
-      const baseLibrary = await this.getLocalLibrary();
-      const existing = this.findMatchingLibrarySong(baseLibrary, track);
-      const canReuseExisting =
-        existing &&
-        ((await this.songFileExists(existing)) ||
-          String(existing?.url || '').startsWith('content://'));
-
-      if (canReuseExisting) {
-        const merged = this.mergeSongRecords(existing, track);
-        await this.addToLibrary(merged, {baseLibrary});
-        return merged;
-      }
-
-      await this.addToLibrary(track, {baseLibrary});
-      return track;
-    } catch (error) {
-      console.error('Error importing local audio file:', error);
-      throw error;
-    }
   },
 
   async deleteSongFile(song) {

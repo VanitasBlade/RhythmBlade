@@ -258,16 +258,9 @@ const LibraryScreen = ({ navigation, route }) => {
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshingLibrary, setRefreshingLibrary] = useState(false);
-  const [migratingArtwork, setMigratingArtwork] = useState(false);
-  const [migratingDuration, setMigratingDuration] = useState(false);
   const [sourceImportState, setSourceImportState] = useState({
     visible: false,
     status: '',
-    processed: 0,
-    total: 0,
-    importedCount: 0,
-    skippedCount: 0,
-    errorCount: 0,
   });
 
   const [tab, setTab] = useState('tracks');
@@ -311,29 +304,6 @@ const LibraryScreen = ({ navigation, route }) => {
       setSources(prev =>
         areSourceListsEquivalent(prev, storedSources) ? prev : storedSources,
       );
-
-      // Hydrate artwork and duration in parallel, then merge results to avoid
-      // a race condition where whichever resolves last overwrites the other.
-      const [artworkResult, durationResult] = await Promise.allSettled([
-        storageService.hydrateArtworkForLibrary(library, 3),
-        storageService.hydrateDurationForLibrary(library, 4),
-      ]);
-      const artworkLib =
-        artworkResult.status === 'fulfilled' ? artworkResult.value : null;
-      const durationLib =
-        durationResult.status === 'fulfilled' ? durationResult.value : null;
-      const base = artworkLib?.length ? artworkLib : library;
-      if (durationLib?.length) {
-        const durMap = new Map(durationLib.map(s => [s.id, s.duration]));
-        const mergedSongs = base.map(s =>
-          durMap.has(s.id) ? { ...s, duration: durMap.get(s.id) } : s,
-        );
-        setSongs(prev =>
-          areSongsEquivalent(prev, mergedSongs) ? prev : mergedSongs,
-        );
-      } else if (base !== library) {
-        setSongs(prev => (areSongsEquivalent(prev, base) ? prev : base));
-      }
     } catch (error) {
       console.error('Error loading library:', error);
     } finally {
@@ -389,16 +359,22 @@ const LibraryScreen = ({ navigation, route }) => {
         activeTrackPath || activeTrack?.url,
       );
 
-      const summary = await storageService.refreshLibraryAcrossSources({
-        recursive: true,
-        promptForPermission: true,
-        readEmbeddedTextMetadata: false,
+      const summary = await storageService.refreshLibraryFromMediaStore({
+        forceRefresh: true,
+        launchSync: false,
       });
 
       if (summary?.permissionDenied) {
         Alert.alert(
           'Permission Required',
           'Audio file access is required to refresh your library.',
+        );
+        return;
+      }
+      if (summary?.status === 'unexpected-empty') {
+        Alert.alert(
+          'Library Update Delayed',
+          'MediaStore returned an empty result unexpectedly. Your current library is kept unchanged.',
         );
         return;
       }
@@ -474,19 +450,6 @@ const LibraryScreen = ({ navigation, route }) => {
     );
     return { active, files };
   }, [normalizedSources]);
-
-  const importProgressFillStyle = useMemo(() => {
-    const total = Math.max(0, Number(sourceImportState.total) || 0);
-    const processed = Math.max(0, Number(sourceImportState.processed) || 0);
-    if (total <= 0) {
-      return { width: '12%' };
-    }
-    const percentage = Math.max(
-      4,
-      Math.min(100, Math.round((processed / total) * 100)),
-    );
-    return { width: `${percentage}%` };
-  }, [sourceImportState.processed, sourceImportState.total]);
 
   const playSong = useCallback(async index => {
     const nextTrack = sortedSongs[index];
@@ -773,58 +736,70 @@ const LibraryScreen = ({ navigation, route }) => {
 
       setSourceImportState({
         visible: true,
-        status: 'Preparing import...',
-        processed: 0,
-        total: 0,
-        importedCount: 0,
-        skippedCount: 0,
-        errorCount: 0,
+        status: 'Resolving selected folder...',
       });
 
-      const result = await storageService.importFolderAsFileSource(sourceUri, {
-        recursive: true,
-        onProgress: progress => {
-          const total = Math.max(0, Number(progress?.total) || 0);
-          const processed = Math.max(0, Number(progress?.processed) || 0);
-          setSourceImportState(prev => ({
-            ...prev,
-            visible: true,
-            status:
-              progress?.status ||
-              (total > 0
-                ? `Extracting metadata... ${processed}/${total} files`
-                : 'Extracting metadata...'),
-            processed,
-            total,
-            importedCount: Math.max(
-              0,
-              Number(progress?.importedCount) || prev.importedCount,
-            ),
-            skippedCount: Math.max(
-              0,
-              Number(progress?.skippedCount) || prev.skippedCount,
-            ),
-            errorCount: Math.max(
-              0,
-              Number(progress?.errorCount) || prev.errorCount,
-            ),
-          }));
-        },
+      const resolvedPath = await storageService.resolveDirectoryUriToFilePath(
+        sourceUri,
+        true,
+      );
+      if (!resolvedPath) {
+        throw new Error('Unable to resolve selected folder.');
+      }
+
+      await storageService.addFileSource(resolvedPath, {
+        on: true,
       });
-      const importedSources = Array.isArray(result?.fileSources)
-        ? result.fileSources
+
+      setSourceImportState({
+        visible: true,
+        status: 'Indexing files in MediaStore...',
+      });
+      const scanSummary = await storageService.scanMediaStorePaths([
+        resolvedPath,
+      ]);
+      const scanResults = Array.isArray(scanSummary?.results)
+        ? scanSummary.results
         : [];
+      const failedScan = scanResults.find(result => result?.status === 'failed');
+      if (Number(scanSummary?.accepted) <= 0 || failedScan) {
+        throw new Error(
+          failedScan?.error || 'MediaStore indexing failed for the selected source.',
+        );
+      }
+
+      setSourceImportState({
+        visible: true,
+        status: 'Updating library...',
+      });
+      const summary = await storageService.refreshLibraryFromMediaStore({
+        forceRefresh: true,
+        launchSync: false,
+      });
+      if (summary?.permissionDenied) {
+        Alert.alert(
+          'Permission Required',
+          'Audio file access is required to update your library.',
+        );
+        return;
+      }
+      if (summary?.status === 'unexpected-empty') {
+        Alert.alert(
+          'Library Update Delayed',
+          'MediaStore returned an empty result unexpectedly. Your current library is kept unchanged.',
+        );
+        return;
+      }
+
+      const importedSources = Array.isArray(summary?.fileSources)
+        ? summary.fileSources
+        : await storageService.getFileSources();
       setSources(prev =>
         areSourceListsEquivalent(prev, importedSources) ? prev : importedSources,
       );
 
       await loadLibrary();
-      Alert.alert(
-        'Import Complete',
-        `${result.importedCount} file${result.importedCount === 1 ? '' : 's'
-        } imported — album art and metadata extracted successfully.`,
-        [{ text: 'OK' }],
-      );
+      showLibraryMessage('Library updated');
     } catch (error) {
       if (!DocumentPicker.isCancel(error)) {
         Alert.alert(
@@ -846,75 +821,28 @@ const LibraryScreen = ({ navigation, route }) => {
       setSources(prev =>
         areSourceListsEquivalent(prev, nextSources) ? prev : nextSources,
       );
+      const summary = await storageService.refreshLibraryFromMediaStore({
+        forceRefresh: true,
+        launchSync: false,
+      });
+      if (summary?.permissionDenied) {
+        Alert.alert(
+          'Permission Required',
+          'Audio file access is required to update your library.',
+        );
+        return;
+      }
+      if (summary?.status === 'unexpected-empty') {
+        Alert.alert(
+          'Library Update Delayed',
+          'MediaStore returned an empty result unexpectedly. Your current library is kept unchanged.',
+        );
+        return;
+      }
+      await loadLibrary();
+      showLibraryMessage('Library updated');
     } catch (error) {
       Alert.alert('Error', 'Could not update this source.');
-    }
-  };
-
-  const migrateArtworkNow = async () => {
-    if (migratingArtwork) {
-      return;
-    }
-
-    try {
-      setMigratingArtwork(true);
-      const summary = await storageService.migrateAllArtworkNow({
-        batchSize: 8,
-        yieldMs: 0,
-      });
-      await loadLibrary();
-
-      const updatedCount = Number(summary?.updatedCount) || 0;
-      const extractedCount = Number(summary?.extractedCount) || 0;
-      const inlineConvertedCount = Number(summary?.inlineConvertedCount) || 0;
-      const processedCount = Number(summary?.processedCount) || 0;
-
-      Alert.alert(
-        'Artwork Migration Complete',
-        `${updatedCount} track${updatedCount === 1 ? '' : 's'
-        } updated (${extractedCount} extracted, ${inlineConvertedCount} inline converted).\nProcessed ${processedCount} candidate track${processedCount === 1 ? '' : 's'
-        }.`,
-      );
-    } catch (error) {
-      Alert.alert(
-        'Migration Failed',
-        error.message || 'Could not migrate artwork right now.',
-      );
-    } finally {
-      setMigratingArtwork(false);
-    }
-  };
-
-  const migrateDurationsNow = async () => {
-    if (migratingDuration) {
-      return;
-    }
-
-    try {
-      setMigratingDuration(true);
-      const summary = await storageService.migrateAllDurationsNow({
-        batchSize: 10,
-        yieldMs: 0,
-      });
-      await loadLibrary();
-
-      const updatedCount = Number(summary?.updatedCount) || 0;
-      const processedCount = Number(summary?.processedCount) || 0;
-      const skippedCount = Number(summary?.skippedCount) || 0;
-
-      Alert.alert(
-        'Duration Migration Complete',
-        `${updatedCount} track${updatedCount === 1 ? '' : 's'
-        } updated.\nProcessed ${processedCount} candidate track${processedCount === 1 ? '' : 's'
-        }, skipped ${skippedCount}.`,
-      );
-    } catch (error) {
-      Alert.alert(
-        'Migration Failed',
-        error.message || 'Could not migrate durations right now.',
-      );
-    } finally {
-      setMigratingDuration(false);
     }
   };
 
@@ -1189,36 +1117,6 @@ const LibraryScreen = ({ navigation, route }) => {
               onPress={addFileSource}>
               <Text style={styles.addSourceText}>+ Add file source</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.migrateArtworkBtn,
-                migratingArtwork && styles.disabled,
-              ]}
-              onPress={migrateArtworkNow}
-              disabled={migratingArtwork}>
-              <Icon name="cached" size={18} color={C.accentFg} />
-              <Text style={styles.migrateArtworkText}>
-                {migratingArtwork
-                  ? 'Migrating artwork...'
-                  : 'Migrate Artwork Now (One-Time)'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.migrateArtworkBtn,
-                migratingDuration && styles.disabled,
-              ]}
-              onPress={migrateDurationsNow}
-              disabled={migratingDuration}>
-              <Icon name="timer-outline" size={18} color={C.accentFg} />
-              <Text style={styles.migrateArtworkText}>
-                {migratingDuration
-                  ? 'Migrating durations...'
-                  : 'Migrate Durations Now (One-Time)'}
-              </Text>
-            </TouchableOpacity>
           </ScrollView>
         </View>
       ) : null}
@@ -1287,26 +1185,16 @@ const LibraryScreen = ({ navigation, route }) => {
         <Pressable style={styles.modalOverlay} onPress={noop}>
           <Pressable style={styles.importProgressCard} onPress={noop}>
             <View style={styles.importProgressHeader}>
-              <Text style={styles.importProgressTitle}>Importing Files</Text>
+              <Text style={styles.importProgressTitle}>Updating Library</Text>
               <ActivityIndicator size="small" color={C.accentFg} />
             </View>
             <Text style={styles.importProgressStatus}>
-              {sourceImportState.status || 'Extracting metadata...'}
+              {sourceImportState.status || 'Updating library...'}
             </Text>
             <View style={styles.importProgressTrack}>
-              <View
-                style={[styles.importProgressFill, importProgressFillStyle]}
-              />
+              <View style={[styles.importProgressFill, {width: '60%'}]} />
             </View>
-            <Text style={styles.importProgressMeta}>
-              Imported {sourceImportState.importedCount}
-              {sourceImportState.skippedCount > 0
-                ? ` • Skipped ${sourceImportState.skippedCount}`
-                : ''}
-              {sourceImportState.errorCount > 0
-                ? ` • Errors ${sourceImportState.errorCount}`
-                : ''}
-            </Text>
+            <Text style={styles.importProgressMeta}>Please wait...</Text>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1409,3 +1297,5 @@ const LibraryScreen = ({ navigation, route }) => {
 };
 
 export default LibraryScreen;
+
+

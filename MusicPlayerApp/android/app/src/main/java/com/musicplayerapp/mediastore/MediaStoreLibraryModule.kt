@@ -20,8 +20,10 @@ import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import java.util.ArrayDeque
 import java.io.File
 import java.util.Collections
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -32,6 +34,17 @@ class MediaStoreLibraryModule(
     private const val MODULE_NAME = "MediaStoreLibraryModule"
     private const val EVENT_CHANGED = "mediaStoreChanged"
     private const val DATA_COLUMN = "_data"
+    private val SUPPORTED_AUDIO_EXTENSIONS = setOf(
+      "mp3",
+      "flac",
+      "aac",
+      "m4a",
+      "wav",
+      "ogg",
+      "opus",
+      "aiff",
+      "wma",
+    )
   }
 
   private val mainHandler = Handler(Looper.getMainLooper())
@@ -155,6 +168,63 @@ class MediaStoreLibraryModule(
         putNull("albumArtUri")
       }
     }
+  }
+
+  private fun normalizePath(path: String?): String {
+    return (path ?: "")
+      .replace('\\', '/')
+      .trim()
+      .lowercase(Locale.US)
+  }
+
+  private fun resolveStablePath(file: File): String {
+    return try {
+      file.canonicalPath
+    } catch (_: Throwable) {
+      file.absolutePath
+    }
+  }
+
+  private fun isSupportedAudioFile(file: File): Boolean {
+    if (!file.isFile) {
+      return false
+    }
+    val ext = file.name
+      .substringAfterLast('.', "")
+      .lowercase(Locale.US)
+    return ext.isNotEmpty() && SUPPORTED_AUDIO_EXTENSIONS.contains(ext)
+  }
+
+  private fun discoverAudioFilesInDirectory(root: File): List<String> {
+    if (!root.exists() || !root.isDirectory) {
+      return emptyList()
+    }
+
+    val discovered = mutableListOf<String>()
+    val seen = mutableSetOf<String>()
+    val stack = ArrayDeque<File>()
+    stack.add(root)
+
+    while (stack.isNotEmpty()) {
+      val current = stack.removeLast()
+      val children = current.listFiles() ?: continue
+      children.forEach { child ->
+        if (child.isDirectory) {
+          stack.add(child)
+          return@forEach
+        }
+        if (!isSupportedAudioFile(child)) {
+          return@forEach
+        }
+        val stablePath = resolveStablePath(child)
+        val normalizedStablePath = normalizePath(stablePath)
+        if (normalizedStablePath.isNotEmpty() && seen.add(normalizedStablePath)) {
+          discovered.add(stablePath)
+        }
+      }
+    }
+
+    return discovered
   }
 
   private fun queryRows(options: ReadableMap?): WritableArray {
@@ -288,89 +358,207 @@ class MediaStoreLibraryModule(
       }
     }
 
-    val statusByPath = Collections.synchronizedMap(mutableMapOf<String, String>())
-    val scannedPathByPath = Collections.synchronizedMap(mutableMapOf<String, String>())
-    val uriByPath = Collections.synchronizedMap(mutableMapOf<String, String>())
-    val errorByPath = Collections.synchronizedMap(mutableMapOf<String, String>())
-    acceptedPaths.forEach { path ->
-      statusByPath[path] = "queued"
-    }
-
     if (acceptedPaths.isEmpty()) {
       val payload = Arguments.createMap().apply {
         putInt("requested", requested)
         putInt("accepted", 0)
+        putInt("discoveredFiles", 0)
+        putInt("scannedFiles", 0)
+        putInt("failedFiles", 0)
         putArray("results", Arguments.createArray())
       }
       promise.resolve(payload)
       return
     }
 
-    val remaining = AtomicInteger(acceptedPaths.size)
-    val resolved = AtomicBoolean(false)
+    Thread {
+      val statusByPath = Collections.synchronizedMap(mutableMapOf<String, String>())
+      val discoveredByPath = Collections.synchronizedMap(mutableMapOf<String, Int>())
+      val scannedByPath = Collections.synchronizedMap(mutableMapOf<String, Int>())
+      val failedByPath = Collections.synchronizedMap(mutableMapOf<String, Int>())
+      val errorByPath = Collections.synchronizedMap(mutableMapOf<String, String>())
+      val firstScannedPathByPath = Collections.synchronizedMap(mutableMapOf<String, String>())
+      val firstUriByPath = Collections.synchronizedMap(mutableMapOf<String, String>())
+      val ownersByFilePath = Collections.synchronizedMap(
+        mutableMapOf<String, MutableSet<String>>(),
+      )
+      val filesToScan = mutableSetOf<String>()
 
-    acceptedPaths.forEach { path ->
+      fun markPathFailed(path: String, reason: String) {
+        statusByPath[path] = "failed"
+        if (!errorByPath.containsKey(path)) {
+          errorByPath[path] = reason
+        }
+      }
+
+      fun registerDiscoveredFile(pathOwner: String, rawFilePath: String) {
+        val normalizedFilePath = normalizePath(rawFilePath)
+        if (normalizedFilePath.isEmpty()) {
+          return
+        }
+        filesToScan.add(rawFilePath)
+        synchronized(ownersByFilePath) {
+          val owners = ownersByFilePath[normalizedFilePath] ?: mutableSetOf()
+          owners.add(pathOwner)
+          ownersByFilePath[normalizedFilePath] = owners
+        }
+      }
+
+      acceptedPaths.forEach { path ->
+        statusByPath[path] = "queued"
+        discoveredByPath[path] = 0
+        scannedByPath[path] = 0
+        failedByPath[path] = 0
+
+        val target = File(path)
+        if (!target.exists()) {
+          markPathFailed(path, "path-not-found")
+          return@forEach
+        }
+
+        if (target.isFile) {
+          if (!isSupportedAudioFile(target)) {
+            markPathFailed(path, "unsupported-file-type")
+            return@forEach
+          }
+          val resolvedPath = resolveStablePath(target)
+          discoveredByPath[path] = 1
+          registerDiscoveredFile(path, resolvedPath)
+          return@forEach
+        }
+
+        if (!target.isDirectory) {
+          markPathFailed(path, "invalid-path-type")
+          return@forEach
+        }
+
+        val discovered = discoverAudioFilesInDirectory(target)
+        discoveredByPath[path] = discovered.size
+        if (discovered.isEmpty()) {
+          statusByPath[path] = "scanned"
+          return@forEach
+        }
+        discovered.forEach { filePath ->
+          registerDiscoveredFile(path, filePath)
+        }
+      }
+
+      fun resolvePayload() {
+        val output = Arguments.createArray()
+        var discoveredFilesTotal = 0
+        var scannedFilesTotal = 0
+        var failedFilesTotal = 0
+
+        acceptedPaths.forEach { inputPath ->
+          val discoveredCount = discoveredByPath[inputPath] ?: 0
+          val scannedCount = scannedByPath[inputPath] ?: 0
+          val failedCount = failedByPath[inputPath] ?: 0
+          discoveredFilesTotal += discoveredCount
+          scannedFilesTotal += scannedCount
+          failedFilesTotal += failedCount
+
+          val currentStatus = statusByPath[inputPath] ?: "queued"
+          val finalStatus = when {
+            currentStatus == "failed" -> "failed"
+            discoveredCount > 0 && scannedCount == 0 -> "failed"
+            else -> "scanned"
+          }
+
+          output.pushMap(
+            Arguments.createMap().apply {
+              putString("path", inputPath)
+              putString("status", finalStatus)
+              putInt("discoveredFiles", discoveredCount)
+              putInt("scannedFiles", scannedCount)
+              putInt("failedFiles", failedCount)
+              firstScannedPathByPath[inputPath]?.let { putString("scannedPath", it) }
+              firstUriByPath[inputPath]?.let { putString("uri", it) }
+              errorByPath[inputPath]?.let { putString("error", it) }
+            },
+          )
+        }
+
+        val payload = Arguments.createMap().apply {
+          putInt("requested", requested)
+          putInt("accepted", acceptedPaths.size)
+          putInt("discoveredFiles", discoveredFilesTotal)
+          putInt("scannedFiles", scannedFilesTotal)
+          putInt("failedFiles", failedFilesTotal)
+          putArray("results", output)
+        }
+        promise.resolve(payload)
+      }
+
+      if (filesToScan.isEmpty()) {
+        resolvePayload()
+        return@Thread
+      }
+
+      val normalizedScanList = filesToScan.toTypedArray()
+      val remaining = AtomicInteger(normalizedScanList.size)
+      val resolved = AtomicBoolean(false)
+
       try {
         MediaScannerConnection.scanFile(
           reactApplicationContext,
-          arrayOf(path),
+          normalizedScanList,
           null,
         ) { scannedPath, uri ->
-          statusByPath[path] = if (uri != null) "scanned" else "failed"
-          if (!scannedPath.isNullOrBlank()) {
-            scannedPathByPath[path] = scannedPath
+          val normalizedScannedPath = normalizePath(scannedPath)
+          val owners = synchronized(ownersByFilePath) {
+            ownersByFilePath[normalizedScannedPath]?.toList() ?: emptyList()
           }
-          if (uri != null) {
-            uriByPath[path] = uri.toString()
+          val callbackPath = scannedPath?.trim().orEmpty()
+          val callbackUri = uri?.toString().orEmpty()
+
+          owners.forEach { ownerPath ->
+            if (uri != null) {
+              synchronized(scannedByPath) {
+                scannedByPath[ownerPath] = (scannedByPath[ownerPath] ?: 0) + 1
+              }
+              statusByPath[ownerPath] = "scanned"
+              if (!firstScannedPathByPath.containsKey(ownerPath) && callbackPath.isNotEmpty()) {
+                firstScannedPathByPath[ownerPath] = callbackPath
+              }
+              if (!firstUriByPath.containsKey(ownerPath) && callbackUri.isNotEmpty()) {
+                firstUriByPath[ownerPath] = callbackUri
+              }
+            } else {
+              synchronized(failedByPath) {
+                failedByPath[ownerPath] = (failedByPath[ownerPath] ?: 0) + 1
+              }
+              if (!errorByPath.containsKey(ownerPath)) {
+                errorByPath[ownerPath] = "media-scanner-null-uri"
+              }
+            }
           }
 
           if (remaining.decrementAndGet() == 0 && resolved.compareAndSet(false, true)) {
-            val output = Arguments.createArray()
-            acceptedPaths.forEach { inputPath ->
-              output.pushMap(
-                Arguments.createMap().apply {
-                  putString("path", inputPath)
-                  putString("status", statusByPath[inputPath] ?: "queued")
-                  scannedPathByPath[inputPath]?.let { putString("scannedPath", it) }
-                  uriByPath[inputPath]?.let { putString("uri", it) }
-                  errorByPath[inputPath]?.let { putString("error", it) }
-                },
-              )
+            acceptedPaths.forEach { path ->
+              val currentStatus = statusByPath[path] ?: "queued"
+              if (currentStatus == "failed") {
+                return@forEach
+              }
+              val discoveredCount = discoveredByPath[path] ?: 0
+              val scannedCount = scannedByPath[path] ?: 0
+              statusByPath[path] = if (discoveredCount > 0 && scannedCount == 0) {
+                "failed"
+              } else {
+                "scanned"
+              }
             }
-            val payload = Arguments.createMap().apply {
-              putInt("requested", requested)
-              putInt("accepted", acceptedPaths.size)
-              putArray("results", output)
-            }
-            promise.resolve(payload)
+            resolvePayload()
           }
         }
       } catch (error: Throwable) {
-        statusByPath[path] = "failed"
-        errorByPath[path] = error.message ?: "scan failed"
-
-        if (remaining.decrementAndGet() == 0 && resolved.compareAndSet(false, true)) {
-          val output = Arguments.createArray()
-          acceptedPaths.forEach { inputPath ->
-            output.pushMap(
-              Arguments.createMap().apply {
-                putString("path", inputPath)
-                putString("status", statusByPath[inputPath] ?: "queued")
-                scannedPathByPath[inputPath]?.let { putString("scannedPath", it) }
-                uriByPath[inputPath]?.let { putString("uri", it) }
-                errorByPath[inputPath]?.let { putString("error", it) }
-              },
-            )
-          }
-          val payload = Arguments.createMap().apply {
-            putInt("requested", requested)
-            putInt("accepted", acceptedPaths.size)
-            putArray("results", output)
-          }
-          promise.resolve(payload)
+        acceptedPaths.forEach { path ->
+          markPathFailed(path, error.message ?: "scan-failed")
+        }
+        if (resolved.compareAndSet(false, true)) {
+          resolvePayload()
         }
       }
-    }
+    }.start()
   }
 
   @ReactMethod

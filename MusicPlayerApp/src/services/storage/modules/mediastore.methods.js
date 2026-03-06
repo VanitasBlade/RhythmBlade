@@ -7,7 +7,7 @@ import {
   toPathFromUri,
 } from '../storage.helpers';
 
-const MEDIASTORE_PROVIDER_VALUES = new Set(['media_store', 'dual_shadow']);
+const MEDIASTORE_PROVIDER_VALUES = new Set(['media_store']);
 const MEDIASTORE_SYNC_SCHEMA_VERSION = 1;
 const MEDIASTORE_SKIP_WINDOW_MS = 5 * 60 * 1000;
 const MEDIASTORE_OBSERVER_DEBOUNCE_MS = 700;
@@ -19,6 +19,10 @@ function sleep(ms) {
 }
 
 function normalizeProvider(value) {
+  if (Platform.OS === 'android') {
+    return 'media_store';
+  }
+
   const provider = String(value || '')
     .trim()
     .toLowerCase();
@@ -56,21 +60,10 @@ function toMsNumber(value) {
 export const mediaStoreMethods = {
   async getLibraryProvider() {
     const settings = await this.getSettings();
-    return normalizeProvider(settings?.libraryProvider || 'legacy_fs');
+    return normalizeProvider(settings?.libraryProvider || 'media_store');
   },
 
-  async setLibraryProvider(provider) {
-    const settings = await this.getSettings();
-    const normalizedProvider = normalizeProvider(provider);
-    const nextSettings = {
-      ...settings,
-      libraryProvider: normalizedProvider,
-    };
-    await this.saveSettings(nextSettings);
-    return normalizedProvider;
-  },
-
-  async maybeAutoEnableMediaStoreProvider(options = {}) {
+  async ensureMediaStoreOnlyMigration() {
     if (Platform.OS !== 'android') {
       return {
         changed: false,
@@ -78,25 +71,14 @@ export const mediaStoreMethods = {
       };
     }
 
-    const force = options?.force === true;
     const settings = await this.getSettings();
-    const provider = normalizeProvider(settings?.libraryProvider);
-    const failureCount = Math.max(
-      0,
-      Number(settings?.mediaStoreConsecutiveFailures) || 0,
-    );
-
-    if (!force && provider !== 'legacy_fs') {
+    const alreadyMigrated =
+      settings?.mediaStoreOnlyMigrationDone === true &&
+      normalizeProvider(settings?.libraryProvider) === 'media_store';
+    if (alreadyMigrated) {
       return {
         changed: false,
-        reason: 'provider-already-configured',
-      };
-    }
-
-    if (!force && failureCount >= MEDIASTORE_FAILURE_RESET_THRESHOLD) {
-      return {
-        changed: false,
-        reason: 'failure-threshold-reached',
+        reason: 'already-migrated',
       };
     }
 
@@ -112,15 +94,35 @@ export const mediaStoreMethods = {
     await this.saveSettings({
       ...settings,
       libraryProvider: 'media_store',
+      mediaStoreOnlyMigrationDone: true,
     });
     return {
       changed: true,
-      reason: 'enabled-mediastore',
+      reason: 'forced-mediastore-provider',
     };
   },
 
   isMediaStoreProvider(provider) {
     return MEDIASTORE_PROVIDER_VALUES.has(normalizeProvider(provider));
+  },
+
+  async scanMediaStorePaths(paths = []) {
+    const normalizedPaths = Array.isArray(paths)
+      ? paths
+          .map(path => normalizeAbsolutePath(path))
+          .filter(Boolean)
+      : [];
+    if (normalizedPaths.length === 0) {
+      return {
+        requested: 0,
+        accepted: 0,
+        discoveredFiles: 0,
+        scannedFiles: 0,
+        failedFiles: 0,
+        results: [],
+      };
+    }
+    return MediaStoreBridge.scanPaths(normalizedPaths);
   },
 
   isLikelyMediaStoreSong(song) {
@@ -237,20 +239,6 @@ export const mediaStoreMethods = {
       await this.removeFromLibrary(song.id);
     }
     return true;
-  },
-
-  async restoreHiddenMediaStoreSongs(mediaStoreIds = []) {
-    const current = await this.getHiddenMediaStoreIds();
-    const normalized = Array.isArray(mediaStoreIds)
-      ? mediaStoreIds.map(id => normalizeMediaStoreId(id)).filter(Boolean)
-      : [];
-    normalized.forEach(id => current.delete(id));
-    await this.saveHiddenMediaStoreIds(current);
-    return Array.from(current);
-  },
-
-  async clearHiddenMediaStoreSongs() {
-    await AsyncStorage.removeItem(STORAGE_KEYS.HIDDEN_MEDIASTORE_IDS);
   },
 
   buildMediaStoreFileSourceHash(fileSources = []) {
@@ -537,7 +525,7 @@ export const mediaStoreMethods = {
       failedAt: Date.now(),
       reason: this.mediaStoreSessionFallbackReason,
     });
-    console.warn('[MediaStoreSync] fallback-to-legacy', {
+    console.warn('[MediaStoreSync] sync-failed', {
       launchSync: options.launchSync === true,
       reason: this.mediaStoreSessionFallbackReason,
       provider,
@@ -558,10 +546,9 @@ export const mediaStoreMethods = {
     };
 
     if (nextFailures >= MEDIASTORE_FAILURE_RESET_THRESHOLD) {
-      nextSettings.libraryProvider = 'legacy_fs';
-      console.warn('[MediaStoreSync] provider-reset', {
+      console.warn('[MediaStoreSync] launch-failure-threshold-reached', {
         threshold: MEDIASTORE_FAILURE_RESET_THRESHOLD,
-        nextProvider: 'legacy_fs',
+        failureCount: nextFailures,
       });
     }
 
@@ -835,7 +822,14 @@ export const mediaStoreMethods = {
     const provider = normalizeProvider(settings?.libraryProvider);
     const selectedOnly = settings?.mediaStoreSelectedFoldersOnly !== false;
 
-    if (!(await this.shouldUseMediaStoreProvider({provider}))) {
+    if (
+      !(
+        await this.shouldUseMediaStoreProvider({
+          provider,
+          ignoreSessionFallback: options.forceRefresh === true,
+        })
+      )
+    ) {
       throw new Error('MediaStore provider is not available');
     }
 
@@ -847,6 +841,7 @@ export const mediaStoreMethods = {
         this.startMediaStoreObservation().catch(() => {});
       }
       return {
+        status: 'skipped',
         skipped: true,
         provider: 'media_store',
         scannedSources: fileSources.filter(source => source?.on !== false).length,
@@ -855,6 +850,8 @@ export const mediaStoreMethods = {
         removedCount: 0,
         skippedCount: 0,
         errorCount: 0,
+        removedSongIds: [],
+        removedPathKeys: [],
         lastSyncedAt: toMsNumber(meta?.lastSyncedAt) || Date.now(),
         fileSources,
       };
@@ -864,15 +861,19 @@ export const mediaStoreMethods = {
       forceRefresh: options.forceRefresh === true,
     });
     if (snapshot?.permissionDenied) {
+      await this.hydrateLibraryStoreFromDisk();
       return {
+        status: 'permission-denied',
         provider: 'media_store',
         scannedSources: 0,
-        totalFiles: 0,
+        totalFiles: this.getLibraryStoreSnapshot().length,
         processedCount: 0,
         importedCount: 0,
         removedCount: 0,
         skippedCount: 0,
         errorCount: 0,
+        removedSongIds: [],
+        removedPathKeys: [],
         permissionDenied: true,
         fileSources,
       };
@@ -921,7 +922,37 @@ export const mediaStoreMethods = {
       existingMediaCount > 0 &&
       options.allowEmpty !== true
     ) {
-      throw new Error('MediaStore returned an unexpected empty library result');
+      const failedAt = Date.now();
+      const folderHash = this.buildMediaStoreFileSourceHash(fileSources);
+      await this.saveMediaStoreSyncMeta({
+        provider,
+        folderHash,
+        schemaVersion: MEDIASTORE_SYNC_SCHEMA_VERSION,
+        status: 'failed',
+        failedAt,
+        reason: 'unexpected-empty',
+        totalRows: rows.length,
+        totalFilteredRows: filteredRows.length,
+      });
+      if (settings?.mediaStoreObserverEnabled !== false) {
+        this.startMediaStoreObservation().catch(() => {});
+      }
+      return {
+        status: 'unexpected-empty',
+        provider: 'media_store',
+        scannedSources: enabledSourceCount,
+        totalFiles: existingLibrary.length,
+        processedCount: 0,
+        importedCount: 0,
+        removedCount: 0,
+        skippedCount: 0,
+        errorCount: 1,
+        removedSongIds: [],
+        removedPathKeys: [],
+        fileSources,
+        lastSyncedAt: failedAt,
+        reason: 'unexpected-empty',
+      };
     }
     const enabledSourceRoots = fileSources
       .filter(source => source?.on !== false)
@@ -936,6 +967,14 @@ export const mediaStoreMethods = {
     const nextMediaIds = new Set(
       mediaSongs.map(song => normalizeMediaStoreId(song?.mediaStoreId)),
     );
+
+    const existingSongById = new Map();
+    existingLibrary.forEach(song => {
+      const songId = String(song?.id || '').trim();
+      if (songId) {
+        existingSongById.set(songId, song);
+      }
+    });
 
     const removeIds = [];
     existingLibrary.forEach(song => {
@@ -960,6 +999,9 @@ export const mediaStoreMethods = {
       }
     });
     const uniqueRemoveIds = Array.from(new Set(removeIds));
+    const removedPathKeys = uniqueRemoveIds
+      .map(songId => this.getSongPathKeyForStore(existingSongById.get(songId)))
+      .filter(Boolean);
 
     const removedCount = uniqueRemoveIds.length;
     const addedCount = mediaSongs.filter(
@@ -1012,6 +1054,7 @@ export const mediaStoreMethods = {
     }
 
     return {
+      status: 'success',
       provider: 'media_store',
       scannedSources: fileSources.filter(source => source?.on !== false).length,
       totalFiles: mediaSongs.length,
@@ -1020,6 +1063,8 @@ export const mediaStoreMethods = {
       removedCount,
       skippedCount: Math.max(0, rows.length - mediaSongs.length),
       errorCount: 0,
+      removedSongIds: uniqueRemoveIds,
+      removedPathKeys,
       fileSources: nextSources,
       lastSyncedAt,
       affectedSongIds: Array.from(
@@ -1103,7 +1148,7 @@ export const mediaStoreMethods = {
       return null;
     }
 
-    await MediaStoreBridge.scanPaths([localPath]);
+    await this.scanMediaStorePaths([localPath]);
     let row = await MediaStoreBridge.queryByPath(localPath);
     if (!row) {
       await sleep(MEDIASTORE_QUERY_PATH_RETRY_MS);

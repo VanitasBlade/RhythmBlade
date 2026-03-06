@@ -146,15 +146,11 @@ function App() {
     let cancelled = false;
     const initializeApp = async () => {
       try {
+        await storageService.ensureMediaStoreOnlyMigration();
         await Promise.all([
           playbackService.initialize(),
           storageService.getLocalLibrary(),
         ]);
-        const providerBootstrap =
-          await storageService.maybeAutoEnableMediaStoreProvider();
-        if (providerBootstrap?.changed) {
-          console.log('[MediaStoreSync] provider-auto-enabled');
-        }
         networkService.initialize();
       } catch (error) {
         console.error('App bootstrap failed:', error);
@@ -167,9 +163,7 @@ function App() {
       if (!cancelled) {
         storageService
           .runLibrarySyncInBackground({
-            recursive: true,
             promptForPermission: true,
-            readEmbeddedTextMetadata: true,
             launchSync: true,
           })
           .catch(error => {
