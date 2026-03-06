@@ -455,7 +455,7 @@ export const filesystemMethods = {
     const artworkMigration = shouldRunArtworkMigration
       ? await this.migrateAllArtworkNow({
           batchSize: 8,
-          yieldMs: 0,
+          yieldMs: 16,
           onlySongIds: importedSongIds,
         })
       : null;
@@ -469,7 +469,7 @@ export const filesystemMethods = {
     const durationMigration = shouldRunDurationMigration
       ? await this.migrateAllDurationsNow({
           batchSize: 10,
-          yieldMs: 0,
+          yieldMs: 16,
           onlySongIds: importedSongIds,
         })
       : null;
@@ -597,6 +597,9 @@ export const filesystemMethods = {
       statResults.filter(Boolean).forEach(result => {
         fileStatByPathKey.set(result.pathKey, result);
       });
+
+      // Yield between stat batches to let UI/event loop breathe.
+      await new Promise(resolve => setTimeout(resolve, 0));
     }
 
     const discoveredPathSet = new Set(
@@ -760,6 +763,9 @@ export const filesystemMethods = {
         skippedCount,
         errorCount,
       });
+
+      // Yield between heavy metadata batches to prevent long JS monopolization.
+      await new Promise(resolve => setTimeout(resolve, 0));
     }
 
     let upsertSummary = {
@@ -821,6 +827,10 @@ export const filesystemMethods = {
   },
 
   async refreshLibraryAcrossSources(options = {}) {
+    if (await this.shouldUseMediaStoreProvider()) {
+      return this.refreshLibraryFromMediaStore(options);
+    }
+
     const onProgress =
       typeof options.onProgress === 'function' ? options.onProgress : null;
     const recursive = options.recursive !== false;

@@ -1079,7 +1079,30 @@ class PlaybackService {
         ? localPath
         : `file://${localPath}`
       : '';
-    const rawUrl = normalizeText(song.url || fallbackUrl);
+    const mediaStoreId = normalizeText(
+      song.mediaStoreId ||
+        (String(song.id || '').trim().startsWith('ms_')
+          ? String(song.id || '').trim().slice(3)
+          : ''),
+    );
+    const contentUri = normalizeText(
+      song.contentUri ||
+        (mediaStoreId
+          ? `content://media/external/audio/media/${mediaStoreId}`
+          : ''),
+    );
+    const isMediaStoreTrack = Boolean(
+      String(song.provider || '').trim().toLowerCase() === 'media_store' ||
+        mediaStoreId ||
+        String(song.id || '').trim().startsWith('ms_'),
+    );
+    const rawUrl = normalizeText(
+      (isMediaStoreTrack && contentUri.startsWith('content://')
+        ? contentUri
+        : '') ||
+        song.url ||
+        fallbackUrl,
+    );
     if (!rawUrl) {
       return null;
     }

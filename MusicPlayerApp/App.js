@@ -150,6 +150,11 @@ function App() {
           playbackService.initialize(),
           storageService.getLocalLibrary(),
         ]);
+        const providerBootstrap =
+          await storageService.maybeAutoEnableMediaStoreProvider();
+        if (providerBootstrap?.changed) {
+          console.log('[MediaStoreSync] provider-auto-enabled');
+        }
         networkService.initialize();
       } catch (error) {
         console.error('App bootstrap failed:', error);
@@ -165,6 +170,7 @@ function App() {
             recursive: true,
             promptForPermission: true,
             readEmbeddedTextMetadata: true,
+            launchSync: true,
           })
           .catch(error => {
             console.error('Background library sync failed:', error);
@@ -177,6 +183,7 @@ function App() {
     return () => {
       cancelled = true;
       networkService.cleanup();
+      storageService.cleanup().catch(() => {});
     };
   }, []);
 

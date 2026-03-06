@@ -5,6 +5,8 @@ export const STORAGE_KEYS = {
   SETTINGS: '@settings',
   PROFILE_AVATAR: '@profile_avatar',
   LAST_LIBRARY_SYNC_AT: '@library_last_synced_at',
+  MEDIASTORE_SYNC_META: '@mediastore_sync_meta',
+  HIDDEN_MEDIASTORE_IDS: '@hidden_mediastore_ids',
 };
 
 export const DEFAULT_AUDIO_EXTENSION = '.flac';

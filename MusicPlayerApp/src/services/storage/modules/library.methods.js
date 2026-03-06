@@ -1,9 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNFS from 'react-native-fs';
 import {
   canExtractEmbeddedArtwork,
   extractEmbeddedArtworkDataUri,
-  optimizeArtworkUriForTrack,
 } from '../../artwork/ArtworkService';
 import {
   canExtractEmbeddedDuration,
@@ -13,7 +11,7 @@ import {
   canExtractEmbeddedTextMetadata,
   extractEmbeddedTextMetadata,
 } from '../../metadata/TextMetadataService';
-import {DEFAULT_AUDIO_EXTENSION, STORAGE_KEYS} from '../storage.constants';
+import {DEFAULT_AUDIO_EXTENSION} from '../storage.constants';
 import {
   getExtensionFromSong,
   getFileNameFromUriOrPath,
@@ -24,8 +22,6 @@ import {
   toPathFromUri,
 } from '../storage.helpers';
 
-const MAX_ARTWORK_MIGRATIONS_PER_READ = 2;
-const MAX_TEXT_METADATA_MIGRATIONS_PER_READ = 4;
 const DEFAULT_DURATION_MIGRATION_BATCH_SIZE = 10;
 const LIBRARY_CACHE_TTL_MS = 30000;
 
@@ -37,18 +33,6 @@ function resolveMetadataField(candidate, fallback) {
   return text;
 }
 
-function isLikelyNoisyMetadata(value) {
-  const text = String(value || '').trim();
-  if (!text) {
-    return false;
-  }
-
-  return (
-    text.includes('•') ||
-    /(?:hi-res|cd|aac|flac|khz|bit\/)/i.test(text) ||
-    text.split(/\s+/).length > 16
-  );
-}
 
 function toTimestampMs(value) {
   if (!value) {
@@ -87,151 +71,87 @@ export const libraryMethods = {
 
     const readTask = (async () => {
       try {
-        const library = await AsyncStorage.getItem(STORAGE_KEYS.LIBRARY);
-        const parsedLibrary = library ? JSON.parse(library) : [];
+        await this.hydrateLibraryStoreFromDisk({
+          forceRefresh,
+        });
+        const parsedLibrary = this.getLibraryStoreSnapshot();
         let changed = false;
-        let artworkMigrations = 0;
-        let textMetadataMigrations = 0;
 
         const normalizedLibrary = [];
         for (const song of parsedLibrary) {
           let nextSong = song;
-          const sourceName =
-            song?.filename ||
-            String(song?.localPath || '')
-              .split('/')
-              .pop();
-          const inferred = parseMetadataFromFilename(sourceName);
-
-          const nextArtist = isUnknownValue(song?.artist)
-            ? inferred.artist || song?.artist
-            : song?.artist;
-          const nextTitle = isUnknownValue(song?.title)
-            ? inferred.title || song?.title
-            : song?.title;
-
-          if (
-            nextArtist !== nextSong?.artist ||
-            nextTitle !== nextSong?.title
-          ) {
-            changed = true;
-            nextSong = {
-              ...nextSong,
-              artist: nextArtist,
-              title: nextTitle,
-            };
-          }
-
-          const shouldAttemptTextMetadata =
-            textMetadataMigrations < MAX_TEXT_METADATA_MIGRATIONS_PER_READ &&
-            canExtractEmbeddedTextMetadata(nextSong) &&
-            (isUnknownValue(nextSong?.title) ||
-              isUnknownValue(nextSong?.artist) ||
-              isUnknownValue(nextSong?.album) ||
-              isLikelyNoisyMetadata(nextSong?.title) ||
-              isLikelyNoisyMetadata(nextSong?.artist) ||
-              isLikelyNoisyMetadata(nextSong?.album));
-
-          if (shouldAttemptTextMetadata) {
-            const embeddedTextMetadata = await extractEmbeddedTextMetadata(
-              nextSong,
-            );
-            const embeddedTitle = resolveMetadataField(
-              embeddedTextMetadata?.title,
-              nextSong?.title,
-            );
-            const embeddedArtist = resolveMetadataField(
-              embeddedTextMetadata?.artist,
-              nextSong?.artist,
-            );
-            const embeddedAlbum = resolveMetadataField(
-              embeddedTextMetadata?.album,
-              nextSong?.album,
-            );
-
-            if (
-              embeddedTitle !== nextSong?.title ||
-              embeddedArtist !== nextSong?.artist ||
-              embeddedAlbum !== nextSong?.album
-            ) {
-              textMetadataMigrations += 1;
-              changed = true;
-              nextSong = {
-                ...nextSong,
-                title: embeddedTitle,
-                artist: embeddedArtist,
-                album: embeddedAlbum,
-              };
-            }
-          }
-
-          const currentArtwork = String(nextSong?.artwork || '').trim();
-          if (
-            currentArtwork.toLowerCase().startsWith('data:image/') &&
-            artworkMigrations < MAX_ARTWORK_MIGRATIONS_PER_READ
-          ) {
-            const optimizedArtwork = await optimizeArtworkUriForTrack(
-              nextSong,
-              currentArtwork,
-            );
-
-            if (optimizedArtwork && optimizedArtwork !== currentArtwork) {
-              artworkMigrations += 1;
-              changed = true;
-              nextSong = {
-                ...nextSong,
-                artwork: optimizedArtwork,
-              };
-            }
-          }
 
           const currentUrl = String(nextSong?.url || '').trim();
           const currentLocalPath = String(nextSong?.localPath || '').trim();
-          const needsPathResolve =
-            currentUrl.startsWith('content://') ||
-            currentLocalPath.startsWith('content://');
-
-          if (needsPathResolve) {
-            const contentUri = currentUrl.startsWith('content://')
-              ? currentUrl
-              : currentLocalPath;
-            const originalPath = await this.resolveContentUriToFilePath(
-              contentUri,
-              sourceName,
-              false,
-            );
-
-            if (originalPath) {
-              const nextUrl = toFileUriFromPath(originalPath);
+          const mediaStoreId = String(
+            nextSong?.mediaStoreId ||
+              (String(nextSong?.id || '').startsWith('ms_')
+                ? String(nextSong?.id || '').slice(3)
+                : ''),
+          ).trim();
+          const provider = String(nextSong?.provider || '')
+            .trim()
+            .toLowerCase();
+          const normalizedContentUri = String(
+            nextSong?.contentUri ||
+              (currentUrl.startsWith('content://') ? currentUrl : '') ||
+              (mediaStoreId
+                ? `content://media/external/audio/media/${mediaStoreId}`
+                : ''),
+          ).trim();
+          const isMediaStoreSong = Boolean(
+            provider === 'media_store' ||
+              mediaStoreId ||
+              normalizedContentUri.startsWith('content://') ||
+              currentUrl.startsWith('content://'),
+          );
+          const resolvedLocalPath = this.resolveSongLocalPath(nextSong);
+          if (resolvedLocalPath) {
+            if (isMediaStoreSong && normalizedContentUri.startsWith('content://')) {
               if (
-                nextSong.localPath !== originalPath ||
-                currentUrl !== nextUrl
+                nextSong.localPath !== resolvedLocalPath ||
+                currentUrl !== normalizedContentUri ||
+                nextSong?.contentUri !== normalizedContentUri
               ) {
                 changed = true;
                 nextSong = {
                   ...nextSong,
-                  localPath: originalPath,
-                  url: nextUrl,
+                  localPath: resolvedLocalPath,
+                  url: normalizedContentUri,
+                  contentUri: normalizedContentUri,
+                };
+              }
+            } else {
+              const expectedUrl = toFileUriFromPath(resolvedLocalPath);
+              if (
+                expectedUrl &&
+                (nextSong.localPath !== resolvedLocalPath ||
+                  String(nextSong.url || '').trim() !== expectedUrl)
+              ) {
+                changed = true;
+                nextSong = {
+                  ...nextSong,
+                  localPath: resolvedLocalPath,
+                  url: expectedUrl,
                 };
               }
             }
-          }
-
-          const resolvedLocalPath = this.resolveSongLocalPath(nextSong);
-          if (resolvedLocalPath) {
-            const expectedUrl = toFileUriFromPath(resolvedLocalPath);
-            if (
-              expectedUrl &&
-              (nextSong.localPath !== resolvedLocalPath ||
-                String(nextSong.url || '').trim() !== expectedUrl)
-            ) {
-              changed = true;
-              nextSong = {
-                ...nextSong,
-                localPath: resolvedLocalPath,
-                url: expectedUrl,
-              };
-            }
+          } else if (!currentUrl && normalizedContentUri.startsWith('content://')) {
+            changed = true;
+            nextSong = {
+              ...nextSong,
+              url: normalizedContentUri,
+              contentUri: normalizedContentUri,
+            };
+          } else if (
+            !currentUrl &&
+            currentLocalPath.startsWith('content://')
+          ) {
+            changed = true;
+            nextSong = {
+              ...nextSong,
+              url: currentLocalPath,
+            };
           }
 
           const normalizedSourcePath = this.inferSourcePathFromSong(
@@ -259,6 +179,38 @@ export const libraryMethods = {
             nextSong = {
               ...nextSong,
               duration: normalizedDuration,
+            };
+          }
+
+          const nextProvider =
+            provider ||
+            (mediaStoreId ? 'media_store' : 'legacy_fs');
+          if (provider !== nextProvider) {
+            changed = true;
+            nextSong = {
+              ...nextSong,
+              provider: nextProvider,
+            };
+          }
+
+          if (mediaStoreId && nextSong?.mediaStoreId !== mediaStoreId) {
+            changed = true;
+            nextSong = {
+              ...nextSong,
+              mediaStoreId,
+            };
+          }
+
+          const nextUrl = String(nextSong?.url || '').trim();
+          const contentUri = String(
+            nextSong?.contentUri ||
+              (nextUrl.startsWith('content://') ? nextUrl : ''),
+          ).trim();
+          if (contentUri && nextSong?.contentUri !== contentUri) {
+            changed = true;
+            nextSong = {
+              ...nextSong,
+              contentUri,
             };
           }
 
@@ -294,11 +246,12 @@ export const libraryMethods = {
     const normalized = Array.isArray(librarySongs)
       ? librarySongs.filter(Boolean)
       : [];
-    await AsyncStorage.setItem(
-      STORAGE_KEYS.LIBRARY,
-      JSON.stringify(normalized),
-    );
-    this.setLibraryCache(normalized);
+    await this.hydrateLibraryStoreFromDisk();
+    this.libraryStore.replaceAll(normalized, {
+      markDirty: true,
+      emit: true,
+    });
+    this.setLibraryCache(normalized, {syncStore: false});
     return normalized;
   },
 
@@ -377,8 +330,7 @@ export const libraryMethods = {
     }
 
     try {
-      const rawLibrary = await AsyncStorage.getItem(STORAGE_KEYS.LIBRARY);
-      const library = rawLibrary ? JSON.parse(rawLibrary) : [];
+      const library = await this.getLocalLibrary();
       const existing = this.findMatchingLibrarySong(library, song);
       if (!existing) {
         return false;
@@ -394,11 +346,7 @@ export const libraryMethods = {
           ? {...item, duration}
           : item,
       );
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.LIBRARY,
-        JSON.stringify(nextLibrary),
-      );
-      this.setLibraryCache(nextLibrary);
+      await this.saveLibrarySnapshot(nextLibrary);
       return true;
     } catch (error) {
       console.error('Error persisting duration for song:', error);
@@ -506,8 +454,9 @@ export const libraryMethods = {
       : null;
 
     const task = (async () => {
-      const rawLibrary = await AsyncStorage.getItem(STORAGE_KEYS.LIBRARY);
-      const library = rawLibrary ? JSON.parse(rawLibrary) : [];
+      const library = await this.getLocalLibrary({
+        forceRefresh: true,
+      });
       if (!Array.isArray(library) || library.length === 0) {
         return {
           totalSongs: 0,
@@ -578,11 +527,7 @@ export const libraryMethods = {
       }
 
       if (changed) {
-        await AsyncStorage.setItem(
-          STORAGE_KEYS.LIBRARY,
-          JSON.stringify(nextLibrary),
-        );
-        this.setLibraryCache(nextLibrary);
+        await this.saveLibrarySnapshot(nextLibrary);
       }
 
       return {
@@ -600,9 +545,9 @@ export const libraryMethods = {
     return task;
   },
 
-  async addToLibrary(song) {
+  async addToLibrary(song, options = {}) {
     try {
-      const summary = await this.upsertLibrarySongs([song]);
+      const summary = await this.upsertLibrarySongs([song], options);
       return summary.library;
     } catch (error) {
       console.error('Error adding to library:', error);
@@ -612,11 +557,22 @@ export const libraryMethods = {
 
   async removeFromLibrary(songId) {
     try {
-      const library = await this.getLocalLibrary();
-      const filtered = library.filter(song => song.id !== songId);
-      await this.saveLibrarySnapshot(filtered);
+      const normalizedId = String(songId || '').trim();
+      if (!normalizedId) {
+        return this.getLocalLibrary();
+      }
+      await this.hydrateLibraryStoreFromDisk();
+      const summary = this.libraryStore.removeBatch([normalizedId], {
+        markDirty: true,
+        emit: true,
+      });
+      if (!summary.changed) {
+        return this.getLibraryStoreSnapshot();
+      }
+      const snapshot = this.getLibraryStoreSnapshot();
+      this.setLibraryCache(snapshot, {syncStore: false});
       console.log('Song removed from library');
-      return filtered;
+      return snapshot;
     } catch (error) {
       console.error('Error removing from library:', error);
       return [];
@@ -751,6 +707,12 @@ export const libraryMethods = {
           incomingFilePath.split('/').pop() ||
           `${resolvedTitle}${DEFAULT_AUDIO_EXTENSION}`,
       };
+      const reconciledSong = await this.reconcileLocalSongWithMediaStore(
+        reusedSong,
+      ).catch(() => null);
+      if (reconciledSong) {
+        return reconciledSong;
+      }
       await this.addToLibrary(reusedSong);
       this.hydrateArtworkForSong(reusedSong, {persist: true}).catch(() => {});
       return reusedSong;
@@ -790,6 +752,12 @@ export const libraryMethods = {
           0,
         filename: preferredPath.split('/').pop(),
       };
+      const reconciledSong = await this.reconcileLocalSongWithMediaStore(
+        reusedSong,
+      ).catch(() => null);
+      if (reconciledSong) {
+        return reconciledSong;
+      }
       await this.addToLibrary(reusedSong);
       this.hydrateArtworkForSong(reusedSong, {persist: true}).catch(() => {});
       return reusedSong;
@@ -844,6 +812,12 @@ export const libraryMethods = {
       localSong.duration = extractedDuration;
     }
 
+    const reconciledSong = await this.reconcileLocalSongWithMediaStore(
+      localSong,
+    ).catch(() => null);
+    if (reconciledSong) {
+      return reconciledSong;
+    }
     await this.addToLibrary(localSong);
     this.hydrateArtworkForSong(localSong, {persist: true}).catch(() => {});
     return localSong;
@@ -993,10 +967,8 @@ export const libraryMethods = {
         return track;
       }
 
-      const existing = this.findMatchingLibrarySong(
-        await this.getLocalLibrary(),
-        track,
-      );
+      const baseLibrary = await this.getLocalLibrary();
+      const existing = this.findMatchingLibrarySong(baseLibrary, track);
       const canReuseExisting =
         existing &&
         ((await this.songFileExists(existing)) ||
@@ -1004,11 +976,11 @@ export const libraryMethods = {
 
       if (canReuseExisting) {
         const merged = this.mergeSongRecords(existing, track);
-        await this.addToLibrary(merged);
+        await this.addToLibrary(merged, {baseLibrary});
         return merged;
       }
 
-      await this.addToLibrary(track);
+      await this.addToLibrary(track, {baseLibrary});
       return track;
     } catch (error) {
       console.error('Error importing local audio file:', error);
@@ -1018,16 +990,33 @@ export const libraryMethods = {
 
   async deleteSongFile(song) {
     try {
-      if (song.localPath) {
-        const exists = await RNFS.exists(song.localPath);
+      if (
+        this.isLikelyMediaStoreSong(song) &&
+        !this.isSongAppOwned(song)
+      ) {
+        await this.hideMediaStoreSong(song);
+        return;
+      }
+
+      const localPath = this.resolveSongLocalPath(song);
+      if (localPath) {
+        const exists = await RNFS.exists(localPath);
         if (exists) {
-          await RNFS.unlink(song.localPath);
+          await RNFS.unlink(localPath);
           console.log('Song file deleted');
         }
       }
       await this.removeFromLibrary(song.id);
+      if (this.isLikelyMediaStoreSong(song)) {
+        this.runLibrarySyncInBackground({
+          launchSync: false,
+          forceRefresh: true,
+          promptForPermission: false,
+        }).catch(() => {});
+      }
     } catch (error) {
       console.error('Error deleting song file:', error);
     }
   },
 };
+

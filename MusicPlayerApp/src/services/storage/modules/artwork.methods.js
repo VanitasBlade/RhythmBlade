@@ -1,11 +1,9 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNFS from 'react-native-fs';
 import {
   canExtractEmbeddedArtwork,
   extractEmbeddedArtworkDataUri,
   optimizeArtworkUriForTrack,
 } from '../../artwork/ArtworkService';
-import {STORAGE_KEYS} from '../storage.constants';
 import {
   isUnknownValue,
   normalizeFileSourcePath,
@@ -114,10 +112,51 @@ export const artworkMethods = {
     const incomingPath = this.resolveSongLocalPath(incoming);
     const existingPath = this.resolveSongLocalPath(existing);
     const effectivePath = incomingPath || existingPath;
+    const incomingContentUri = normalizeText(
+      incoming?.contentUri ||
+        (String(incoming?.url || '').startsWith('content://')
+          ? incoming?.url
+          : ''),
+    );
+    const existingContentUri = normalizeText(
+      existing?.contentUri ||
+        (String(existing?.url || '').startsWith('content://')
+          ? existing?.url
+          : ''),
+    );
+    const mergedMediaStoreId = String(
+      incoming?.mediaStoreId || existing?.mediaStoreId || '',
+    ).trim();
+    const preferredContentUri =
+      incomingContentUri ||
+      existingContentUri ||
+      (mergedMediaStoreId
+        ? `content://media/external/audio/media/${mergedMediaStoreId}`
+        : '');
+    const mergedProvider = String(
+      incoming?.provider || existing?.provider || '',
+    )
+      .trim()
+      .toLowerCase();
+    const isMediaStoreSong = Boolean(
+      mergedProvider === 'media_store' ||
+        mergedMediaStoreId ||
+        preferredContentUri.startsWith('content://'),
+    );
+
     if (effectivePath) {
       merged.localPath = effectivePath;
-      merged.url = toFileUriFromPath(effectivePath);
       merged.isLocal = true;
+    }
+    if (isMediaStoreSong && preferredContentUri.startsWith('content://')) {
+      merged.url = preferredContentUri;
+      merged.contentUri = preferredContentUri;
+      if (mergedMediaStoreId) {
+        merged.mediaStoreId = mergedMediaStoreId;
+      }
+      merged.provider = 'media_store';
+    } else if (effectivePath) {
+      merged.url = toFileUriFromPath(effectivePath);
     }
     const sourcePath =
       this.inferSourcePathFromSong(incoming, effectivePath) ||
@@ -240,8 +279,7 @@ export const artworkMethods = {
     }
 
     try {
-      const rawLibrary = await AsyncStorage.getItem(STORAGE_KEYS.LIBRARY);
-      const library = rawLibrary ? JSON.parse(rawLibrary) : [];
+      const library = await this.getLocalLibrary();
       const existing = this.findMatchingLibrarySong(library, song);
       if (!existing || existing.artwork === normalizedArtwork) {
         return false;
@@ -252,11 +290,7 @@ export const artworkMethods = {
           ? {...item, artwork: normalizedArtwork}
           : item,
       );
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.LIBRARY,
-        JSON.stringify(nextLibrary),
-      );
-      this.setLibraryCache(nextLibrary);
+      await this.saveLibrarySnapshot(nextLibrary);
       return true;
     } catch (error) {
       console.error('Error persisting artwork for song:', error);
@@ -371,8 +405,9 @@ export const artworkMethods = {
       : null;
 
     const task = (async () => {
-      const rawLibrary = await AsyncStorage.getItem(STORAGE_KEYS.LIBRARY);
-      const library = rawLibrary ? JSON.parse(rawLibrary) : [];
+      const library = await this.getLocalLibrary({
+        forceRefresh: true,
+      });
       if (!Array.isArray(library) || library.length === 0) {
         return {
           totalSongs: 0,
@@ -484,11 +519,7 @@ export const artworkMethods = {
       }
 
       if (changed) {
-        await AsyncStorage.setItem(
-          STORAGE_KEYS.LIBRARY,
-          JSON.stringify(nextLibrary),
-        );
-        this.setLibraryCache(nextLibrary);
+        await this.saveLibrarySnapshot(nextLibrary);
       }
 
       return {

@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {Platform} from 'react-native';
 import {
   LEGACY_PLACEHOLDER_FILE_SOURCE_PATHS,
   STORAGE_KEYS,
@@ -16,6 +17,21 @@ const MAX_PROFILE_AVATAR_VALUE_LENGTH = 8192;
 const MIN_CROSSFADE_DURATION_SEC = 1;
 const MAX_CROSSFADE_DURATION_SEC = 12;
 const DEFAULT_CROSSFADE_DURATION_SEC = 5;
+const LIBRARY_PROVIDER_VALUES = new Set([
+  'legacy_fs',
+  'media_store',
+  'dual_shadow',
+]);
+
+function normalizeLibraryProvider(value) {
+  const candidate = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (!LIBRARY_PROVIDER_VALUES.has(candidate)) {
+    return 'legacy_fs';
+  }
+  return candidate;
+}
 
 function normalizeProfileAvatarValue(value = '') {
   const normalized = String(value || '').trim();
@@ -63,6 +79,11 @@ export const settingsMethods = {
       convertAacToMp3: false,
       downloadSaveLocation: defaultDownloadSaveLocation,
       fileSources: this.buildDefaultFileSources(),
+      libraryProvider: Platform.OS === 'android' ? 'media_store' : 'legacy_fs',
+      mediaStoreObserverEnabled: true,
+      mediaStoreSelectedFoldersOnly: true,
+      mediaStoreConsecutiveFailures: 0,
+      playlistMediaStoreMigrationDone: false,
     };
   },
 
@@ -162,6 +183,17 @@ export const settingsMethods = {
           ? merged.autoConvertAacToMp3
           : merged.convertAacToMp3 === true;
       merged.convertAacToMp3 = merged.convertAacToMp3 === true;
+      merged.libraryProvider = normalizeLibraryProvider(merged.libraryProvider);
+      merged.mediaStoreObserverEnabled =
+        merged.mediaStoreObserverEnabled !== false;
+      merged.mediaStoreSelectedFoldersOnly =
+        merged.mediaStoreSelectedFoldersOnly !== false;
+      merged.mediaStoreConsecutiveFailures = Math.max(
+        0,
+        Number(merged.mediaStoreConsecutiveFailures) || 0,
+      );
+      merged.playlistMediaStoreMigrationDone =
+        merged.playlistMediaStoreMigrationDone === true;
       delete merged.profileAvatarDataUri;
       delete merged.profileAvatarUri;
       return merged;
@@ -212,6 +244,19 @@ export const settingsMethods = {
       );
       normalized.autoConvertAacToMp3 = normalized.autoConvertAacToMp3 === true;
       normalized.convertAacToMp3 = normalized.convertAacToMp3 === true;
+      normalized.libraryProvider = normalizeLibraryProvider(
+        normalized.libraryProvider,
+      );
+      normalized.mediaStoreObserverEnabled =
+        normalized.mediaStoreObserverEnabled !== false;
+      normalized.mediaStoreSelectedFoldersOnly =
+        normalized.mediaStoreSelectedFoldersOnly !== false;
+      normalized.mediaStoreConsecutiveFailures = Math.max(
+        0,
+        Number(normalized.mediaStoreConsecutiveFailures) || 0,
+      );
+      normalized.playlistMediaStoreMigrationDone =
+        normalized.playlistMediaStoreMigrationDone === true;
       normalized.fileSources = this.normalizeFileSources(
         normalized.fileSources,
       );
@@ -313,8 +358,11 @@ export const settingsMethods = {
         STORAGE_KEYS.LIBRARY,
         STORAGE_KEYS.PLAYLISTS,
         STORAGE_KEYS.ALBUMS,
+        STORAGE_KEYS.LAST_LIBRARY_SYNC_AT,
+        STORAGE_KEYS.MEDIASTORE_SYNC_META,
+        STORAGE_KEYS.HIDDEN_MEDIASTORE_IDS,
       ]);
-      this.clearLibraryCache();
+      this.clearLibraryCache({clearStore: true});
       console.log('All data cleared');
     } catch (error) {
       console.error('Error clearing data:', error);
