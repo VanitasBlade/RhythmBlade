@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import RNFS from 'react-native-fs';
 
 import {
@@ -326,7 +326,15 @@ function buildNativeDownloadHeaders(bridgeDownload) {
   return headers;
 }
 
-function useSquidWebViewDownloader() {
+function useSquidWebViewDownloader(options = {}) {
+  const onBridgeActivity =
+    typeof options?.onBridgeActivity === 'function'
+      ? options.onBridgeActivity
+      : null;
+  const onActiveDownloadCountChange =
+    typeof options?.onActiveDownloadCountChange === 'function'
+      ? options.onActiveDownloadCountChange
+      : null;
   const webViewRef = useRef(null);
   const bridgeReadyRef = useRef(false);
   const bridgeBootstrappingRef = useRef(false);
@@ -342,6 +350,7 @@ function useSquidWebViewDownloader() {
   const lastLoadEndRef = useRef({ url: '', timestamp: 0 });
   const pendingAlbumUrlRef = useRef('');
   const activeAlbumUrlRef = useRef('');
+  const lastActiveDownloadCountRef = useRef(null);
 
   // Logging is __DEV__-gated to suppress output in production builds.
   const log = useCallback((message, context = null) => {
@@ -355,6 +364,46 @@ function useSquidWebViewDownloader() {
     }
     console.log(`[SquidWV ${timestamp}] ${message}`, context);
   }, []);
+
+  const getActiveDownloadCount = useCallback(() => {
+    let count = 0;
+    jobsRef.current.forEach(job => {
+      if (ACTIVE_STATUSES.has(job?.status || '')) {
+        count += 1;
+      }
+    });
+    return count;
+  }, []);
+
+  const emitActiveDownloadCount = useCallback(
+    reason => {
+      if (!onActiveDownloadCountChange) {
+        return;
+      }
+      const nextCount = getActiveDownloadCount();
+      if (lastActiveDownloadCountRef.current === nextCount) {
+        return;
+      }
+      lastActiveDownloadCountRef.current = nextCount;
+      try {
+        onActiveDownloadCountChange(nextCount);
+      } catch (_) {
+        // Ignore callback consumer errors.
+      }
+      if (__DEV__) {
+        log('Active download count changed.', {
+          reason: reason || null,
+          count: nextCount,
+        });
+      }
+    },
+    [getActiveDownloadCount, log, onActiveDownloadCountChange],
+  );
+
+  useEffect(() => {
+    lastActiveDownloadCountRef.current = null;
+    emitActiveDownloadCount('listener-change');
+  }, [emitActiveDownloadCount]);
 
   const flushBridgeWaiters = useCallback(() => {
     const waiters = bridgeReadyWaitersRef.current.splice(0);
@@ -567,10 +616,27 @@ function useSquidWebViewDownloader() {
         });
 
         log('Posting bridge command.', { id, type });
+        if (onBridgeActivity) {
+          try {
+            onBridgeActivity({
+              type,
+              commandId: id,
+              jobId: jobId || null,
+            });
+          } catch (_) {
+            // Ignore callback consumer errors.
+          }
+        }
         webView.postMessage(body);
       });
     },
-    [log, registerCommandTracking, sendBridgeAbort, unlinkCommandTracking],
+    [
+      log,
+      onBridgeActivity,
+      registerCommandTracking,
+      sendBridgeAbort,
+      unlinkCommandTracking,
+    ],
   );
 
   const bootstrapBridge = useCallback(
@@ -812,6 +878,7 @@ function useSquidWebViewDownloader() {
     if (jobs.size <= MAX_STORED_JOBS) {
       return;
     }
+    let removedAny = false;
 
     for (const [jobId, job] of jobs) {
       if (jobs.size <= MAX_STORED_JOBS) {
@@ -819,6 +886,7 @@ function useSquidWebViewDownloader() {
       }
       if (job.status === 'done' || job.status === 'failed') {
         jobs.delete(jobId);
+        removedAny = true;
       }
     }
 
@@ -828,8 +896,13 @@ function useSquidWebViewDownloader() {
         break;
       }
       jobs.delete(oldestId);
+      removedAny = true;
     }
-  }, []);
+
+    if (removedAny) {
+      emitActiveDownloadCount('trim-jobs');
+    }
+  }, [emitActiveDownloadCount]);
 
   const patchJob = useCallback((jobId, patch = {}) => {
     const job = jobsRef.current.get(jobId);
@@ -837,6 +910,7 @@ function useSquidWebViewDownloader() {
       return null;
     }
 
+    const previousStatus = String(job.status || '');
     const previousProgress = Number(job.progress) || 0;
     Object.assign(job, patch);
     job.updatedAt = Date.now();
@@ -858,8 +932,12 @@ function useSquidWebViewDownloader() {
       job.error = patch.error ? String(patch.error) : null;
     }
 
+    if (previousStatus !== String(job.status || '')) {
+      emitActiveDownloadCount('patch-job-status');
+    }
+
     return cloneJob(job);
-  }, []);
+  }, [emitActiveDownloadCount]);
 
   const assertJobActive = useCallback(jobId => {
     if (!jobsRef.current.has(jobId) || cancelledJobsRef.current.has(jobId)) {
@@ -910,9 +988,10 @@ function useSquidWebViewDownloader() {
 
       jobsRef.current.set(job.id, job);
       trimJobs();
+      emitActiveDownloadCount('queue-download-job');
       return cloneJob(job);
     },
-    [trimJobs],
+    [emitActiveDownloadCount, trimJobs],
   );
 
   const toPublicJobs = useCallback((limit = 60) => {
@@ -1947,10 +2026,11 @@ function useSquidWebViewDownloader() {
       }
 
       jobsRef.current.delete(jobId);
+      emitActiveDownloadCount('cancel-download');
       log('Cancelled download job.', { jobId });
       return true;
     },
-    [log, rejectPendingCommand],
+    [emitActiveDownloadCount, log, rejectPendingCommand],
   );
 
   const handleWebViewLoadStart = useCallback(

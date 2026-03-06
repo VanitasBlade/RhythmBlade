@@ -72,6 +72,7 @@ export const settingsMethods = {
       autoDownload: false,
       theme: 'dark',
       autoEnableBridge: true,
+      autoDisableBridgeAfterInactivity: false,
       autoContinueEnabled: true,
       loopLibraryPlaylistEnabled: false,
       shuffleByDefaultEnabled: false,
@@ -175,6 +176,8 @@ export const settingsMethods = {
       };
       merged.autoContinueEnabled = merged.autoContinueEnabled !== false;
       merged.autoEnableBridge = merged.autoEnableBridge !== false;
+      merged.autoDisableBridgeAfterInactivity =
+        merged.autoDisableBridgeAfterInactivity === true;
       merged.loopLibraryPlaylistEnabled =
         merged.loopLibraryPlaylistEnabled === true;
       merged.shuffleByDefaultEnabled = merged.shuffleByDefaultEnabled === true;
@@ -240,6 +243,8 @@ export const settingsMethods = {
         this.getPreferredMusicDir();
       normalized.autoContinueEnabled = normalized.autoContinueEnabled !== false;
       normalized.autoEnableBridge = normalized.autoEnableBridge !== false;
+      normalized.autoDisableBridgeAfterInactivity =
+        normalized.autoDisableBridgeAfterInactivity === true;
       normalized.loopLibraryPlaylistEnabled =
         normalized.loopLibraryPlaylistEnabled === true;
       normalized.shuffleByDefaultEnabled =

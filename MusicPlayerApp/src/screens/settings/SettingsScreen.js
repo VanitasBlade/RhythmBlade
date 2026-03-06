@@ -263,6 +263,8 @@ const SettingsScreen = () => {
   );
   const [locationDraft, setLocationDraft] = useState(defaultDownloadLocation);
   const [autoEnableBridge, setAutoEnableBridge] = useState(true);
+  const [autoDisableBridgeAfterInactivity, setAutoDisableBridgeAfterInactivity] =
+    useState(false);
   const [autoConvertAacToMp3, setAutoConvertAacToMp3] = useState(false);
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -405,6 +407,21 @@ const SettingsScreen = () => {
         });
       } catch (error) {
         console.error('Could not persist auto AAC conversion setting:', error);
+      }
+    },
+    [persistDownloadPreferences],
+  );
+
+  const onAutoDisableBridgeAfterInactivityToggle = useCallback(
+    async nextValue => {
+      const enabled = nextValue === true;
+      setAutoDisableBridgeAfterInactivity(enabled);
+      try {
+        await persistDownloadPreferences({
+          autoDisableBridgeAfterInactivity: enabled,
+        });
+      } catch (error) {
+        console.error('Could not persist bridge inactivity setting:', error);
       }
     },
     [persistDownloadPreferences],
@@ -634,6 +651,8 @@ const SettingsScreen = () => {
           normalizeFileSourcePath(settings?.downloadSaveLocation) ||
           defaultDownloadLocation;
         const savedAutoEnableBridge = settings?.autoEnableBridge !== false;
+        const savedAutoDisableBridgeAfterInactivity =
+          settings?.autoDisableBridgeAfterInactivity === true;
         const savedAutoConvertAacToMp3 =
           typeof settings?.autoConvertAacToMp3 === 'boolean'
             ? settings.autoConvertAacToMp3
@@ -641,6 +660,9 @@ const SettingsScreen = () => {
         setDownloadLocation(savedDownloadLocation);
         setLocationDraft(savedDownloadLocation);
         setAutoEnableBridge(savedAutoEnableBridge);
+        setAutoDisableBridgeAfterInactivity(
+          savedAutoDisableBridgeAfterInactivity,
+        );
         setAutoConvertAacToMp3(savedAutoConvertAacToMp3);
       } catch (error) {
         console.error('Could not load profile avatar:', error);
@@ -763,6 +785,18 @@ const SettingsScreen = () => {
               <ToggleSwitch
                 value={autoEnableBridge}
                 onValueChange={onAutoEnableBridgeToggle}
+                disabled={editingLocation}
+              />
+            }
+          />
+          <SettingsRow
+            icon="shuffle-variant"
+            title="Auto Disable Bridge (30s idle)"
+            subtitle="Turns bridge off after 30s idle or 2m after leaving Downloader"
+            rightElement={
+              <ToggleSwitch
+                value={autoDisableBridgeAfterInactivity}
+                onValueChange={onAutoDisableBridgeAfterInactivityToggle}
                 disabled={editingLocation}
               />
             }

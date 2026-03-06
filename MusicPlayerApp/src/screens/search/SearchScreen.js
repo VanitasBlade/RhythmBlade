@@ -37,6 +37,8 @@ const AGGRESSIVE_QUEUE_POLL_MS = 450;
 const IDLE_QUEUE_POLL_MS = 4200;
 const SEARCH_RESULT_ESTIMATED_ITEM_SIZE = 88;
 const QUEUE_ESTIMATED_ITEM_SIZE = 90;
+const IDLE_TIMEOUT_MS = 30000;
+const BACKGROUND_TIMEOUT_MS = 120000;
 
 const toComparableNumber = value => Number(value) || 0;
 const resolveAutoConvertAacToMp3Default = settings => {
@@ -100,8 +102,22 @@ const SearchScreen = () => {
   const [albumTracksLoading, setAlbumTracksLoading] = useState(false);
   const [albumQueueingAll, setAlbumQueueingAll] = useState(false);
   const [convertAacToMp3, setConvertAacToMp3] = useState(false);
+  const [autoDisableBridgeAfterInactivity, setAutoDisableBridgeAfterInactivity] =
+    useState(false);
 
   const mountedRef = useRef(true);
+  const isMountedRef = useRef(true);
+  const isFocusedRef = useRef(false);
+  const loadingRef = useRef(false);
+  const albumTracksLoadingRef = useRef(false);
+  const bridgeEnabledRef = useRef(true);
+  const autoDisableBridgeRef = useRef(false);
+  const idleTimerRef = useRef(null);
+  const backgroundTimerRef = useRef(null);
+  const isDownloadingRef = useRef(false);
+  const hasInteractedSinceEnableRef = useRef(false);
+  const pendingBackgroundAfterDownloadRef = useRef(false);
+  const previousBridgeEnabledRef = useRef(true);
   const downloadSettingRef = useRef(DEFAULT_DOWNLOAD_SETTING);
   const pollInFlightRef = useRef(false);
   const persistedJobsRef = useRef(new Set());
@@ -109,6 +125,130 @@ const SearchScreen = () => {
   const downloadDefaultsAppliedRef = useRef(false);
   const activeDownloaderTabRef = useRef('Search');
   const activeQueueCountRef = useRef(0);
+  const clearIdleTimer = useCallback(() => {
+    if (idleTimerRef.current) {
+      clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = null;
+    }
+  }, []);
+
+  const clearBackgroundTimer = useCallback(() => {
+    if (backgroundTimerRef.current) {
+      clearTimeout(backgroundTimerRef.current);
+      backgroundTimerRef.current = null;
+    }
+  }, []);
+
+  const clearAllBridgeTimers = useCallback(() => {
+    clearIdleTimer();
+    clearBackgroundTimer();
+    pendingBackgroundAfterDownloadRef.current = false;
+  }, [clearBackgroundTimer, clearIdleTimer]);
+
+  const tearDownIfSafe = useCallback(
+    reason => {
+      if (!isMountedRef.current) {
+        return false;
+      }
+      if (!bridgeEnabledRef.current) {
+        return false;
+      }
+      if (isDownloadingRef.current || activeQueueCountRef.current > 0) {
+        return false;
+      }
+      if (loadingRef.current || albumTracksLoadingRef.current) {
+        return false;
+      }
+      clearAllBridgeTimers();
+      hasInteractedSinceEnableRef.current = false;
+      if (__DEV__) {
+        console.log('[DownloaderBridge] Auto-disabled bridge.', {reason});
+      }
+      setBridgeEnabled(false);
+      return true;
+    },
+    [clearAllBridgeTimers],
+  );
+
+  const armIdleTimer = useCallback(
+    reason => {
+      if (!isMountedRef.current) {
+        return;
+      }
+      if (!isFocusedRef.current) {
+        return;
+      }
+      if (!autoDisableBridgeRef.current || !bridgeEnabledRef.current) {
+        return;
+      }
+      clearIdleTimer();
+      idleTimerRef.current = setTimeout(() => {
+        tearDownIfSafe(`idle:${reason || 'timer'}`);
+      }, IDLE_TIMEOUT_MS);
+    },
+    [clearIdleTimer, tearDownIfSafe],
+  );
+
+  const startBackgroundTimer = useCallback(
+    reason => {
+      if (!isMountedRef.current) {
+        return;
+      }
+      if (!autoDisableBridgeRef.current || !bridgeEnabledRef.current) {
+        return;
+      }
+      if (isDownloadingRef.current || activeQueueCountRef.current > 0) {
+        return;
+      }
+      clearBackgroundTimer();
+      backgroundTimerRef.current = setTimeout(() => {
+        tearDownIfSafe(`background:${reason || 'timer'}`);
+      }, BACKGROUND_TIMEOUT_MS);
+    },
+    [clearBackgroundTimer, tearDownIfSafe],
+  );
+
+  const resetIdleTimerFromInteraction = useCallback(
+    source => {
+      hasInteractedSinceEnableRef.current = true;
+      if (!isFocusedRef.current) {
+        return;
+      }
+      if (!autoDisableBridgeRef.current || !bridgeEnabledRef.current) {
+        return;
+      }
+      armIdleTimer(source || 'interaction');
+    },
+    [armIdleTimer],
+  );
+
+  const handleBridgeActivity = useCallback(
+    event => {
+      const type = String(event?.type || 'bridge').trim() || 'bridge';
+      resetIdleTimerFromInteraction(`bridge:${type}`);
+    },
+    [resetIdleTimerFromInteraction],
+  );
+
+  const handleActiveDownloadCountChange = useCallback(
+    count => {
+      const nextCount = Math.max(0, Number(count) || 0);
+      isDownloadingRef.current = nextCount > 0;
+      if (nextCount > 0) {
+        clearBackgroundTimer();
+        return;
+      }
+      if (isFocusedRef.current) {
+        return;
+      }
+      if (pendingBackgroundAfterDownloadRef.current) {
+        pendingBackgroundAfterDownloadRef.current = false;
+        startBackgroundTimer('downloads-inactive');
+      }
+    },
+    [clearBackgroundTimer, startBackgroundTimer],
+  );
+
   const {
     webViewRef,
     webViewProps,
@@ -119,7 +259,10 @@ const SearchScreen = () => {
     retryDownload: retryDownloadFromWebView,
     cancelDownload: cancelDownloadFromWebView,
     syncConvertToMp3: syncConvertToMp3FromWebView,
-  } = useSquidWebViewDownloader();
+  } = useSquidWebViewDownloader({
+    onBridgeActivity: handleBridgeActivity,
+    onActiveDownloadCountChange: handleActiveDownloadCountChange,
+  });
 
   const currentOptionShortLabel = useMemo(
     () => getDownloadSettingShortLabel(downloadSetting),
@@ -161,7 +304,57 @@ const SearchScreen = () => {
 
   useEffect(() => {
     activeQueueCountRef.current = activeQueueCount;
+    isDownloadingRef.current = activeQueueCount > 0;
   }, [activeQueueCount]);
+
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+
+  useEffect(() => {
+    albumTracksLoadingRef.current = albumTracksLoading;
+  }, [albumTracksLoading]);
+
+  useEffect(() => {
+    autoDisableBridgeRef.current = autoDisableBridgeAfterInactivity === true;
+    if (!autoDisableBridgeRef.current) {
+      clearAllBridgeTimers();
+      return;
+    }
+    if (
+      isFocusedRef.current &&
+      bridgeEnabledRef.current &&
+      hasInteractedSinceEnableRef.current
+    ) {
+      armIdleTimer('setting-enabled');
+    }
+  }, [armIdleTimer, autoDisableBridgeAfterInactivity, clearAllBridgeTimers]);
+
+  useEffect(() => {
+    const wasEnabled = previousBridgeEnabledRef.current;
+    previousBridgeEnabledRef.current = bridgeEnabled;
+    bridgeEnabledRef.current = bridgeEnabled;
+
+    if (!bridgeEnabled) {
+      clearAllBridgeTimers();
+      hasInteractedSinceEnableRef.current = false;
+      return;
+    }
+
+    if (!wasEnabled) {
+      clearBackgroundTimer();
+      hasInteractedSinceEnableRef.current = false;
+    }
+  }, [bridgeEnabled, clearAllBridgeTimers, clearBackgroundTimer]);
+
+  useEffect(
+    () => () => {
+      isMountedRef.current = false;
+      clearIdleTimer();
+      clearBackgroundTimer();
+    },
+    [clearBackgroundTimer, clearIdleTimer],
+  );
 
   const orderedQueue = useMemo(
     () => [...queue].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
@@ -227,12 +420,25 @@ const SearchScreen = () => {
       let active = true;
       let timer = null;
       mountedRef.current = true;
+      isFocusedRef.current = true;
+      pendingBackgroundAfterDownloadRef.current = false;
+      clearBackgroundTimer();
+      if (
+        autoDisableBridgeRef.current &&
+        bridgeEnabledRef.current &&
+        hasInteractedSinceEnableRef.current
+      ) {
+        armIdleTimer('focus');
+      }
 
       const loadFocusedData = async () => {
         const settings = await storageService.getSettings();
         if (active) {
           applyDownloadSetting(
             settings?.downloadSetting || DEFAULT_DOWNLOAD_SETTING,
+          );
+          setAutoDisableBridgeAfterInactivity(
+            settings?.autoDisableBridgeAfterInactivity === true,
           );
           if (!downloadDefaultsAppliedRef.current) {
             const autoBridgeEnabled = settings?.autoEnableBridge !== false;
@@ -283,12 +489,28 @@ const SearchScreen = () => {
       return () => {
         active = false;
         mountedRef.current = false;
+        isFocusedRef.current = false;
         task.cancel();
         if (timer) {
           clearTimeout(timer);
         }
+        clearIdleTimer();
+        if (autoDisableBridgeRef.current && bridgeEnabledRef.current) {
+          if (isDownloadingRef.current || activeQueueCountRef.current > 0) {
+            pendingBackgroundAfterDownloadRef.current = true;
+          } else {
+            startBackgroundTimer('blur');
+          }
+        }
       };
-    }, [applyDownloadSetting, refreshQueue]),
+    }, [
+      applyDownloadSetting,
+      armIdleTimer,
+      clearBackgroundTimer,
+      clearIdleTimer,
+      refreshQueue,
+      startBackgroundTimer,
+    ]),
   );
 
   useEffect(() => {
@@ -299,6 +521,24 @@ const SearchScreen = () => {
       refreshQueue();
     }
   }, [activeDownloaderTab, refreshQueue]);
+
+  useEffect(() => {
+    const isBusy =
+      activeQueueCount > 0 || loadingRef.current || albumTracksLoadingRef.current;
+    if (isBusy) {
+      return;
+    }
+    if (!isFocusedRef.current) {
+      return;
+    }
+    if (!autoDisableBridgeRef.current || !bridgeEnabledRef.current) {
+      return;
+    }
+    if (!hasInteractedSinceEnableRef.current) {
+      return;
+    }
+    armIdleTimer('busy-cleared');
+  }, [activeQueueCount, albumTracksLoading, armIdleTimer, loading]);
 
   const doneJobIds = useMemo(
     () =>
@@ -361,13 +601,17 @@ const SearchScreen = () => {
   );
 
   const toggleConvertAacToMp3 = useCallback(nextValue => {
+    resetIdleTimerFromInteraction('convert-toggle');
     const enabled = Boolean(nextValue);
     setConvertAacToMp3(enabled);
     syncConvertToMp3FromWebView(enabled).catch(() => {});
-  }, [syncConvertToMp3FromWebView]);
+  }, [resetIdleTimerFromInteraction, syncConvertToMp3FromWebView]);
 
   const toggleBridgeEnabled = useCallback(() => {
     if (!bridgeEnabled) {
+      clearBackgroundTimer();
+      pendingBackgroundAfterDownloadRef.current = false;
+      hasInteractedSinceEnableRef.current = false;
       setBridgeEnabled(true);
       return;
     }
@@ -388,8 +632,17 @@ const SearchScreen = () => {
       return;
     }
 
+    clearAllBridgeTimers();
+    hasInteractedSinceEnableRef.current = false;
     setBridgeEnabled(false);
-  }, [activeQueueCount, albumTracksLoading, bridgeEnabled, loading]);
+  }, [
+    activeQueueCount,
+    albumTracksLoading,
+    bridgeEnabled,
+    clearAllBridgeTimers,
+    clearBackgroundTimer,
+    loading,
+  ]);
 
   const closeAlbumView = useCallback(() => {
     setActiveAlbum(null);
@@ -425,6 +678,8 @@ const SearchScreen = () => {
       return;
     }
 
+    resetIdleTimerFromInteraction('search-submit');
+
     try {
       Keyboard.dismiss();
       setLoading(true);
@@ -455,6 +710,7 @@ const SearchScreen = () => {
     closeAlbumView,
     bridgeEnabled,
     query,
+    resetIdleTimerFromInteraction,
     searchSongsFromWebView,
   ]);
 
@@ -467,6 +723,8 @@ const SearchScreen = () => {
       if (!item.downloadable) {
         return { status: 'not-downloadable' };
       }
+
+      resetIdleTimerFromInteraction('queue-download');
 
       if (!bridgeEnabled) {
         if (!suppressAlert) {
@@ -534,7 +792,13 @@ const SearchScreen = () => {
         }
       }
     },
-    [bridgeEnabled, convertAacToMp3, queueByTrackKey, startDownloadFromWebView],
+    [
+      bridgeEnabled,
+      convertAacToMp3,
+      queueByTrackKey,
+      resetIdleTimerFromInteraction,
+      startDownloadFromWebView,
+    ],
   );
 
   const openAlbum = useCallback(async album => {
@@ -551,6 +815,7 @@ const SearchScreen = () => {
       return;
     }
 
+    resetIdleTimerFromInteraction('open-album');
     setActiveAlbum(album);
     setAlbumTracks([]);
     setAlbumTracksLoading(true);
@@ -579,13 +844,14 @@ const SearchScreen = () => {
         setAlbumTracksLoading(false);
       }
     }
-  }, [bridgeEnabled, getAlbumTracksFromWebView]);
+  }, [bridgeEnabled, getAlbumTracksFromWebView, resetIdleTimerFromInteraction]);
 
   const queueAlbumTracksAll = useCallback(async () => {
     if (!activeAlbum || albumQueueingAll || albumTracks.length === 0) {
       return;
     }
 
+    resetIdleTimerFromInteraction('queue-album-all');
     setAlbumQueueingAll(true);
     let queued = 0;
     let skipped = 0;
@@ -629,7 +895,13 @@ const SearchScreen = () => {
         ? `Queued ${queued} tracks. Skipped ${skipped} already in queue.`
         : `Queued ${queued} tracks from ${activeAlbum.title}.`,
     );
-  }, [activeAlbum, albumQueueingAll, albumTracks, queueDownload]);
+  }, [
+    activeAlbum,
+    albumQueueingAll,
+    albumTracks,
+    queueDownload,
+    resetIdleTimerFromInteraction,
+  ]);
 
   const retryQueueItem = useCallback(
     async job => {
@@ -645,6 +917,7 @@ const SearchScreen = () => {
         return;
       }
 
+      resetIdleTimerFromInteraction('retry-download');
       try {
         setRetryingJobs(prev => ({ ...prev, [job.id]: true }));
         const fallbackSong = {
@@ -689,7 +962,13 @@ const SearchScreen = () => {
         }
       }
     },
-    [bridgeEnabled, convertAacToMp3, retryDownloadFromWebView, retryingJobs],
+    [
+      bridgeEnabled,
+      convertAacToMp3,
+      resetIdleTimerFromInteraction,
+      retryDownloadFromWebView,
+      retryingJobs,
+    ],
   );
 
   const cancelQueueItem = useCallback(
@@ -698,6 +977,7 @@ const SearchScreen = () => {
         return;
       }
 
+      resetIdleTimerFromInteraction('cancel-download');
       try {
         setCancelingJobs(prev => ({ ...prev, [job.id]: true }));
         await cancelDownloadFromWebView(job.id);
@@ -719,7 +999,7 @@ const SearchScreen = () => {
         }
       }
     },
-    [cancelDownloadFromWebView, cancelingJobs],
+    [cancelDownloadFromWebView, cancelingJobs, resetIdleTimerFromInteraction],
   );
 
   const dismissDoneQueueItem = useCallback(jobId => {
