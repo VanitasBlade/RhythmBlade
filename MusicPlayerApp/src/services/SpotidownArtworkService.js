@@ -7,6 +7,10 @@ import {
 } from './storage/storage.helpers';
 
 const LOG_PREFIX = '[SpotidownArtworkService]';
+const SPOTIFY_ARTWORK_300_TOKEN = 'ab67616d00001e02';
+const SPOTIFY_ARTWORK_640_TOKEN = 'ab67616d0000b273';
+const COVER_FETCH_TIMEOUT_MS = 12000;
+const SPOTIFY_CANONICAL_ARTWORK_HOST = 'i.scdn.co';
 
 function log(message, context = null) {
   if (context === null || typeof context === 'undefined') {
@@ -55,6 +59,53 @@ export function isSpotidownArtworkUrl(url) {
   return host === 'i.scdn.co' || host.endsWith('.i.scdn.co');
 }
 
+function toCanonicalSpotifyArtworkUrl(url) {
+  const normalized = String(url || '').trim();
+  if (!normalized) {
+    return '';
+  }
+  const schemeMatch = normalized.match(/^([a-z][a-z0-9+.-]*):\/\//i);
+  const scheme = String(schemeMatch?.[1] || '').toLowerCase();
+  if (scheme !== 'http' && scheme !== 'https') {
+    return '';
+  }
+  const authorityMatch = normalized.match(/^https?:\/\/([^/?#]+)/i);
+  const authority = String(authorityMatch?.[1] || '');
+  if (!authority) {
+    return '';
+  }
+  const hostPort = authority.includes('@')
+    ? String(authority.split('@').pop() || '')
+    : authority;
+  const host = String(hostPort.split(':')[0] || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '');
+  const allowedHost =
+    host === SPOTIFY_CANONICAL_ARTWORK_HOST ||
+    /^image-cdn-[a-z0-9-]+\.spotifycdn\.com$/i.test(host);
+  if (!allowedHost) {
+    return '';
+  }
+  const pathMatch = normalized.match(/^https?:\/\/[^/?#]+([^?#]*)/i);
+  const pathname = String(pathMatch?.[1] || '/');
+  const pathSegments = pathname.split('/').filter(Boolean);
+  if (
+    pathSegments.length < 2 ||
+    String(pathSegments[0] || '').toLowerCase() !== 'image'
+  ) {
+    return '';
+  }
+  const artworkHash = String(pathSegments[1] || '').trim();
+  if (!artworkHash) {
+    return '';
+  }
+  const queryMatch = normalized.match(/\?[^#]*/);
+  const query = String(queryMatch?.[0] || '').trim();
+  return `https://${SPOTIFY_CANONICAL_ARTWORK_HOST}/image/${artworkHash}${query}`;
+}
+
 function resolveCoverFileName(artist, title) {
   const rawBase = `${String(artist || '').trim()}_${String(
     title || '',
@@ -70,12 +121,109 @@ function toBase64FromArrayBuffer(arrayBuffer) {
   return Buffer.from(arrayBuffer).toString('base64');
 }
 
+export function mutateSpotifyArtworkUrlTo640(url) {
+  const normalized = toCanonicalSpotifyArtworkUrl(url);
+  if (!normalized) {
+    return '';
+  }
+  const pathMatch = normalized.match(/^https?:\/\/[^/?#]+([^?#]*)/i);
+  const pathname = String(pathMatch?.[1] || '/');
+  const pathSegments = pathname.split('/').filter(Boolean);
+  if (
+    pathSegments.length < 2 ||
+    String(pathSegments[0] || '').toLowerCase() !== 'image'
+  ) {
+    return '';
+  }
+  const artworkHash = String(pathSegments[1] || '').trim();
+  if (!artworkHash) {
+    return '';
+  }
+  const upgradedHash = artworkHash.replace(
+    new RegExp(SPOTIFY_ARTWORK_300_TOKEN, 'ig'),
+    SPOTIFY_ARTWORK_640_TOKEN,
+  );
+  if (
+    upgradedHash.toLowerCase() === artworkHash.toLowerCase() &&
+    artworkHash.toLowerCase().includes(SPOTIFY_ARTWORK_640_TOKEN.toLowerCase())
+  ) {
+    return normalized;
+  }
+  const queryMatch = normalized.match(/\?[^#]*/);
+  const query = String(queryMatch?.[0] || '');
+  return `https://${SPOTIFY_CANONICAL_ARTWORK_HOST}/image/${upgradedHash}${String(
+    query || '',
+  )}`;
+}
+
+function resolveArtworkCandidates(url) {
+  const canonicalOriginal = toCanonicalSpotifyArtworkUrl(url);
+  if (!canonicalOriginal) {
+    return [];
+  }
+  const mutated = mutateSpotifyArtworkUrlTo640(canonicalOriginal);
+  if (!mutated || mutated === canonicalOriginal) {
+    return [canonicalOriginal];
+  }
+  return [mutated, canonicalOriginal];
+}
+
+async function fetchArrayBufferWithTimeout(
+  url,
+  timeoutMs = COVER_FETCH_TIMEOUT_MS,
+) {
+  const requestUrl = String(url || '').trim();
+  if (!requestUrl) {
+    throw new Error('cover-url-missing');
+  }
+  const supportsAbort =
+    typeof AbortController === 'function' && typeof AbortSignal === 'function';
+  const controller = supportsAbort ? new AbortController() : null;
+  const timer = setTimeout(() => {
+    if (controller) {
+      try {
+        controller.abort();
+      } catch (_) {
+        // Ignore abort errors.
+      }
+    }
+  }, Math.max(1000, Number(timeoutMs) || COVER_FETCH_TIMEOUT_MS));
+
+  try {
+    const response = await fetch(requestUrl, {
+      method: 'GET',
+      headers: {
+        Accept: 'image/*,*/*;q=0.8',
+      },
+      ...(controller ? {signal: controller.signal} : {}),
+    });
+    const statusCode = Number(response?.status) || 0;
+    if (statusCode < 200 || statusCode >= 300) {
+      throw new Error(`cover-download-status-${statusCode}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    return {
+      arrayBuffer,
+      statusCode,
+    };
+  } catch (error) {
+    const message = String(error?.message || error || '').trim();
+    if (message.toLowerCase().includes('abort')) {
+      throw new Error('cover-download-timeout');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function resolveInternalCoverDirectory() {
   return `${String(storageService.musicDir || '').trim()}/AlbumCovers`;
 }
 
 export async function ensureSpotidownCover({artworkUrl, artist, title} = {}) {
-  const normalizedUrl = String(artworkUrl || '').trim();
+  const normalizedUrl = toCanonicalSpotifyArtworkUrl(artworkUrl);
+  const artworkCandidates = resolveArtworkCandidates(normalizedUrl);
   const key = buildArtworkKey(artist, title);
   if (!isSpotidownArtworkUrl(normalizedUrl)) {
     log('Skipping cover download because URL is not Spotidown artwork.', {
@@ -144,41 +292,37 @@ export async function ensureSpotidownCover({artworkUrl, artist, title} = {}) {
       await RNFS.unlink(coverPath).catch(() => {});
     }
 
-    log('Downloading Spotidown 640x640 artwork via fetch/writeFile.', {
-      artworkUrl: normalizedUrl,
-      coverPath,
-      key: key || null,
-    });
-    const response = await fetch(normalizedUrl, {
-      method: 'GET',
-      headers: {
-        Accept: 'image/*,*/*;q=0.8',
-      },
-    });
-    const statusCode = Number(response?.status) || 0;
-    if (statusCode < 200 || statusCode >= 300) {
-      return {
-        ok: false,
-        skipped: false,
-        reason: `cover-download-status-${statusCode}`,
-        artworkUrl: normalizedUrl,
-        artworkKey: key || null,
-        coverPath: null,
-        coverUri: null,
-        downloaded: false,
-        existed: false,
-        bytes: 0,
-      };
+    let selectedUrl = normalizedUrl;
+    let base64 = '';
+    let lastFailure = null;
+    for (const candidateUrl of artworkCandidates) {
+      if (!candidateUrl) {
+        continue;
+      }
+      selectedUrl = candidateUrl;
+      log('Downloading Spotidown artwork candidate.', {
+        artworkUrl: candidateUrl,
+        coverPath,
+        key: key || null,
+      });
+      try {
+        const {arrayBuffer} = await fetchArrayBufferWithTimeout(candidateUrl);
+        base64 = toBase64FromArrayBuffer(arrayBuffer);
+        if (base64) {
+          break;
+        }
+        lastFailure = 'cover-empty-response-body';
+      } catch (error) {
+        lastFailure = error?.message || 'cover-download-failed';
+      }
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    const base64 = toBase64FromArrayBuffer(arrayBuffer);
     if (!base64) {
       return {
         ok: false,
         skipped: false,
-        reason: 'cover-empty-response-body',
-        artworkUrl: normalizedUrl,
+        reason: lastFailure || 'cover-empty-response-body',
+        artworkUrl: selectedUrl || normalizedUrl,
         artworkKey: key || null,
         coverPath: null,
         coverUri: null,
@@ -199,7 +343,7 @@ export async function ensureSpotidownCover({artworkUrl, artist, title} = {}) {
         ok: false,
         skipped: false,
         reason: 'cover-empty-file',
-        artworkUrl: normalizedUrl,
+        artworkUrl: selectedUrl || normalizedUrl,
         artworkKey: key || null,
         coverPath: null,
         coverUri: null,
@@ -218,7 +362,7 @@ export async function ensureSpotidownCover({artworkUrl, artist, title} = {}) {
       ok: true,
       skipped: false,
       reason: null,
-      artworkUrl: normalizedUrl,
+      artworkUrl: selectedUrl || normalizedUrl,
       artworkKey: key || null,
       coverPath,
       coverUri,
@@ -250,5 +394,6 @@ export async function ensureSpotidownCover({artworkUrl, artist, title} = {}) {
 export default {
   buildArtworkKey,
   isSpotidownArtworkUrl,
+  mutateSpotifyArtworkUrlTo640,
   ensureSpotidownCover,
 };

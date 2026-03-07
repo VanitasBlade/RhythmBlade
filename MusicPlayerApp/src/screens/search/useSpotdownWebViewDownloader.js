@@ -9,6 +9,7 @@ import useArtworkUpgrade from '../../hooks/useArtworkUpgrade';
 import {
   buildArtworkKey,
   isSpotidownArtworkUrl,
+  mutateSpotifyArtworkUrlTo640,
 } from '../../services/SpotidownArtworkService';
 import storageService from '../../services/storage/StorageService';
 import {
@@ -29,12 +30,14 @@ const SPOTDOWN_ANDROID_UA =
 const ACTIVE_STATUSES = ACTIVE_QUEUE_STATUSES;
 const MAX_STORED_JOBS = 220;
 const MAX_CONCURRENT_DOWNLOADS = 3;
+const BATCH_MAX_CONCURRENT = 1;
 const INTER_JOB_DELAY_MS = 500;
 const DOWNLOAD_EVENT_TIMEOUT_MS = 150000;
 const TOKEN_WAIT_TIMEOUT_MS = 30000;
 const BRIDGE_READY_TIMEOUT_MS = 25000;
 const RESULT_TIMEOUT_MS = 30000;
 const MIN_VALID_AUDIO_FILE_BYTES = 48 * 1024;
+const ARTWORK_UPGRADE_TIMEOUT_MS = 35000;
 const CANCELLED_ERROR = '__SPOTDOWN_CANCELLED__';
 const BRIDGE_RECOVERY_DEBOUNCE_MS = 1500;
 
@@ -68,6 +71,7 @@ const SPOTDOWN_BRIDGE_SCRIPT = [
   'var scheduleResultsEmit=function(reason,requestId,delay){if(resultsEmitTimer){clearTimeout(resultsEmitTimer);resultsEmitTimer=null;}resultsEmitTimer=setTimeout(function(){resultsEmitTimer=null;emitResults(reason,requestId);},Math.max(0,Number(delay)||120));};',
   'var waitForStepTwo=function(item,timeoutMs){return new Promise(function(resolve,reject){var settled=false;var timer=null;var observer=null;var cleanup=function(){if(timer){clearTimeout(timer);timer=null;}if(observer){observer.disconnect();observer=null;}};var done=function(fn){return function(value){if(settled){return;}settled=true;cleanup();fn(value);};};var resolveOnce=done(resolve);var rejectOnce=done(reject);var initial=item&&item.querySelector(STEP_TWO_SELECTOR);if(initial){resolveOnce(initial);return;}timer=setTimeout(function(){rejectOnce(new Error("timeout"));},Math.max(0,Number(timeoutMs)||10000));observer=new MutationObserver(function(){var button=item&&item.querySelector(STEP_TWO_SELECTOR);if(button){resolveOnce(button);}});observer.observe(item,{childList:true,subtree:true});});};',
   'var isLikelyDownloadUrl=function(rawUrl){var normalized=normalizeUrl(rawUrl||"");var lower=toText(normalized).toLowerCase();if(!normalized){return false;}if(lower.indexOf("blob:")===0){return true;}if(lower.indexOf("javascript:")===0||lower==="#"||lower.indexOf("intent:")===0){return false;}if(lower.indexOf("amskiploomr.com")!==-1||lower.indexOf("doubleclick.net")!==-1||lower.indexOf("googlesyndication.com")!==-1){return false;}if(lower.indexOf(DOWNLOAD_API_PATH)!==-1){return true;}if(/(\\.mp3|\\.m4a|\\.aac|\\.flac|\\.wav|\\.ogg)(\\?|$)/i.test(lower)){return true;}return lower.indexOf("http://")===0||lower.indexOf("https://")===0;};',
+  'var isLikelyBatchDownloadControl=function(node){if(!node){return false;}var className=toText(node.className||"").toLowerCase();var idName=toText(node.id||"").toLowerCase();if(className.indexOf("download-all")!==-1||className.indexOf("batch-download")!==-1||idName.indexOf("download-all")!==-1||idName.indexOf("batch-download")!==-1){return true;}var text=toText((node.innerText||node.textContent||"")).toLowerCase().replace(/\\s+/g," ");if(text==="download all"||text.indexOf("download all ")===0||text.indexOf(" download all")!==-1){return true;}var href=normalizeUrl((node.getAttribute&&node.getAttribute("href"))||node.href||"");var lowerHref=toText(href).toLowerCase();if(lowerHref.indexOf("download-all")!==-1||lowerHref.indexOf("batch-download")!==-1){return true;}return false;};',
   'var emitPendingDownloadUrl=function(rawUrl,meta){var normalized=normalizeUrl(rawUrl||"");if(!normalized){return false;}var info=meta||shiftPendingDownload();if(!info){return false;}var lower=toText(normalized).toLowerCase();var isBlob=lower.indexOf("blob:")===0;if(isBlob){if(emitBlobDownloadFromUrl(normalized,info)){if(info&&info.jobId){removePendingJob(info.jobId);}post("SPOTDOWN_BRIDGE_ACTIVITY",{event:"blob-download-captured",url:normalized,jobId:info&&info.jobId||null});return true;}return false;}var isApi=lower.indexOf(DOWNLOAD_API_PATH)!==-1;post("SPOTDOWN_DOWNLOAD_URL",{jobId:info&&info.jobId||null,index:Number.isInteger(info&&info.index)?info.index:null,title:toText(info&&info.title||"Unknown")||"Unknown",url:normalized,status:0,requestUrl:normalized,responseUrl:normalized,allowApiUrl:Boolean(isApi),method:isApi?"POST":"GET"});if(info&&info.jobId){removePendingJob(info.jobId);}return true;};',
   'var resolveStepTwoHref=function(stepTwo){var anchorHref=normalizeUrl((stepTwo&&stepTwo.getAttribute&&stepTwo.getAttribute("href"))||(stepTwo&&stepTwo.href)||"");var lowerHref=toText(anchorHref).toLowerCase();var looksLikeApi=anchorHref&&anchorHref.indexOf(DOWNLOAD_API_PATH)!==-1;var usable=Boolean(anchorHref&&lowerHref!=="#"&&lowerHref.indexOf("javascript:")!==0);return{url:anchorHref||"",isApi:Boolean(looksLikeApi),usable:usable};};',
   'var emitStepTwoHref=function(stepTwo,meta){var resolved=resolveStepTwoHref(stepTwo);if(!resolved.usable){return false;}return emitPendingDownloadUrl(resolved.url,{jobId:meta&&meta.jobId||null,index:Number.isInteger(meta&&meta.index)?meta.index:null,title:toText(meta&&meta.title||"Unknown")||"Unknown"});};',
@@ -90,6 +94,7 @@ const SPOTDOWN_BRIDGE_SCRIPT = [
   'if(!window.__spotdownResultObserversInstalled){window.__spotdownResultObserversInstalled=true;var observer=new MutationObserver(function(){scheduleResultsEmit("mutation-observer");});try{observer.observe(document.documentElement||document.body,{childList:true,subtree:true});}catch(_){}}',
   'var createPopupProxy=function(){var proxy={closed:false,opener:null,close:function(){this.closed=true;},focus:function(){}};var locationProxy={assign:function(url){emitPendingDownloadUrl(url,null);},replace:function(url){emitPendingDownloadUrl(url,null);},toString:function(){return "";}};try{Object.defineProperty(locationProxy,"href",{set:function(url){emitPendingDownloadUrl(url,null);},get:function(){return "";},configurable:true});}catch(_){}proxy.location=locationProxy;return proxy;};',
   'window.open=function(url){var normalized=normalizeUrl(url||"");if(normalized&&pendingDownloadQueue.length>0&&isLikelyDownloadUrl(normalized)){if(emitPendingDownloadUrl(normalized,null)){post("SPOTDOWN_BRIDGE_ACTIVITY",{event:"window-open-download-captured",url:normalized});}return createPopupProxy();}post("SPOTDOWN_BRIDGE_ACTIVITY",{event:"window-open-blocked",url:normalized||null});return createPopupProxy();};',
+  'document.addEventListener("click",function(event){try{var target=event&&event.target;var control=target&&target.closest?target.closest("button, a"):null;if(!control||!isLikelyBatchDownloadControl(control)){return;}post("SPOTDOWN_BATCH_REQUEST",{reason:"webview-download-all",href:normalizeUrl((control.getAttribute&&control.getAttribute("href"))||control.href||window.location.href||""),timestamp:Date.now()});if(event&&typeof event.preventDefault==="function"){event.preventDefault();}if(event&&typeof event.stopPropagation==="function"){event.stopPropagation();}}catch(_){}},true);',
   'document.addEventListener("click",function(event){try{if(!pendingDownloadQueue.length){return;}var target=event&&event.target;var anchor=target&&target.closest?target.closest("a[href]"):null;if(!anchor){return;}var href=normalizeUrl((anchor.getAttribute&&anchor.getAttribute("href"))||anchor.href||"");var hasDownloadAttr=Boolean(anchor&&anchor.hasAttribute&&anchor.hasAttribute("download"));if(!href||(!hasDownloadAttr&&!isLikelyDownloadUrl(href))){return;}if(emitPendingDownloadUrl(href,null)){post("SPOTDOWN_BRIDGE_ACTIVITY",{event:"anchor-download-captured",url:href});if(event&&typeof event.preventDefault==="function"){event.preventDefault();}if(event&&typeof event.stopPropagation==="function"){event.stopPropagation();}}}catch(_){}},true);',
   'window.addEventListener("message",function(event){handleBridgeCommand(event&&event.data);});',
   'document.addEventListener("message",function(event){handleBridgeCommand(event&&event.data);});',
@@ -314,7 +319,18 @@ function isDirectMediaUrl(url = '') {
   return !value.includes(SPOTDOWN_DOWNLOAD_API_PATH);
 }
 
-function createQueuedJob(song, index, downloadSetting) {
+function isBatchActiveStatus(status) {
+  const normalized = String(status || '')
+    .trim()
+    .toLowerCase();
+  return (
+    normalized === 'queued' ||
+    normalized === 'preparing' ||
+    normalized === 'downloading'
+  );
+}
+
+function createQueuedJob(song, index, downloadSetting, metadata = {}) {
   const now = Date.now();
   const id = `spotdown_${now}_${Math.random().toString(36).slice(2, 8)}`;
   const normalizedSong = normalizeSong(song);
@@ -323,9 +339,17 @@ function createQueuedJob(song, index, downloadSetting) {
     : Number.isInteger(normalizedSong.index)
     ? normalizedSong.index
     : null;
+  const batchSessionId = String(metadata?.batchSessionId || '').trim() || null;
+  const batchOrder = Number.isInteger(metadata?.batchOrder)
+    ? metadata.batchOrder
+    : null;
+  const isBatchJob = metadata?.isBatchJob === true;
   return {
     id,
     requestIndex,
+    batchSessionId,
+    batchOrder,
+    isBatchJob,
     status: 'queued',
     spotdownStatus: 'pending',
     phase: 'queued',
@@ -356,6 +380,10 @@ function useSpotdownWebViewDownloader(options = {}) {
     typeof options?.onBridgeActivity === 'function'
       ? options.onBridgeActivity
       : null;
+  const onBatchRequest =
+    typeof options?.onBatchRequest === 'function'
+      ? options.onBatchRequest
+      : null;
   const onActiveDownloadCountChange =
     typeof options?.onActiveDownloadCountChange === 'function'
       ? options.onActiveDownloadCountChange
@@ -375,12 +403,16 @@ function useSpotdownWebViewDownloader(options = {}) {
   const cancelledJobsRef = useRef(new Set());
   const activeJobIdsRef = useRef(new Set());
   const processingRef = useRef(false);
+  const processingBatchRef = useRef(false);
+  const batchRunningRef = useRef(false);
+  const activeBatchSessionIdRef = useRef(null);
   const lastJobStartAtRef = useRef(0);
   const activeNativeDownloadRef = useRef(new Map());
   const pendingDownloadSignalsRef = useRef(new Map());
   const downloadTriggerAttemptRef = useRef(new Map());
   const lastStartedDownloadJobIdRef = useRef(null);
   const blobFileInterceptInFlightRef = useRef(new Set());
+  const domDispatchMutexRef = useRef(Promise.resolve());
   const sessionTokenRef = useRef({token: null, expires: 0});
   const tokenWaitersRef = useRef([]);
   const tokenRefreshInFlightRef = useRef(false);
@@ -458,6 +490,100 @@ function useSpotdownWebViewDownloader(options = {}) {
     lastActiveCountRef.current = null;
     emitActiveDownloadCount('listener-change');
   }, [emitActiveDownloadCount]);
+
+  const withDomDispatchLock = useCallback(async operation => {
+    const previous = domDispatchMutexRef.current;
+    let release = () => {};
+    domDispatchMutexRef.current = new Promise(resolve => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
+  }, []);
+
+  const getBatchQueuedOrActiveJobs = useCallback(() => {
+    return Array.from(jobsRef.current.values())
+      .filter(
+        job => job?.isBatchJob === true && isBatchActiveStatus(job?.status),
+      )
+      .sort((left, right) => {
+        const leftSession = String(left?.batchSessionId || '').trim();
+        const rightSession = String(right?.batchSessionId || '').trim();
+        if (leftSession && rightSession && leftSession !== rightSession) {
+          return (left?.createdAt || 0) - (right?.createdAt || 0);
+        }
+        const leftOrder = Number.isInteger(left?.batchOrder)
+          ? left.batchOrder
+          : Number.MAX_SAFE_INTEGER;
+        const rightOrder = Number.isInteger(right?.batchOrder)
+          ? right.batchOrder
+          : Number.MAX_SAFE_INTEGER;
+        if (leftOrder !== rightOrder) {
+          return leftOrder - rightOrder;
+        }
+        return (left?.createdAt || 0) - (right?.createdAt || 0);
+      });
+  }, []);
+
+  const refreshBatchSessionState = useCallback(() => {
+    const batchJobs = getBatchQueuedOrActiveJobs();
+    if (!batchJobs.length) {
+      batchRunningRef.current = false;
+      activeBatchSessionIdRef.current = null;
+      return null;
+    }
+    batchRunningRef.current = true;
+    const activeSession = String(activeBatchSessionIdRef.current || '').trim();
+    if (
+      activeSession &&
+      batchJobs.some(
+        job => String(job?.batchSessionId || '').trim() === activeSession,
+      )
+    ) {
+      return activeSession;
+    }
+    const nextSession =
+      String(batchJobs[0]?.batchSessionId || '').trim() || null;
+    activeBatchSessionIdRef.current = nextSession;
+    return nextSession;
+  }, [getBatchQueuedOrActiveJobs]);
+
+  const assertBatchSessionAllowed = useCallback(
+    requestedSessionId => {
+      const normalizedSessionId = String(requestedSessionId || '').trim();
+      if (!normalizedSessionId) {
+        throw new Error('Spotdown batch session id is missing.');
+      }
+      refreshBatchSessionState();
+      const runningSession = String(
+        activeBatchSessionIdRef.current || '',
+      ).trim();
+      if (runningSession && runningSession !== normalizedSessionId) {
+        throw new Error(
+          'Spotdown batch is already running. Wait for it to finish before starting another batch.',
+        );
+      }
+      const conflicting = getBatchQueuedOrActiveJobs().find(job => {
+        const sessionId = String(job?.batchSessionId || '').trim();
+        return sessionId && sessionId !== normalizedSessionId;
+      });
+      if (conflicting) {
+        throw new Error(
+          'Spotdown batch is already running. Wait for it to finish before starting another batch.',
+        );
+      }
+      if (!runningSession) {
+        activeBatchSessionIdRef.current = normalizedSessionId;
+      }
+      batchRunningRef.current = true;
+      return normalizedSessionId;
+    },
+    [getBatchQueuedOrActiveJobs, refreshBatchSessionState],
+  );
 
   const flushBridgeReadyWaiters = useCallback(() => {
     const waiters = bridgeReadyWaitersRef.current.splice(0);
@@ -586,7 +712,7 @@ function useSpotdownWebViewDownloader(options = {}) {
       const byJobMap = pendingArtworkByJobIdRef.current;
       const byTrackMap = pendingArtworkByTrackKeyRef.current;
       const byJob = normalizedJobId ? byJobMap.get(normalizedJobId) : null;
-      const byJobUrl = String(byJob?.artworkUrl || '').trim();
+      const byJobUrl = mutateSpotifyArtworkUrlTo640(byJob?.artworkUrl || '');
       if (isSpotidownArtworkUrl(byJobUrl)) {
         return byJobUrl;
       }
@@ -599,7 +725,9 @@ function useSpotdownWebViewDownloader(options = {}) {
         return null;
       }
       const byTrack = byTrackMap.get(key);
-      const byTrackUrl = String(byTrack?.artworkUrl || '').trim();
+      const byTrackUrl = mutateSpotifyArtworkUrlTo640(
+        byTrack?.artworkUrl || '',
+      );
       if (isSpotidownArtworkUrl(byTrackUrl)) {
         return byTrackUrl;
       }
@@ -639,14 +767,29 @@ function useSpotdownWebViewDownloader(options = {}) {
           artworkUrl,
           songPath: normalizedSongPath,
         });
-        // ADD THIS to your existing download completion handler
-        const upgradeResult = await upgradeArtwork(
-          normalizedSongPath,
-          artworkUrl,
-          artist,
-          title,
-          {source: 'spotdown', jobId: normalizedJobId},
-        );
+        const upgradeResult = await Promise.race([
+          upgradeArtwork(normalizedSongPath, artworkUrl, artist, title, {
+            source: 'spotdown',
+            jobId: normalizedJobId,
+          }),
+          new Promise(resolve => {
+            setTimeout(
+              () =>
+                resolve({
+                  upgraded: false,
+                  reason: 'artwork-upgrade-timeout',
+                  timedOut: true,
+                }),
+              ARTWORK_UPGRADE_TIMEOUT_MS,
+            );
+          }),
+        ]);
+        if (upgradeResult?.timedOut) {
+          log('Artwork upgrade timed out for Spotdown job.', {
+            jobId: normalizedJobId,
+            timeoutMs: ARTWORK_UPGRADE_TIMEOUT_MS,
+          });
+        }
         return upgradeResult;
       } catch (error) {
         log('Artwork upgrade invocation failed for Spotdown job.', {
@@ -1155,7 +1298,6 @@ function useSpotdownWebViewDownloader(options = {}) {
         expires: Number(currentToken?.expires) || null,
       });
 
-      await waitForBridgeReady();
       const dispatchBridgeDownloadCommand = (targetJob, reason = 'initial') => {
         if (!targetJob?.id) {
           return;
@@ -1197,43 +1339,46 @@ function useSpotdownWebViewDownloader(options = {}) {
           attempt,
         });
       };
-      const signal = await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          pendingDownloadSignalsRef.current.delete(job.id);
-          downloadTriggerAttemptRef.current.delete(job.id);
-          log('Timed out waiting for bridge download signal.', {
-            jobId: job.id,
-            timeoutMs: DOWNLOAD_EVENT_TIMEOUT_MS,
-          });
-          reject(
-            new Error('Timed out waiting for Spotdown download response.'),
-          );
-        }, DOWNLOAD_EVENT_TIMEOUT_MS);
+      const signal = await withDomDispatchLock(async () => {
+        await waitForBridgeReady();
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            pendingDownloadSignalsRef.current.delete(job.id);
+            downloadTriggerAttemptRef.current.delete(job.id);
+            log('Timed out waiting for bridge download signal.', {
+              jobId: job.id,
+              timeoutMs: DOWNLOAD_EVENT_TIMEOUT_MS,
+            });
+            reject(
+              new Error('Timed out waiting for Spotdown download response.'),
+            );
+          }, DOWNLOAD_EVENT_TIMEOUT_MS);
 
-        pendingDownloadSignalsRef.current.set(job.id, {
-          resolve: payload => {
+          pendingDownloadSignalsRef.current.set(job.id, {
+            resolve: payload => {
+              clearTimeout(timeout);
+              resolve(payload);
+            },
+            reject: error => {
+              clearTimeout(timeout);
+              reject(error);
+            },
+            timeout,
+          });
+
+          try {
+            dispatchBridgeDownloadCommand(job, 'initial');
+          } catch (error) {
             clearTimeout(timeout);
-            resolve(payload);
-          },
-          reject: error => {
-            clearTimeout(timeout);
+            pendingDownloadSignalsRef.current.delete(job.id);
+            downloadTriggerAttemptRef.current.delete(job.id);
+            log('Failed to dispatch download command.', {
+              jobId: job.id,
+              error: error?.message || String(error),
+            });
             reject(error);
-          },
-          timeout,
+          }
         });
-
-        try {
-          dispatchBridgeDownloadCommand(job, 'initial');
-        } catch (error) {
-          clearTimeout(timeout);
-          pendingDownloadSignalsRef.current.delete(job.id);
-          downloadTriggerAttemptRef.current.delete(job.id);
-          log('Failed to dispatch download command.', {
-            jobId: job.id,
-            error: error?.message || String(error),
-          });
-          reject(error);
-        }
       });
       log('Bridge download signal received.', {
         jobId: job.id,
@@ -1261,10 +1406,43 @@ function useSpotdownWebViewDownloader(options = {}) {
       log,
       patchJob,
       sendBridgeCommand,
+      withDomDispatchLock,
       waitForBridgeReady,
       waitForSessionToken,
       writeChunkedDownloadToFile,
     ],
+  );
+
+  const handleJobFailure = useCallback(
+    (job, error) => {
+      const message = String(error?.message || error || '').trim();
+      if (
+        message === CANCELLED_ERROR ||
+        cancelledJobsRef.current.has(job?.id)
+      ) {
+        if (job?.id) {
+          cancelledJobsRef.current.delete(job.id);
+          jobsRef.current.delete(job.id);
+        }
+        emitActiveDownloadCount('cancelled-job');
+        return;
+      }
+      log('Download job failed.', {
+        jobId: job?.id || null,
+        title: job?.title || null,
+        reason: message || 'unknown',
+      });
+      if (job?.id) {
+        patchJob(job.id, {
+          status: 'failed',
+          spotdownStatus: 'error',
+          phase: 'failed',
+          progress: 0,
+          error: message || 'Spotdown download failed.',
+        });
+      }
+    },
+    [emitActiveDownloadCount, log, patchJob],
   );
 
   const processQueue = useCallback(async () => {
@@ -1274,9 +1452,13 @@ function useSpotdownWebViewDownloader(options = {}) {
     processingRef.current = true;
     try {
       while (true) {
+        if (batchRunningRef.current) {
+          break;
+        }
         const pending = Array.from(jobsRef.current.values()).filter(
           item =>
             item.status === 'queued' &&
+            item?.isBatchJob !== true &&
             !cancelledJobsRef.current.has(item.id) &&
             !activeJobIdsRef.current.has(item.id),
         );
@@ -1300,34 +1482,15 @@ function useSpotdownWebViewDownloader(options = {}) {
 
         executeJobDownload(nextJob)
           .catch(error => {
-            const message = String(error?.message || error || '').trim();
-            if (
-              message === CANCELLED_ERROR ||
-              cancelledJobsRef.current.has(nextJob.id)
-            ) {
-              cancelledJobsRef.current.delete(nextJob.id);
-              jobsRef.current.delete(nextJob.id);
-              emitActiveDownloadCount('cancelled-job');
-              return;
-            }
-            log('Download job failed.', {
-              jobId: nextJob.id,
-              title: nextJob.title || null,
-              reason: message || 'unknown',
-            });
-            patchJob(nextJob.id, {
-              status: 'failed',
-              spotdownStatus: 'error',
-              phase: 'failed',
-              progress: 0,
-              error: message || 'Spotdown download failed.',
-            });
+            handleJobFailure(nextJob, error);
           })
           .finally(() => {
             activeJobIdsRef.current.delete(nextJob.id);
             cleanupPendingArtworkForJob(nextJob.id);
             emitActiveDownloadCount('job-finished');
-            processQueue().catch(() => {});
+            if (!batchRunningRef.current) {
+              processQueue().catch(() => {});
+            }
           });
       }
     } finally {
@@ -1337,8 +1500,98 @@ function useSpotdownWebViewDownloader(options = {}) {
     cleanupPendingArtworkForJob,
     emitActiveDownloadCount,
     executeJobDownload,
-    log,
-    patchJob,
+    handleJobFailure,
+  ]);
+
+  const processBatchQueue = useCallback(async () => {
+    if (processingBatchRef.current) {
+      return;
+    }
+    const queuedBatchJobs = getBatchQueuedOrActiveJobs().filter(
+      item =>
+        item.status === 'queued' && !cancelledJobsRef.current.has(item.id),
+    );
+    if (!queuedBatchJobs.length) {
+      refreshBatchSessionState();
+      if (!batchRunningRef.current) {
+        processQueue().catch(() => {});
+      }
+      return;
+    }
+    processingBatchRef.current = true;
+    batchRunningRef.current = true;
+    try {
+      while (true) {
+        const currentSession = refreshBatchSessionState();
+        const pending = getBatchQueuedOrActiveJobs().filter(item => {
+          if (item.status !== 'queued') {
+            return false;
+          }
+          if (cancelledJobsRef.current.has(item.id)) {
+            return false;
+          }
+          if (activeJobIdsRef.current.has(item.id)) {
+            return false;
+          }
+          if (!currentSession) {
+            return true;
+          }
+          return String(item?.batchSessionId || '').trim() === currentSession;
+        });
+        if (!pending.length) {
+          break;
+        }
+
+        const activeBatchCount = Array.from(
+          activeJobIdsRef.current.values(),
+        ).filter(jobId => {
+          const job = jobsRef.current.get(jobId);
+          return job?.isBatchJob === true;
+        }).length;
+        if (activeBatchCount >= BATCH_MAX_CONCURRENT) {
+          await sleep(60);
+          continue;
+        }
+
+        const nextJob = pending[0];
+        if (!nextJob) {
+          break;
+        }
+        const elapsed = Date.now() - lastJobStartAtRef.current;
+        if (lastJobStartAtRef.current > 0 && elapsed < INTER_JOB_DELAY_MS) {
+          await sleep(INTER_JOB_DELAY_MS - elapsed);
+        }
+        lastJobStartAtRef.current = Date.now();
+        activeBatchSessionIdRef.current =
+          String(nextJob?.batchSessionId || '').trim() ||
+          activeBatchSessionIdRef.current ||
+          null;
+        activeJobIdsRef.current.add(nextJob.id);
+        try {
+          await executeJobDownload(nextJob);
+        } catch (error) {
+          handleJobFailure(nextJob, error);
+        } finally {
+          activeJobIdsRef.current.delete(nextJob.id);
+          cleanupPendingArtworkForJob(nextJob.id);
+          emitActiveDownloadCount('batch-job-finished');
+        }
+      }
+    } finally {
+      processingBatchRef.current = false;
+      refreshBatchSessionState();
+      if (!batchRunningRef.current) {
+        processQueue().catch(() => {});
+      }
+    }
+  }, [
+    cleanupPendingArtworkForJob,
+    emitActiveDownloadCount,
+    executeJobDownload,
+    getBatchQueuedOrActiveJobs,
+    handleJobFailure,
+    processQueue,
+    refreshBatchSessionState,
   ]);
 
   const searchSongs = useCallback(
@@ -1400,15 +1653,40 @@ function useSpotdownWebViewDownloader(options = {}) {
       index = null,
       downloadSetting = DEFAULT_DOWNLOAD_SETTING,
       _convertAacToMp3Enabled = false,
+      enqueueOptions = {},
     ) => {
       const normalizedSetting = normalizeDownloadSetting(downloadSetting);
-      const queued = createQueuedJob(song, index, normalizedSetting);
+      const isBatchJob = enqueueOptions?.isBatchJob === true;
+      const batchSessionId = String(
+        enqueueOptions?.batchSessionId || '',
+      ).trim();
+      const batchOrder = Number.isInteger(enqueueOptions?.batchOrder)
+        ? enqueueOptions.batchOrder
+        : null;
+      if (isBatchJob) {
+        assertBatchSessionAllowed(batchSessionId);
+      }
+      const queued = createQueuedJob(song, index, normalizedSetting, {
+        isBatchJob,
+        batchSessionId: isBatchJob ? batchSessionId : null,
+        batchOrder: isBatchJob ? batchOrder : null,
+      });
       jobsRef.current.set(queued.id, queued);
       emitActiveDownloadCount('queue-job');
-      processQueue().catch(() => {});
+      if (queued.isBatchJob) {
+        batchRunningRef.current = true;
+        processBatchQueue().catch(() => {});
+      } else {
+        processQueue().catch(() => {});
+      }
       return cloneJob(queued);
     },
-    [emitActiveDownloadCount, processQueue],
+    [
+      assertBatchSessionAllowed,
+      emitActiveDownloadCount,
+      processBatchQueue,
+      processQueue,
+    ],
   );
 
   const getDownloadJobs = useCallback(async limit => {
@@ -1469,10 +1747,18 @@ function useSpotdownWebViewDownloader(options = {}) {
         },
         downloadSetting: setting,
       });
-      processQueue().catch(() => {});
+      if (job?.isBatchJob) {
+        const sessionId = String(job?.batchSessionId || '').trim();
+        if (sessionId) {
+          assertBatchSessionAllowed(sessionId);
+        }
+        processBatchQueue().catch(() => {});
+      } else {
+        processQueue().catch(() => {});
+      }
       return cloneJob(jobsRef.current.get(jobId));
     },
-    [patchJob, processQueue],
+    [assertBatchSessionAllowed, patchJob, processBatchQueue, processQueue],
   );
 
   const cancelDownload = useCallback(
@@ -1500,13 +1786,17 @@ function useSpotdownWebViewDownloader(options = {}) {
       cleanupPendingArtworkForJob(jobId);
       jobsRef.current.delete(jobId);
       emitActiveDownloadCount('cancel-download');
+      refreshBatchSessionState();
+      processBatchQueue().catch(() => {});
       processQueue().catch(() => {});
       return true;
     },
     [
       cleanupPendingArtworkForJob,
       emitActiveDownloadCount,
+      processBatchQueue,
       processQueue,
+      refreshBatchSessionState,
       rejectDownloadSignal,
     ],
   );
@@ -1550,7 +1840,8 @@ function useSpotdownWebViewDownloader(options = {}) {
       }
       if (type === 'SPOTIDOWN_ARTWORK_SNAPSHOT') {
         const jobId = String(parsed?.jobId || '').trim();
-        const artworkUrl = String(parsed?.artworkUrl || '').trim();
+        const rawArtworkUrl = String(parsed?.artworkUrl || '').trim();
+        const artworkUrl = mutateSpotifyArtworkUrlTo640(rawArtworkUrl);
         const title = String(parsed?.title || '').trim();
         const artist = String(parsed?.artist || '').trim();
         const reason = String(parsed?.reason || '').trim() || null;
@@ -1558,12 +1849,13 @@ function useSpotdownWebViewDownloader(options = {}) {
           return;
         }
         if (!isSpotidownArtworkUrl(artworkUrl)) {
-          if (reason || artworkUrl) {
+          if (reason || rawArtworkUrl) {
             log(
-              'Ignoring Spotidown artwork snapshot without valid i.scdn.co URL.',
+              'Ignoring Spotidown artwork snapshot without valid Spotify artwork URL.',
               {
                 jobId,
-                artworkUrl: artworkUrl || null,
+                artworkUrl: rawArtworkUrl || null,
+                canonicalArtworkUrl: artworkUrl || null,
                 reason,
               },
             );
@@ -1615,10 +1907,27 @@ function useSpotdownWebViewDownloader(options = {}) {
         }
         return;
       }
+      if (type === 'SPOTDOWN_BATCH_REQUEST') {
+        if (onBatchRequest) {
+          try {
+            onBatchRequest(parsed);
+          } catch (_) {
+            // Ignore callback errors.
+          }
+        }
+        processBatchQueue().catch(() => {});
+        return;
+      }
       if (type === 'SPOTDOWN_BRIDGE_ACTIVITY') {
         const eventName = String(parsed?.event || '')
           .trim()
           .toLowerCase();
+        if (eventName === 'anchor-download-captured') {
+          const bridgeJobId = String(parsed?.jobId || '').trim();
+          if (!bridgeJobId) {
+            return;
+          }
+        }
         const important =
           eventName.includes('download') ||
           eventName.includes('step') ||
@@ -1873,10 +2182,12 @@ function useSpotdownWebViewDownloader(options = {}) {
       flushBridgeReadyWaiters,
       flushTokenWaiters,
       injectArtworkSnapshotForJob,
+      onBatchRequest,
       onBridgeActivity,
       installPreDispatchDiagnostics,
       log,
       patchJob,
+      processBatchQueue,
       rejectDownloadSignal,
       resolveDownloadSignal,
       sendBridgeCommand,
@@ -2261,6 +2572,10 @@ function useSpotdownWebViewDownloader(options = {}) {
         signal.reject(new Error('Spotdown hook unmounted.'));
       });
       pendingDownloadSignalsRef.current.clear();
+      processingRef.current = false;
+      processingBatchRef.current = false;
+      batchRunningRef.current = false;
+      activeBatchSessionIdRef.current = null;
       blobFileInterceptInFlightRef.current.clear();
       lastStartedDownloadJobIdRef.current = null;
       downloadTriggerAttemptRef.current.clear();

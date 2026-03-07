@@ -177,6 +177,7 @@ const SearchScreen = () => {
   const persistedJobsRef = useRef(new Set());
   const dismissedDoneJobsRef = useRef(new Set());
   const downloadDefaultsAppliedRef = useRef(false);
+  const spotdownBatchRequestHandlerRef = useRef(null);
   const activeDownloaderTabRef = useRef('Search');
   const activeQueueCountRef = useRef(0);
   const sourceActiveCountsRef = useRef({tidal: 0, spotdown: 0});
@@ -380,6 +381,17 @@ const SearchScreen = () => {
     [handleBridgeReadyChange],
   );
 
+  const onSpotdownBatchRequest = useCallback(
+    payload => {
+      resetIdleTimerFromInteraction('bridge:spotdown:batch-request');
+      const handler = spotdownBatchRequestHandlerRef.current;
+      if (typeof handler === 'function') {
+        handler(payload);
+      }
+    },
+    [resetIdleTimerFromInteraction],
+  );
+
   const {
     webViewRef: tidalWebViewRef,
     webViewProps: tidalWebViewProps,
@@ -410,6 +422,7 @@ const SearchScreen = () => {
     onBridgeActivity: onSpotdownBridgeActivity,
     onActiveDownloadCountChange: onSpotdownActiveDownloadCountChange,
     onBridgeReadyChange: onSpotdownBridgeReadyChange,
+    onBatchRequest: onSpotdownBatchRequest,
   });
 
   const currentOptionShortLabel = useMemo(
@@ -1129,6 +1142,11 @@ const SearchScreen = () => {
         typeof options?.switchToQueue === 'boolean'
           ? options.switchToQueue
           : true;
+      const isBatchJob = options?.isBatchJob === true;
+      const batchSessionId = String(options?.batchSessionId || '').trim();
+      const batchOrder = Number.isInteger(options?.batchOrder)
+        ? options.batchOrder
+        : null;
 
       if (!item.downloadable) {
         return {status: 'not-downloadable'};
@@ -1173,6 +1191,11 @@ const SearchScreen = () => {
           resolvedIndex,
           selectedSetting,
           convertAacToMp3,
+          {
+            isBatchJob,
+            batchSessionId: isBatchJob ? batchSessionId : null,
+            batchOrder: isBatchJob ? batchOrder : null,
+          },
         );
         if (mountedRef.current) {
           setQueue(prev => {
@@ -1336,17 +1359,32 @@ const SearchScreen = () => {
     if (!showSpotdownDownloadAll || loading || results.length <= 1) {
       return;
     }
+    if (spotdownBatchActiveJobs.length > 0) {
+      Alert.alert(
+        'Batch In Progress',
+        'A Spotdown batch is already running. Wait for it to finish or cancel it first.',
+      );
+      return;
+    }
 
     resetIdleTimerFromInteraction('queue-spotdown-all');
     let queued = 0;
     let skipped = 0;
     let failed = 0;
+    let rejectedByActiveBatch = false;
+    const batchSessionId = `spotdown_batch_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2, 7)}`;
     const queuedIds = [];
 
-    for (const item of results) {
+    for (let order = 0; order < results.length; order += 1) {
+      const item = results[order];
       const result = await queueDownload(item, item?.index, {
         suppressAlert: true,
         switchToQueue: false,
+        isBatchJob: true,
+        batchSessionId,
+        batchOrder: order,
       });
       if (result?.status === 'queued') {
         queued += 1;
@@ -1360,7 +1398,20 @@ const SearchScreen = () => {
         skipped += 1;
       } else {
         failed += 1;
+        const failureReason = String(result?.error?.message || '').trim();
+        if (failureReason.toLowerCase().includes('already running')) {
+          rejectedByActiveBatch = true;
+          break;
+        }
       }
+    }
+
+    if (rejectedByActiveBatch) {
+      Alert.alert(
+        'Batch In Progress',
+        'A Spotdown batch is already running. Wait for it to finish or cancel it first.',
+      );
+      return;
     }
 
     setSpotdownBatchJobIds(queuedIds);
@@ -1386,6 +1437,7 @@ const SearchScreen = () => {
     resetIdleTimerFromInteraction,
     results,
     showSpotdownDownloadAll,
+    spotdownBatchActiveJobs.length,
   ]);
 
   const queueSpotdownResultsAll = useCallback(() => {
@@ -1414,6 +1466,37 @@ const SearchScreen = () => {
     queueSpotdownResultsAllInternal,
     results.length,
     showSpotdownDownloadAll,
+  ]);
+
+  useEffect(() => {
+    spotdownBatchRequestHandlerRef.current = () => {
+      if (!mountedRef.current) {
+        return;
+      }
+      if (!bridgeEnabled) {
+        Alert.alert(
+          'Bridge Disabled',
+          'Enable the bridge button in the top bar to start Spotdown downloads.',
+        );
+        return;
+      }
+      if (!activeBridgeReady) {
+        Alert.alert(
+          'Bridge Loading',
+          `${activeBridgeLabel} bridge is still loading. Please wait a moment.`,
+        );
+        return;
+      }
+      queueSpotdownResultsAllInternal().catch(() => {});
+    };
+    return () => {
+      spotdownBatchRequestHandlerRef.current = null;
+    };
+  }, [
+    activeBridgeLabel,
+    activeBridgeReady,
+    bridgeEnabled,
+    queueSpotdownResultsAllInternal,
   ]);
 
   const cancelSpotdownBatch = useCallback(async () => {
