@@ -92,7 +92,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   playAllButton: {
-    marginTop: 12,
     borderRadius: 7,
     backgroundColor: C.accent,
     flexDirection: 'row',
@@ -114,9 +113,10 @@ const styles = StyleSheet.create({
     marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
   },
   addTracksButton: {
-    marginTop: 12,
     marginLeft: 8,
     borderRadius: 7,
     borderWidth: 1,

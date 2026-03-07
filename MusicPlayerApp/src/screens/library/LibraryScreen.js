@@ -20,6 +20,7 @@ import {
 import DocumentPicker from 'react-native-document-picker';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
+import PlaylistArtwork from '../../components/PlaylistArtwork';
 import playbackService from '../../services/playback/PlaybackService';
 import storageService from '../../services/storage/StorageService';
 import {
@@ -28,7 +29,6 @@ import {
 } from '../../theme/musicHomeTheme';
 import {
   ART_KEYS,
-  PLAYLIST_ICONS,
   SORT_OPTIONS,
   SUB_TABS,
   TRACK_ICONS,
@@ -91,6 +91,18 @@ const areSongsEquivalent = (left = [], right = []) => {
   return true;
 };
 
+const getPlaylistArtworkSignature = playlist => {
+  const customArtwork = String(
+    playlist?.customArtwork || playlist?.coverArtwork || '',
+  ).trim();
+  const songs = Array.isArray(playlist?.songs) ? playlist.songs : [];
+  const firstFourArtwork = songs
+    .slice(0, 4)
+    .map(song => String(song?.artwork || '').trim())
+    .join('|');
+  return `${customArtwork}::${firstFourArtwork}`;
+};
+
 const arePlaylistsEquivalent = (left = [], right = []) => {
   if (left === right) {
     return true;
@@ -109,8 +121,11 @@ const arePlaylistsEquivalent = (left = [], right = []) => {
       (String(previous?.id || '') !== String(next?.id || '') ||
         String(previous?.name || '') !== String(next?.name || '') ||
         String(previous?.description || '') !== String(next?.description || '') ||
+        getPlaylistArtworkSignature(previous) !==
+          getPlaylistArtworkSignature(next) ||
         ((Array.isArray(previous?.songs) ? previous.songs.length : 0) !==
-          (Array.isArray(next?.songs) ? next.songs.length : 0))
+          (Array.isArray(next?.songs) ? next.songs.length : 0)) ||
+        (Number(previous?.updatedAt) || 0) !== (Number(next?.updatedAt) || 0)
       )
     ) {
       return false;
@@ -849,6 +864,12 @@ const LibraryScreen = ({ navigation, route }) => {
   const TRACK_ITEM_HEIGHT = 72;
   const SONG_MENU_WIDTH = 214;
   const SONG_MENU_HEIGHT = 186;
+  const PLAYLIST_CARD_GAP = 10;
+  const PLAYLIST_COVER_HEIGHT = 124;
+  const PLAYLIST_COVER_WIDTH = Math.max(
+    120,
+    (Dimensions.get('window').width - 32 - PLAYLIST_CARD_GAP) / 2,
+  );
 
   const songMenuPositionStyle = useMemo(() => {
     const { width, height } = Dimensions.get('window');
@@ -988,15 +1009,11 @@ const LibraryScreen = ({ navigation, route }) => {
           <ScrollView contentContainerStyle={styles.listContent}>
             {playlistRows.map((row, rowIndex) => (
               <View key={`row-${rowIndex}`} style={styles.playlistRow}>
-                {row.map((playlist, cardIndex) => {
-                  const idx = rowIndex * 2 + cardIndex;
-                  const color =
-                    MUSIC_HOME_ART_COLORS[ART_KEYS[idx % ART_KEYS.length]] ||
-                    C.bgCard;
-                  const icon = PLAYLIST_ICONS[idx % PLAYLIST_ICONS.length];
+                {row.map(playlist => {
                   const songCount = Array.isArray(playlist.songs)
                     ? playlist.songs.length
                     : 0;
+                  const isFavorites = storageService.isFavoritesPlaylist(playlist);
                   return (
                     <TouchableOpacity
                       key={playlist.id}
@@ -1005,12 +1022,18 @@ const LibraryScreen = ({ navigation, route }) => {
                         navigation.navigate('PlaylistDetail', { playlist })
                       }
                       onLongPress={() => deletePlaylist(playlist)}>
-                      <View
-                        style={[
-                          styles.playlistCover,
-                          { backgroundColor: color },
-                        ]}>
-                        <Icon name={icon} size={34} color={C.accentFg} />
+                      <View style={styles.playlistCover}>
+                        <PlaylistArtwork
+                          playlist={playlist}
+                          width={PLAYLIST_COVER_WIDTH}
+                          height={PLAYLIST_COVER_HEIGHT}
+                          borderRadius={8}
+                          borderWidth={0}
+                          placeholderIcon={isFavorites ? 'heart' : 'playlist-music'}
+                          placeholderIconColor={isFavorites ? '#f7a8cf' : C.accentFg}
+                          placeholderIconSize={34}
+                          emptyCellIconSize={18}
+                        />
                       </View>
                       <Text style={styles.playlistName} numberOfLines={1}>
                         {playlist.name}
@@ -1192,7 +1215,12 @@ const LibraryScreen = ({ navigation, route }) => {
               {sourceImportState.status || 'Updating library...'}
             </Text>
             <View style={styles.importProgressTrack}>
-              <View style={[styles.importProgressFill, {width: '60%'}]} />
+              <View
+                style={[
+                  styles.importProgressFill,
+                  styles.importProgressFillStatic,
+                ]}
+              />
             </View>
             <Text style={styles.importProgressMeta}>Please wait...</Text>
           </Pressable>

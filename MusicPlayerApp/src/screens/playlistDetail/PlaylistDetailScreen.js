@@ -10,14 +10,19 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import DocumentPicker from 'react-native-document-picker';
+import RNFS from 'react-native-fs';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
+import PlaylistArtwork from '../../components/PlaylistArtwork';
 import playbackService from '../../services/playback/PlaybackService';
 import storageService from '../../services/storage/StorageService';
+import {toFileUriFromPath, toPathFromUri} from '../../services/storage/storage.helpers';
 import { MUSIC_HOME_THEME as C } from '../../theme/musicHomeTheme';
 import styles from './playlistDetail.styles';
 
 const SONG_ITEM_HEIGHT = 68;
+const PLAYLIST_COVER_DIR = `${RNFS.DocumentDirectoryPath}/playlist_covers`;
 const idKeyExtractor = item => item.id;
 const songKey = song =>
   String(song?.id || song?.sourceSongId || song?.localPath || song?.url || '')
@@ -27,6 +32,32 @@ const songIdentityKeys = song => {
     .map(value => String(value || '').trim())
     .filter(Boolean);
   return Array.from(new Set(keys));
+};
+
+const toPlaylistCoverExtension = file => {
+  const fromName = String(file?.name || '').match(/\.([a-z0-9]{2,5})$/i);
+  if (fromName?.[1]) {
+    return fromName[1].toLowerCase();
+  }
+  const mimePart = String(file?.type || '').split('/')[1] || '';
+  const normalized = mimePart.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  if (!normalized) {
+    return 'jpg';
+  }
+  if (normalized === 'jpeg') {
+    return 'jpg';
+  }
+  return normalized.slice(0, 5);
+};
+
+const isManagedPlaylistCoverPath = pathValue => {
+  const normalizedPath = String(pathValue || '').trim();
+  if (!normalizedPath) {
+    return false;
+  }
+  const normalizedDir = String(PLAYLIST_COVER_DIR || '').replace(/\\/g, '/');
+  const normalizedCandidate = normalizedPath.replace(/\\/g, '/');
+  return normalizedCandidate.indexOf(normalizedDir + '/') === 0;
 };
 
 const SongCard = React.memo(({ item, index, onPress, onRemove }) => (
@@ -94,6 +125,111 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   useEffect(() => {
     loadPlaylist();
   }, [loadPlaylist]);
+
+  const isFavorites = useMemo(
+    () => storageService.isFavoritesPlaylist(playlist),
+    [playlist],
+  );
+
+  const persistCustomPlaylistArtwork = useCallback(
+    async nextArtworkUri => {
+      const normalizedArtwork = String(nextArtworkUri || '').trim();
+      const previousArtwork = String(playlist?.customArtwork || '').trim();
+      const result = await storageService.setPlaylistCustomArtwork(
+        playlist.id,
+        normalizedArtwork,
+      );
+      if (result?.playlist) {
+        setPlaylist(result.playlist);
+      } else {
+        await loadPlaylist();
+      }
+
+      if (previousArtwork && previousArtwork !== normalizedArtwork) {
+        const previousPath = toPathFromUri(previousArtwork);
+        if (isManagedPlaylistCoverPath(previousPath)) {
+          await RNFS.unlink(previousPath).catch(() => null);
+        }
+      }
+    },
+    [loadPlaylist, playlist?.customArtwork, playlist?.id],
+  );
+
+  const pickPlaylistCustomArtwork = useCallback(async () => {
+    try {
+      const file = await DocumentPicker.pickSingle({
+        type: [DocumentPicker.types.images],
+        copyTo: 'cachesDirectory',
+      });
+      const sourceUri = String(file?.fileCopyUri || file?.uri || '').trim();
+      const sourcePath = toPathFromUri(sourceUri);
+      if (!sourcePath) {
+        throw new Error('Selected image is not accessible.');
+      }
+      await RNFS.mkdir(PLAYLIST_COVER_DIR).catch(() => null);
+      const extension = toPlaylistCoverExtension(file);
+      const destinationPath = `${PLAYLIST_COVER_DIR}/${String(
+        playlist?.id || 'playlist',
+      )}_${Date.now()}.${extension}`;
+      await RNFS.copyFile(sourcePath, destinationPath);
+      await persistCustomPlaylistArtwork(toFileUriFromPath(destinationPath));
+    } catch (error) {
+      if (!DocumentPicker.isCancel(error)) {
+        console.error('Failed to pick playlist cover artwork:', error);
+      }
+    }
+  }, [persistCustomPlaylistArtwork, playlist?.id]);
+
+  const clearPlaylistCustomArtwork = useCallback(() => {
+    Alert.alert(
+      'Remove Custom Cover',
+      'Use the first four song artworks for this playlist thumbnail instead?',
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await persistCustomPlaylistArtwork('');
+            } catch (error) {
+              console.error('Failed to clear playlist cover artwork:', error);
+              Alert.alert(
+                'Cover Update Failed',
+                error?.message || 'Could not clear the playlist cover image.',
+              );
+            }
+          },
+        },
+      ],
+    );
+  }, [persistCustomPlaylistArtwork]);
+
+  const openPlaylistCoverOptions = useCallback(() => {
+    const currentCustomArtwork = String(playlist?.customArtwork || '').trim();
+    if (!currentCustomArtwork) {
+      pickPlaylistCustomArtwork().catch(() => null);
+      return;
+    }
+    Alert.alert('Playlist Cover', 'Update or remove the custom cover image.', [
+      {text: 'Cancel', style: 'cancel'},
+      {
+        text: 'Change Image',
+        onPress: () => {
+          pickPlaylistCustomArtwork().catch(() => null);
+        },
+      },
+      {
+        text: 'Remove Image',
+        style: 'destructive',
+        onPress: clearPlaylistCustomArtwork,
+      },
+    ]);
+  }, [
+    clearPlaylistCustomArtwork,
+    pickPlaylistCustomArtwork,
+    playlist?.customArtwork,
+  ]);
 
   const playSong = useCallback(
     async index => {
@@ -261,15 +397,6 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     [playlist.id, loadPlaylist],
   );
 
-  const artworks = useMemo(
-    () =>
-      playlist.songs
-        .filter(song => song.artwork)
-        .slice(0, 4)
-        .map(song => song.artwork),
-    [playlist.songs],
-  );
-
   const listHeader = useMemo(
     () => (
       <View>
@@ -287,38 +414,15 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
 
         <View style={styles.heroSection}>
           <View style={styles.heroArtworkWrap}>
-            {artworks.length > 0 ? (
-              <View style={styles.artworkGrid}>
-                {artworks.map((artwork, index) => (
-                  <Image
-                    key={`${playlist.id}-${index}`}
-                    source={{ uri: artwork }}
-                    style={styles.gridImage}
-                    resizeMode="cover"
-                    fadeDuration={0}
-                  />
-                ))}
-                {artworks.length < 4
-                  ? Array.from({ length: 4 - artworks.length }).map(
-                    (_, index) => (
-                      <View
-                        key={`empty-${playlist.id}-${index}`}
-                        style={styles.gridImageEmpty}>
-                        <Icon
-                          name="music-note"
-                          size={22}
-                          color={C.textMute}
-                        />
-                      </View>
-                    ),
-                  )
-                  : null}
-              </View>
-            ) : (
-              <View style={styles.placeholderArtwork}>
-                <Icon name="playlist-music" size={72} color={C.textMute} />
-              </View>
-            )}
+            <PlaylistArtwork
+              playlist={playlist}
+              size={180}
+              borderRadius={12}
+              placeholderIcon={isFavorites ? 'heart' : 'playlist-music'}
+              placeholderIconColor={isFavorites ? '#f7a8cf' : C.textMute}
+              placeholderIconSize={72}
+              emptyCellIconSize={22}
+            />
           </View>
 
           <Text style={styles.playlistName}>{playlist.name}</Text>
@@ -350,13 +454,39 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
               <Icon name="playlist-plus" size={16} color={C.accentFg} />
               <Text style={styles.addTracksText}>Add Tracks</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.addTracksButton}
+              onPress={openPlaylistCoverOptions}>
+              <Icon
+                name={
+                  String(playlist?.customArtwork || '').trim()
+                    ? 'image-edit-outline'
+                    : 'image-plus'
+                }
+                size={16}
+                color={C.accentFg}
+              />
+              <Text style={styles.addTracksText}>
+                {String(playlist?.customArtwork || '').trim()
+                  ? 'Edit Cover'
+                  : 'Set Cover'}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
         <Text style={styles.sectionLabel}>Tracks</Text>
       </View>
     ),
-    [artworks, navigation, openAddTracksModal, playAll, playlist],
+    [
+      isFavorites,
+      navigation,
+      openAddTracksModal,
+      openPlaylistCoverOptions,
+      playAll,
+      playlist,
+    ],
   );
 
   const renderSongItem = useCallback(

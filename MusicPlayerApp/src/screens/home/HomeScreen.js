@@ -14,21 +14,12 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
+import PlaylistArtwork from '../../components/PlaylistArtwork';
 import playbackService from '../../services/playback/PlaybackService';
 import storageService from '../../services/storage/StorageService';
-import {
-  MUSIC_HOME_THEME as C,
-  MUSIC_HOME_ART_COLORS,
-  PLAYLIST_EMOJIS,
-} from '../../theme/musicHomeTheme';
-import { ART_KEYS } from '../library/library.constants';
+import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
 import SongCard from './SongCard';
 import styles from './home.styles';
-
-const getPlaylistColor = index => {
-  const key = ART_KEYS[index % ART_KEYS.length];
-  return MUSIC_HOME_ART_COLORS[key] || MUSIC_HOME_ART_COLORS.purple;
-};
 
 const SONG_ITEM_HEIGHT = 78;
 const PLAYLIST_ITEM_SIZE = 112;
@@ -90,6 +81,18 @@ const areSongListsEquivalent = (left = [], right = []) => {
   return true;
 };
 
+const getPlaylistArtworkSignature = playlist => {
+  const customArtwork = String(
+    playlist?.customArtwork || playlist?.coverArtwork || '',
+  ).trim();
+  const songs = Array.isArray(playlist?.songs) ? playlist.songs : [];
+  const firstFourArtwork = songs
+    .slice(0, 4)
+    .map(song => String(song?.artwork || '').trim())
+    .join('|');
+  return `${customArtwork}::${firstFourArtwork}`;
+};
+
 const arePlaylistsEquivalent = (left = [], right = []) => {
   if (left === right) {
     return true;
@@ -108,9 +111,11 @@ const arePlaylistsEquivalent = (left = [], right = []) => {
       (String(previous?.id || '') !== String(next?.id || '') ||
         String(previous?.name || '') !== String(next?.name || '') ||
         String(previous?.description || '') !== String(next?.description || '') ||
+        getPlaylistArtworkSignature(previous) !==
+          getPlaylistArtworkSignature(next) ||
         ((Array.isArray(previous?.songs) ? previous.songs.length : 0) !==
-          (Array.isArray(next?.songs) ? next.songs.length : 0))
-      )
+          (Array.isArray(next?.songs) ? next.songs.length : 0)) ||
+        (Number(previous?.updatedAt) || 0) !== (Number(next?.updatedAt) || 0))
     ) {
       return false;
     }
@@ -423,17 +428,22 @@ const HomeScreen = ({ navigation }) => {
   }, [navigation]);
 
   const renderPlaylistCard = useCallback(
-    ({ item, index }) => {
-      const color = getPlaylistColor(index);
-      const emoji = PLAYLIST_EMOJIS[index % PLAYLIST_EMOJIS.length];
+    ({item}) => {
+      const isFavorites = storageService.isFavoritesPlaylist(item);
       return (
         <TouchableOpacity
           key={item.id}
           style={styles.playlistCard}
           onPress={() => openPlaylist(item)}>
-          <View style={[styles.playlistArt, { backgroundColor: color }]}>
-            <Text style={styles.playlistEmoji}>{emoji}</Text>
-          </View>
+          <PlaylistArtwork
+            playlist={item}
+            size={94}
+            borderRadius={7}
+            placeholderIcon={isFavorites ? 'heart' : 'playlist-music'}
+            placeholderIconColor={isFavorites ? '#f7a8cf' : C.textMute}
+            placeholderIconSize={30}
+            emptyCellIconSize={16}
+          />
           <Text style={styles.playlistName} numberOfLines={1}>
             {item.name}
           </Text>

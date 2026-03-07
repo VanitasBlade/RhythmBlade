@@ -7,6 +7,8 @@ import {
 } from '../storage.constants';
 import {normalizePlaylistName, normalizeText} from '../storage.helpers';
 
+const normalizePlaylistArtwork = value => String(value || '').trim();
+
 export const playlistMethods = {
   normalizePlaylistEntry(playlist = {}) {
     const now = Date.now();
@@ -16,6 +18,13 @@ export const playlistMethods = {
       name: normalizePlaylistName(playlist.name) || 'Untitled Playlist',
       description: String(playlist.description || '').trim(),
       songs: Array.isArray(playlist.songs) ? playlist.songs : [],
+      customArtwork: normalizePlaylistArtwork(
+        playlist.customArtwork ||
+          playlist.coverArtwork ||
+          playlist.coverImage ||
+          playlist.artwork ||
+          '',
+      ),
       createdAt: Number(playlist.createdAt) || now,
       updatedAt:
         Number(playlist.updatedAt) || Number(playlist.createdAt) || now,
@@ -49,6 +58,9 @@ export const playlistMethods = {
       songs: Array.isArray(normalizedExisting?.songs)
         ? normalizedExisting.songs
         : [],
+      customArtwork: normalizePlaylistArtwork(
+        normalizedExisting?.customArtwork || '',
+      ),
       createdAt: normalizedExisting?.createdAt || now,
       updatedAt: normalizedExisting?.updatedAt || now,
       isSystem: true,
@@ -91,6 +103,8 @@ export const playlistMethods = {
         existingFavorite.id === normalizedFavorite.id &&
         existingFavorite.name === normalizedFavorite.name &&
         existingFavorite.description === normalizedFavorite.description &&
+        normalizePlaylistArtwork(existingFavorite.customArtwork) ===
+          normalizePlaylistArtwork(normalizedFavorite.customArtwork) &&
         Array.isArray(existingFavorite.songs) &&
         existingFavorite.songs.length === normalizedFavorite.songs.length &&
         existingFavorite.isSystem === normalizedFavorite.isSystem;
@@ -164,6 +178,40 @@ export const playlistMethods = {
       return newPlaylist;
     } catch (error) {
       console.error('Error creating playlist:', error);
+      throw error;
+    }
+  },
+
+  async setPlaylistCustomArtwork(playlistId, customArtwork = '') {
+    try {
+      const normalizedPlaylistId = String(playlistId || '').trim();
+      if (!normalizedPlaylistId) {
+        throw new Error('Playlist id is required');
+      }
+
+      const playlists = await this.getPlaylists();
+      const target = playlists.find(
+        playlist => String(playlist?.id || '').trim() === normalizedPlaylistId,
+      );
+      if (!target) {
+        throw new Error('Playlist not found');
+      }
+
+      target.customArtwork = normalizePlaylistArtwork(customArtwork);
+      target.updatedAt = Date.now();
+      const nextPlaylists = this.sortPlaylists(playlists);
+      await this.savePlaylists(nextPlaylists);
+      const updatedPlaylist =
+        nextPlaylists.find(
+          playlist =>
+            String(playlist?.id || '').trim() === normalizedPlaylistId,
+        ) || target;
+      return {
+        playlists: nextPlaylists,
+        playlist: updatedPlaylist,
+      };
+    } catch (error) {
+      console.error('Error setting playlist custom artwork:', error);
       throw error;
     }
   },

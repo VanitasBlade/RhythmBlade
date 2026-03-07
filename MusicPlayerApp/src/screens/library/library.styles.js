@@ -242,6 +242,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: C.bgCard,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -385,6 +387,9 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 999,
     backgroundColor: C.accent,
+  },
+  importProgressFillStatic: {
+    width: '60%',
   },
   importProgressMeta: {
     marginTop: 10,
