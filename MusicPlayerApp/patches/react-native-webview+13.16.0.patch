@@ -1,0 +1,149 @@
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
+index f83033b..03c4b0d 100644
+--- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
+@@ -17,10 +17,13 @@ import android.webkit.WebSettings
+ import android.webkit.WebView
+ import androidx.webkit.WebSettingsCompat
+ import androidx.webkit.WebViewFeature
++import com.facebook.react.bridge.Arguments
+ import com.facebook.react.bridge.ReadableArray
+ import com.facebook.react.bridge.ReadableMap
+ import com.facebook.react.common.MapBuilder
+ import com.facebook.react.common.build.ReactBuildConfig
++import com.facebook.react.uimanager.UIManagerHelper
++import com.reactnativecommunity.webview.events.TopFileDownloadEvent
+ import com.facebook.react.uimanager.ThemedReactContext
+ import org.json.JSONException
+ import org.json.JSONObject
+@@ -43,6 +46,7 @@ class RNCWebViewManagerImpl(private val newArch: Boolean = false) {
+     private var mDownloadingMessage: String? = null
+     private var mLackPermissionToDownloadMessage: String? = null
+     private var mHasOnOpenWindowEvent = false
++    private var mHasOnFileDownloadEvent = false
+     private var mPendingSource: ReadableMap? = null
+ 
+     private var mUserAgent: String? = null
+@@ -92,6 +96,17 @@ class RNCWebViewManagerImpl(private val newArch: Boolean = false) {
+             WebView.setWebContentsDebuggingEnabled(true)
+         }
+         webView.setDownloadListener(DownloadListener { url, userAgent, contentDisposition, mimetype, contentLength ->
++            if (mHasOnFileDownloadEvent) {
++                val reactTag = RNCWebViewWrapper.getReactTagFromWebView(webView)
++                val event = Arguments.createMap().apply {
++                    putString("downloadUrl", url)
++                }
++                UIManagerHelper.getEventDispatcherForReactTag(
++                    webView.themedReactContext,
++                    reactTag
++                )?.dispatchEvent(TopFileDownloadEvent(reactTag, event))
++                return@DownloadListener
++            }
+             val module = webView.reactApplicationContext.getNativeModule(RNCWebViewModule::class.java) ?: return@DownloadListener
+             val request: DownloadManager.Request = try {
+                 DownloadManager.Request(Uri.parse(url))
+@@ -632,6 +647,10 @@ class RNCWebViewManagerImpl(private val newArch: Boolean = false) {
+         setupWebChromeClient(view)
+     }
+ 
++    fun setHasOnFileDownload(viewWrapper: RNCWebViewWrapper, value: Boolean) {
++        mHasOnFileDownloadEvent = value
++    }
++
+     fun setMinimumFontSize(viewWrapper: RNCWebViewWrapper, value: Int) {
+         val view = viewWrapper.webView
+         view.settings.minimumFontSize = value
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/events/TopFileDownloadEvent.kt b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/events/TopFileDownloadEvent.kt
+new file mode 100644
+index 0000000..eb62ef0
+--- /dev/null
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/events/TopFileDownloadEvent.kt
+@@ -0,0 +1,24 @@
++package com.reactnativecommunity.webview.events
++
++import com.facebook.react.bridge.WritableMap
++import com.facebook.react.uimanager.events.Event
++import com.facebook.react.uimanager.events.RCTEventEmitter
++
++/**
++ * Event emitted when WebView delegates a file download.
++ */
++class TopFileDownloadEvent(viewId: Int, private val mEventData: WritableMap) :
++  Event<TopFileDownloadEvent>(viewId) {
++  companion object {
++    const val EVENT_NAME = "topFileDownload"
++  }
++
++  override fun getEventName(): String = EVENT_NAME
++
++  override fun canCoalesce(): Boolean = false
++
++  override fun getCoalescingKey(): Short = 0
++
++  override fun dispatch(rctEventEmitter: RCTEventEmitter) =
++    rctEventEmitter.receiveEvent(viewTag, eventName, mEventData)
++}
+diff --git a/node_modules/react-native-webview/android/src/newarch/com/reactnativecommunity/webview/RNCWebViewManager.java b/node_modules/react-native-webview/android/src/newarch/com/reactnativecommunity/webview/RNCWebViewManager.java
+index 4709e28..cf60e2c 100644
+--- a/node_modules/react-native-webview/android/src/newarch/com/reactnativecommunity/webview/RNCWebViewManager.java
++++ b/node_modules/react-native-webview/android/src/newarch/com/reactnativecommunity/webview/RNCWebViewManager.java
+@@ -16,6 +16,7 @@ import com.facebook.react.viewmanagers.RNCWebViewManagerInterface;
+ import com.facebook.react.views.scroll.ScrollEventType;
+ import com.reactnativecommunity.webview.events.TopCustomMenuSelectionEvent;
+ import com.reactnativecommunity.webview.events.SubResourceErrorEvent;
++import com.reactnativecommunity.webview.events.TopFileDownloadEvent;
+ import com.reactnativecommunity.webview.events.TopHttpErrorEvent;
+ import com.reactnativecommunity.webview.events.TopLoadingErrorEvent;
+ import com.reactnativecommunity.webview.events.TopLoadingFinishEvent;
+@@ -421,7 +422,10 @@ public class RNCWebViewManager extends ViewGroupManager<RNCWebViewWrapper>
+     public void setTextInteractionEnabled(RNCWebViewWrapper view, boolean value) {}
+ 
+     @Override
+-    public void setHasOnFileDownload(RNCWebViewWrapper view, boolean value) {}
++    @ReactProp(name = "hasOnFileDownload")
++    public void setHasOnFileDownload(RNCWebViewWrapper view, boolean value) {
++        mRNCWebViewManagerImpl.setHasOnFileDownload(view, value);
++    }
+ 
+     @Override
+     public void setMediaCapturePermissionGrantType(RNCWebViewWrapper view, @Nullable String value) {}
+@@ -536,6 +540,7 @@ public class RNCWebViewManager extends ViewGroupManager<RNCWebViewWrapper>
+         export.put(TopRenderProcessGoneEvent.EVENT_NAME, MapBuilder.of("registrationName", "onRenderProcessGone"));
+         export.put(TopCustomMenuSelectionEvent.EVENT_NAME, MapBuilder.of("registrationName", "onCustomMenuSelection"));
+         export.put(TopOpenWindowEvent.EVENT_NAME, MapBuilder.of("registrationName", "onOpenWindow"));
++        export.put(TopFileDownloadEvent.EVENT_NAME, MapBuilder.of("registrationName", "onFileDownload"));
+         return export;
+     }
+ 
+diff --git a/node_modules/react-native-webview/android/src/oldarch/com/reactnativecommunity/webview/RNCWebViewManager.java b/node_modules/react-native-webview/android/src/oldarch/com/reactnativecommunity/webview/RNCWebViewManager.java
+index 974337f..1d88633 100644
+--- a/node_modules/react-native-webview/android/src/oldarch/com/reactnativecommunity/webview/RNCWebViewManager.java
++++ b/node_modules/react-native-webview/android/src/oldarch/com/reactnativecommunity/webview/RNCWebViewManager.java
+@@ -12,6 +12,7 @@ import com.facebook.react.uimanager.annotations.ReactProp;
+ import com.facebook.react.views.scroll.ScrollEventType;
+ import com.reactnativecommunity.webview.events.TopCustomMenuSelectionEvent;
+ import com.reactnativecommunity.webview.events.SubResourceErrorEvent;
++import com.reactnativecommunity.webview.events.TopFileDownloadEvent;
+ import com.reactnativecommunity.webview.events.TopHttpErrorEvent;
+ import com.reactnativecommunity.webview.events.TopLoadingErrorEvent;
+ import com.reactnativecommunity.webview.events.TopLoadingFinishEvent;
+@@ -174,6 +175,11 @@ public class RNCWebViewManager extends ViewGroupManager<RNCWebViewWrapper> {
+         mRNCWebViewManagerImpl.setHasOnOpenWindowEvent(view, hasEvent);
+     }
+ 
++    @ReactProp(name = "hasOnFileDownload")
++    public void setHasOnFileDownload(RNCWebViewWrapper view, boolean value) {
++        mRNCWebViewManagerImpl.setHasOnFileDownload(view, value);
++    }
++
+     @ReactProp(name = "mediaPlaybackRequiresUserAction")
+     public void setMediaPlaybackRequiresUserAction(RNCWebViewWrapper view, boolean value) {
+         mRNCWebViewManagerImpl.setMediaPlaybackRequiresUserAction(view, value);
+@@ -306,6 +312,7 @@ public class RNCWebViewManager extends ViewGroupManager<RNCWebViewWrapper> {
+         export.put(TopRenderProcessGoneEvent.EVENT_NAME, MapBuilder.of("registrationName", "onRenderProcessGone"));
+         export.put(TopCustomMenuSelectionEvent.EVENT_NAME, MapBuilder.of("registrationName", "onCustomMenuSelection"));
+         export.put(TopOpenWindowEvent.EVENT_NAME, MapBuilder.of("registrationName", "onOpenWindow"));
++        export.put(TopFileDownloadEvent.EVENT_NAME, MapBuilder.of("registrationName", "onFileDownload"));
+         return export;
+     }
+ 

@@ -1,0 +1,2745 @@
+{
+  "generatedAt": "2026-03-06T20:01:58.759Z",
+  "inputs": {
+    "textQuery": "Believer Imagine Dragons",
+    "playlistUrl": "https://open.spotify.com/playlist/6BN5u8GbcZdgAOWAGuxK7a?si=b0281607f1cf40a4",
+    "albumUrl": "https://open.spotify.com/album/2ANVost0y2y52ema1E9xAZ",
+    "artistUrl": "https://open.spotify.com/artist/3fMbdgg4jU18AjLCKBhRSm"
+  },
+  "antiBot": {
+    "defaultUA": {
+      "title": "Spotify Downloader - Download Spotify Songs, Playlists, Albums & Artists",
+      "bodyTextLength": 11378,
+      "bodyTextSample": "FAQs\nTrack\nPlaylist\nAlbum\nArtist\nSearch\nSpotify Downloader\nDownload Songs, Playlists, Albums & Artist Songs from Spotify\nDownload\n\nFacing issues? Contact Us\n\nPlease consider supporting Spotdown to keep it alive.\n\nHow to Download from Spotify?\n1\nCopy the Spotify URL\n\nFirstly, open the Spotify app on your device or the Spotify website. Now, copy the URL of your favorite song, playlist, album, or artist that you want to download.\n\n2\nPaste the URL\n\nGo back to the Spotdown website, which is an online Spotify downloader tool. Now, paste the copied link in the input field that is provided above. You ",
+      "cloudflareSelector": "#cf-wrapper, .cf-browser-verification, #challenge-form",
+      "cloudflareFound": false,
+      "cloudflareCount": 0,
+      "captchaSelector": ".g-recaptcha, iframe[src*=\"recaptcha\"], iframe[src*=\"hcaptcha\"]",
+      "captchaFound": false,
+      "captchaCount": 0
+    },
+    "mobileUA": null
+  },
+  "step0": {
+    "testA": {
+      "Track": {
+        "submission": {
+          "timeline": [
+            {
+              "label": "pre-submit",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1000ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1500ms",
+              "songListExists": true,
+              "songCount": 15,
+              "hasLoadingText": true,
+              "hasGetLink": true,
+              "hasDownloadNowElement": false,
+              "firstRowText": "Believer\nImagine Dragons\nGet Link",
+              "errors": []
+            },
+            {
+              "label": "t+2000ms",
+              "songListExists": true,
+              "songCount": 15,
+              "hasLoadingText": true,
+              "hasGetLink": true,
+              "hasDownloadNowElement": false,
+              "firstRowText": "Believer\nImagine Dragons\nGet Link",
+              "errors": []
+            }
+          ],
+          "final": {
+            "label": "t+2000ms",
+            "songListExists": true,
+            "songCount": 15,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Believer\nImagine Dragons\nGet Link",
+            "errors": []
+          }
+        },
+        "dom": {
+          "resultContainerSelector": ".song-list",
+          "itemSelector": ".song-list .song",
+          "itemCount": 15,
+          "titleSelector": ".song .title",
+          "titleText": "Believer",
+          "artistSelector": ".song .artist",
+          "artistText": "Imagine Dragons",
+          "durationSelector": null,
+          "durationText": null,
+          "albumArtSelector": ".song img",
+          "albumArtSrc": "https://i.scdn.co/image/ab67616d0000b2735675e83f707f1d7271e5cf8a",
+          "downloadButtonSelector": ".song .button-container button",
+          "downloadButtonText": "Get Link",
+          "pageTextSample": "FAQs\nTrack\nPlaylist\nAlbum\nArtist\nSearch\nSpotify Song Downloader\nDownload Songs and Tracks from Spotify\nDownload\n\nFacing issues? Contact Us\n\nPlease consider supporting Spotdown to keep it alive.\n\nBeliever\nImagine Dragons\nGet Link\nBeliever\nImagine Dragons\nGet Link\nThunder\nImagine Dragons\nGet Link\nBeliever (feat. Lil Wayne)\nImagine Dragons, Lil Wayne\nGet Link\nWhatever It Takes\nImagine Dragons\nGet Link\nSeven Nation Army\nThe White Stripes\nGet Link\nBeliever - Live/Acoustic\nImagine Dragons\nGet Link\nBeliever - Live in Vegas\nImagine Dragons\nGet Link\nBeliever - Kaskade Remix\nImagine Dragons, Kaskade\nGet Link\nBeliever (aus \"The Voice Kids, Staffel 11\") - Live\nMartha & Norah, The Voice Kids - Germany\nGet Link\nBeliever\nImagine Dragons\nGet Link\nBeliever - Female Version\nKenke\nGet Link\nEnder Dragons\nJ Rice\nGet Link\nBelieve\nAlle Farben\nGet Link\nDungeons and Dragons\nMontt Mardié\nGet Link\nPrevious\n1\n2\nNext\nHow to Download Spotify Songs?\n1\nCopy the Spotify URL\n\nFirstly, open your favorite Spotify song an",
+          "errors": []
+        },
+        "summary": {
+          "songCount": 15,
+          "firstTitle": "Believer",
+          "firstArtist": "Imagine Dragons",
+          "firstRow": "Believer\nImagine Dragons\nGet Link",
+          "errors": [],
+          "hasList": true
+        }
+      },
+      "Playlist": {
+        "submission": {
+          "timeline": [
+            {
+              "label": "pre-submit",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1000ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1500ms",
+              "songListExists": true,
+              "songCount": 15,
+              "hasLoadingText": true,
+              "hasGetLink": true,
+              "hasDownloadNowElement": false,
+              "firstRowText": "Believer\nImagine Dragons\nGet Link",
+              "errors": []
+            },
+            {
+              "label": "t+2000ms",
+              "songListExists": true,
+              "songCount": 15,
+              "hasLoadingText": true,
+              "hasGetLink": true,
+              "hasDownloadNowElement": false,
+              "firstRowText": "Believer\nImagine Dragons\nGet Link",
+              "errors": []
+            }
+          ],
+          "final": {
+            "label": "t+2000ms",
+            "songListExists": true,
+            "songCount": 15,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Believer\nImagine Dragons\nGet Link",
+            "errors": []
+          }
+        },
+        "dom": {
+          "resultContainerSelector": ".song-list",
+          "itemSelector": ".song-list .song",
+          "itemCount": 15,
+          "titleSelector": ".song .title",
+          "titleText": "Believer",
+          "artistSelector": ".song .artist",
+          "artistText": "Imagine Dragons",
+          "durationSelector": null,
+          "durationText": null,
+          "albumArtSelector": ".song img",
+          "albumArtSrc": "https://i.scdn.co/image/ab67616d0000b2735675e83f707f1d7271e5cf8a",
+          "downloadButtonSelector": ".song .button-container button",
+          "downloadButtonText": "Get Link",
+          "pageTextSample": "FAQs\nTrack\nPlaylist\nAlbum\nArtist\nSearch\nSpotify Playlist Downloader\nDownload Playlists from Spotify\nDownload\n\nFacing issues? Contact Us\n\nPlease consider supporting Spotdown to keep it alive.\n\nBeliever\nImagine Dragons\nGet Link\nBeliever\nImagine Dragons\nGet Link\nThunder\nImagine Dragons\nGet Link\nBeliever (feat. Lil Wayne)\nImagine Dragons, Lil Wayne\nGet Link\nWhatever It Takes\nImagine Dragons\nGet Link\nSeven Nation Army\nThe White Stripes\nGet Link\nBeliever - Live/Acoustic\nImagine Dragons\nGet Link\nBeliever - Live in Vegas\nImagine Dragons\nGet Link\nBeliever - Kaskade Remix\nImagine Dragons, Kaskade\nGet Link\nBeliever (aus \"The Voice Kids, Staffel 11\") - Live\nMartha & Norah, The Voice Kids - Germany\nGet Link\nBeliever\nImagine Dragons\nGet Link\nBeliever - Female Version\nKenke\nGet Link\nEnder Dragons\nJ Rice\nGet Link\nBelieve\nAlle Farben\nGet Link\nDungeons and Dragons\nMontt Mardié\nGet Link\nPrevious\n1\n2\nNext\nHow to Download Playlists from Spotify?\n1\nCopy the Spotify URL\n\nFirst of all, open your favorite Spot",
+          "errors": []
+        },
+        "summary": {
+          "songCount": 15,
+          "firstTitle": "Believer",
+          "firstArtist": "Imagine Dragons",
+          "firstRow": "Believer\nImagine Dragons\nGet Link",
+          "errors": [],
+          "hasList": true
+        }
+      },
+      "Album": {
+        "submission": {
+          "timeline": [
+            {
+              "label": "pre-submit",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1000ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1500ms",
+              "songListExists": true,
+              "songCount": 15,
+              "hasLoadingText": true,
+              "hasGetLink": true,
+              "hasDownloadNowElement": false,
+              "firstRowText": "Believer\nImagine Dragons\nGet Link",
+              "errors": []
+            },
+            {
+              "label": "t+2000ms",
+              "songListExists": true,
+              "songCount": 15,
+              "hasLoadingText": true,
+              "hasGetLink": true,
+              "hasDownloadNowElement": false,
+              "firstRowText": "Believer\nImagine Dragons\nGet Link",
+              "errors": []
+            }
+          ],
+          "final": {
+            "label": "t+2000ms",
+            "songListExists": true,
+            "songCount": 15,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Believer\nImagine Dragons\nGet Link",
+            "errors": []
+          }
+        },
+        "dom": {
+          "resultContainerSelector": ".song-list",
+          "itemSelector": ".song-list .song",
+          "itemCount": 15,
+          "titleSelector": ".song .title",
+          "titleText": "Believer",
+          "artistSelector": ".song .artist",
+          "artistText": "Imagine Dragons",
+          "durationSelector": null,
+          "durationText": null,
+          "albumArtSelector": ".song img",
+          "albumArtSrc": "https://i.scdn.co/image/ab67616d0000b2735675e83f707f1d7271e5cf8a",
+          "downloadButtonSelector": ".song .button-container button",
+          "downloadButtonText": "Get Link",
+          "pageTextSample": "FAQs\nTrack\nPlaylist\nAlbum\nArtist\nSearch\nSpotify Album Downloader\nDownload Albums from Spotify\nDownload\n\nFacing issues? Contact Us\n\nPlease consider supporting Spotdown to keep it alive.\n\nBeliever\nImagine Dragons\nGet Link\nBeliever\nImagine Dragons\nGet Link\nThunder\nImagine Dragons\nGet Link\nBeliever (feat. Lil Wayne)\nImagine Dragons, Lil Wayne\nGet Link\nWhatever It Takes\nImagine Dragons\nGet Link\nSeven Nation Army\nThe White Stripes\nGet Link\nBeliever - Live/Acoustic\nImagine Dragons\nGet Link\nBeliever - Live in Vegas\nImagine Dragons\nGet Link\nBeliever - Kaskade Remix\nImagine Dragons, Kaskade\nGet Link\nBeliever (aus \"The Voice Kids, Staffel 11\") - Live\nMartha & Norah, The Voice Kids - Germany\nGet Link\nBeliever\nImagine Dragons\nGet Link\nBeliever - Female Version\nKenke\nGet Link\nEnder Dragons\nJ Rice\nGet Link\nBelieve\nAlle Farben\nGet Link\nDungeons and Dragons\nMontt Mardié\nGet Link\nPrevious\n1\n2\nNext\nHow to Download Albums from Spotify?\n1\nCopy the Spotify URL\n\nFirst of all, open the album on the Spotify ap",
+          "errors": []
+        },
+        "summary": {
+          "songCount": 15,
+          "firstTitle": "Believer",
+          "firstArtist": "Imagine Dragons",
+          "firstRow": "Believer\nImagine Dragons\nGet Link",
+          "errors": [],
+          "hasList": true
+        }
+      },
+      "Artist": {
+        "submission": {
+          "timeline": [
+            {
+              "label": "pre-submit",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1000ms",
+              "songListExists": true,
+              "songCount": 15,
+              "hasLoadingText": true,
+              "hasGetLink": true,
+              "hasDownloadNowElement": false,
+              "firstRowText": "Believer\nImagine Dragons\nGet Link",
+              "errors": []
+            },
+            {
+              "label": "t+1500ms",
+              "songListExists": true,
+              "songCount": 15,
+              "hasLoadingText": true,
+              "hasGetLink": true,
+              "hasDownloadNowElement": false,
+              "firstRowText": "Believer\nImagine Dragons\nGet Link",
+              "errors": []
+            },
+            {
+              "label": "t+2000ms",
+              "songListExists": true,
+              "songCount": 15,
+              "hasLoadingText": true,
+              "hasGetLink": true,
+              "hasDownloadNowElement": false,
+              "firstRowText": "Believer\nImagine Dragons\nGet Link",
+              "errors": []
+            }
+          ],
+          "final": {
+            "label": "t+2000ms",
+            "songListExists": true,
+            "songCount": 15,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Believer\nImagine Dragons\nGet Link",
+            "errors": []
+          }
+        },
+        "dom": {
+          "resultContainerSelector": ".song-list",
+          "itemSelector": ".song-list .song",
+          "itemCount": 15,
+          "titleSelector": ".song .title",
+          "titleText": "Believer",
+          "artistSelector": ".song .artist",
+          "artistText": "Imagine Dragons",
+          "durationSelector": null,
+          "durationText": null,
+          "albumArtSelector": ".song img",
+          "albumArtSrc": "https://i.scdn.co/image/ab67616d0000b2735675e83f707f1d7271e5cf8a",
+          "downloadButtonSelector": ".song .button-container button",
+          "downloadButtonText": "Get Link",
+          "pageTextSample": "FAQs\nTrack\nPlaylist\nAlbum\nArtist\nSearch\nSpotify Artist Downloader\nDownload Artist Songs from Spotify\nDownload\n\nFacing issues? Contact Us\n\nPlease consider supporting Spotdown to keep it alive.\n\nBeliever\nImagine Dragons\nGet Link\nBeliever\nImagine Dragons\nGet Link\nThunder\nImagine Dragons\nGet Link\nBeliever (feat. Lil Wayne)\nImagine Dragons, Lil Wayne\nGet Link\nWhatever It Takes\nImagine Dragons\nGet Link\nSeven Nation Army\nThe White Stripes\nGet Link\nBeliever - Live/Acoustic\nImagine Dragons\nGet Link\nBeliever - Live in Vegas\nImagine Dragons\nGet Link\nBeliever - Kaskade Remix\nImagine Dragons, Kaskade\nGet Link\nBeliever (aus \"The Voice Kids, Staffel 11\") - Live\nMartha & Norah, The Voice Kids - Germany\nGet Link\nBeliever\nImagine Dragons\nGet Link\nBeliever - Female Version\nKenke\nGet Link\nEnder Dragons\nJ Rice\nGet Link\nBelieve\nAlle Farben\nGet Link\nDungeons and Dragons\nMontt Mardié\nGet Link\nPrevious\n1\n2\nNext\nHow to Download Artist Songs from Spotify?\n1\nCopy the Spotify URL\n\nFirst, open your favorite artist'",
+          "errors": []
+        },
+        "summary": {
+          "songCount": 15,
+          "firstTitle": "Believer",
+          "firstArtist": "Imagine Dragons",
+          "firstRow": "Believer\nImagine Dragons\nGet Link",
+          "errors": [],
+          "hasList": true
+        }
+      }
+    },
+    "testB": {
+      "playlistUrlInTrack": {
+        "submission": {
+          "timeline": [
+            {
+              "label": "pre-submit",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1000ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+2000ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+2500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+3000ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+3500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+4000ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+4500ms",
+              "songListExists": true,
+              "songCount": 7,
+              "hasLoadingText": true,
+              "hasGetLink": true,
+              "hasDownloadNowElement": false,
+              "firstRowText": "Enemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link",
+              "errors": []
+            }
+          ],
+          "final": {
+            "label": "t+4500ms",
+            "songListExists": true,
+            "songCount": 7,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Enemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link",
+            "errors": []
+          }
+        },
+        "dom": {
+          "resultContainerSelector": ".song-list",
+          "itemSelector": ".song-list .song",
+          "itemCount": 7,
+          "titleSelector": ".song .title",
+          "titleText": "Enemy (with JID) - from the series Arcane League of Legends",
+          "artistSelector": ".song .artist",
+          "artistText": "Imagine Dragons, JID, Arcane, League of Legends",
+          "durationSelector": null,
+          "durationText": null,
+          "albumArtSelector": ".song img",
+          "albumArtSrc": "https://image-cdn-fa.spotifycdn.com/image/ab67616d00001e02aa597e50829169e6994eb403",
+          "downloadButtonSelector": ".song .button-container button",
+          "downloadButtonText": "Get Link",
+          "pageTextSample": "FAQs\nTrack\nPlaylist\nAlbum\nArtist\nSearch\nSpotify Song Downloader\nDownload Songs and Tracks from Spotify\nDownload\n\nFacing issues? Contact Us\n\nPlease consider supporting Spotdown to keep it alive.\n\nDownload Now (All Songs)\nEnemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link\nBurn It All Down\nLeague of Legends, PVRIS\nGet Link\nDie For You\nVALORANT, Grabbitz\nGet Link\nHavana (feat. Young Thug)\nCamila Cabello, Young Thug\nGet Link\nEntertain Me\nYlona Garcia\nGet Link\nMemories\nMaroon 5\nGet Link\nCounting Stars\nOneRepublic\nGet Link\nHow to Download Spotify Songs?\n1\nCopy the Spotify URL\n\nFirstly, open your favorite Spotify song and copy its link.\n\n2\nPaste the URL\n\nNow, visit this Spotify song downloader again. Paste the copied link in the input field that is given above.\n\n3\nClick Download\n\nFinally, click on the download button to download Spotify songs.\n\nDownload Spotify Songs\n\nSpotify song downloader of Spotdown, is the best spotify down",
+          "errors": []
+        },
+        "summary": {
+          "songCount": 7,
+          "firstTitle": "Enemy (with JID) - from the series Arcane League of Legends",
+          "firstArtist": "Imagine Dragons, JID, Arcane, League of Legends",
+          "firstRow": "Enemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link",
+          "errors": [],
+          "hasList": true
+        }
+      },
+      "playlistUrlInAlbum": {
+        "submission": {
+          "timeline": [
+            {
+              "label": "pre-submit",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1000ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+2000ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+2500ms",
+              "songListExists": true,
+              "songCount": 7,
+              "hasLoadingText": true,
+              "hasGetLink": true,
+              "hasDownloadNowElement": false,
+              "firstRowText": "Enemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link",
+              "errors": []
+            }
+          ],
+          "final": {
+            "label": "t+2500ms",
+            "songListExists": true,
+            "songCount": 7,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Enemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link",
+            "errors": []
+          }
+        },
+        "dom": {
+          "resultContainerSelector": ".song-list",
+          "itemSelector": ".song-list .song",
+          "itemCount": 7,
+          "titleSelector": ".song .title",
+          "titleText": "Enemy (with JID) - from the series Arcane League of Legends",
+          "artistSelector": ".song .artist",
+          "artistText": "Imagine Dragons, JID, Arcane, League of Legends",
+          "durationSelector": null,
+          "durationText": null,
+          "albumArtSelector": ".song img",
+          "albumArtSrc": "https://image-cdn-fa.spotifycdn.com/image/ab67616d00001e02aa597e50829169e6994eb403",
+          "downloadButtonSelector": ".song .button-container button",
+          "downloadButtonText": "Get Link",
+          "pageTextSample": "FAQs\nTrack\nPlaylist\nAlbum\nArtist\nSearch\nSpotify Album Downloader\nDownload Albums from Spotify\nDownload\n\nFacing issues? Contact Us\n\nPlease consider supporting Spotdown to keep it alive.\n\nDownload Now (All Songs)\nEnemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link\nBurn It All Down\nLeague of Legends, PVRIS\nGet Link\nDie For You\nVALORANT, Grabbitz\nGet Link\nHavana (feat. Young Thug)\nCamila Cabello, Young Thug\nGet Link\nEntertain Me\nYlona Garcia\nGet Link\nMemories\nMaroon 5\nGet Link\nCounting Stars\nOneRepublic\nGet Link\nHow to Download Albums from Spotify?\n1\nCopy the Spotify URL\n\nFirst of all, open the album on the Spotify app that you want to download and copy its link.\n\n2\nPaste the URL\n\nNow, paste the copied link in the URL field. You can also use the paste button to paste the copied link.\n\n3\nClick Download\n\nAt last, click on the 'Download All' button to download the entire album at once. You can also choose and download any partic",
+          "errors": []
+        },
+        "summary": {
+          "songCount": 7,
+          "firstTitle": "Enemy (with JID) - from the series Arcane League of Legends",
+          "firstArtist": "Imagine Dragons, JID, Arcane, League of Legends",
+          "firstRow": "Enemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link",
+          "errors": [],
+          "hasList": true
+        }
+      },
+      "albumUrlInPlaylist": {
+        "submission": {
+          "timeline": [
+            {
+              "label": "pre-submit",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1000ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+2000ms",
+              "songListExists": true,
+              "songCount": 9,
+              "hasLoadingText": true,
+              "hasGetLink": true,
+              "hasDownloadNowElement": false,
+              "firstRowText": "Wanna Be Startin' Somethin'\nMichael Jackson\nGet Link",
+              "errors": []
+            }
+          ],
+          "final": {
+            "label": "t+2000ms",
+            "songListExists": true,
+            "songCount": 9,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Wanna Be Startin' Somethin'\nMichael Jackson\nGet Link",
+            "errors": []
+          }
+        },
+        "dom": {
+          "resultContainerSelector": ".song-list",
+          "itemSelector": ".song-list .song",
+          "itemCount": 9,
+          "titleSelector": ".song .title",
+          "titleText": "Wanna Be Startin' Somethin'",
+          "artistSelector": ".song .artist",
+          "artistText": "Michael Jackson",
+          "durationSelector": null,
+          "durationText": null,
+          "albumArtSelector": ".song img",
+          "albumArtSrc": "https://image-cdn-ak.spotifycdn.com/image/ab67616d00001e0232a7d87248d1b75463483df5",
+          "downloadButtonSelector": ".song .button-container button",
+          "downloadButtonText": "Get Link",
+          "pageTextSample": "FAQs\nTrack\nPlaylist\nAlbum\nArtist\nSearch\nSpotify Playlist Downloader\nDownload Playlists from Spotify\nDownload\n\nFacing issues? Contact Us\n\nPlease consider supporting Spotdown to keep it alive.\n\nDownload Now (All Songs)\nWanna Be Startin' Somethin'\nMichael Jackson\nGet Link\nBaby Be Mine\nMichael Jackson\nGet Link\nThe Girl Is Mine (with Paul McCartney)\nMichael Jackson, Paul McCartney\nGet Link\nThriller\nMichael Jackson\nGet Link\nBeat It\nMichael Jackson\nGet Link\nBillie Jean\nMichael Jackson\nGet Link\nHuman Nature\nMichael Jackson\nGet Link\nP.Y.T. (Pretty Young Thing)\nMichael Jackson\nGet Link\nThe Lady in My Life\nMichael Jackson\nGet Link\nHow to Download Playlists from Spotify?\n1\nCopy the Spotify URL\n\nFirst of all, open your favorite Spotify playlist that you want to download and copy its link.\n\n2\nPaste the URL\n\nPaste the copied playlist link in the URL field that is given above.\n\n3\nClick Download\n\nSimply hit the 'Download All' button to start downloading all playlist songs at once. You can also choose a",
+          "errors": []
+        },
+        "summary": {
+          "songCount": 9,
+          "firstTitle": "Wanna Be Startin' Somethin'",
+          "firstArtist": "Michael Jackson",
+          "firstRow": "Wanna Be Startin' Somethin'\nMichael Jackson\nGet Link",
+          "errors": [],
+          "hasList": true
+        }
+      }
+    },
+    "testC": {
+      "albumUrlInTrack": {
+        "submission": {
+          "timeline": [
+            {
+              "label": "pre-submit",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1000ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+2000ms",
+              "songListExists": true,
+              "songCount": 9,
+              "hasLoadingText": true,
+              "hasGetLink": true,
+              "hasDownloadNowElement": false,
+              "firstRowText": "Wanna Be Startin' Somethin'\nMichael Jackson\nGet Link",
+              "errors": []
+            }
+          ],
+          "final": {
+            "label": "t+2000ms",
+            "songListExists": true,
+            "songCount": 9,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Wanna Be Startin' Somethin'\nMichael Jackson\nGet Link",
+            "errors": []
+          }
+        },
+        "dom": {
+          "resultContainerSelector": ".song-list",
+          "itemSelector": ".song-list .song",
+          "itemCount": 9,
+          "titleSelector": ".song .title",
+          "titleText": "Wanna Be Startin' Somethin'",
+          "artistSelector": ".song .artist",
+          "artistText": "Michael Jackson",
+          "durationSelector": null,
+          "durationText": null,
+          "albumArtSelector": ".song img",
+          "albumArtSrc": "https://image-cdn-fa.spotifycdn.com/image/ab67616d00001e0232a7d87248d1b75463483df5",
+          "downloadButtonSelector": ".song .button-container button",
+          "downloadButtonText": "Get Link",
+          "pageTextSample": "FAQs\nTrack\nPlaylist\nAlbum\nArtist\nSearch\nSpotify Song Downloader\nDownload Songs and Tracks from Spotify\nDownload\n\nFacing issues? Contact Us\n\nPlease consider supporting Spotdown to keep it alive.\n\nDownload Now (All Songs)\nWanna Be Startin' Somethin'\nMichael Jackson\nGet Link\nBaby Be Mine\nMichael Jackson\nGet Link\nThe Girl Is Mine (with Paul McCartney)\nMichael Jackson, Paul McCartney\nGet Link\nThriller\nMichael Jackson\nGet Link\nBeat It\nMichael Jackson\nGet Link\nBillie Jean\nMichael Jackson\nGet Link\nHuman Nature\nMichael Jackson\nGet Link\nP.Y.T. (Pretty Young Thing)\nMichael Jackson\nGet Link\nThe Lady in My Life\nMichael Jackson\nGet Link\nHow to Download Spotify Songs?\n1\nCopy the Spotify URL\n\nFirstly, open your favorite Spotify song and copy its link.\n\n2\nPaste the URL\n\nNow, visit this Spotify song downloader again. Paste the copied link in the input field that is given above.\n\n3\nClick Download\n\nFinally, click on the download button to download Spotify songs.\n\nDownload Spotify Songs\n\nSpotify song downl",
+          "errors": []
+        },
+        "summary": {
+          "songCount": 9,
+          "firstTitle": "Wanna Be Startin' Somethin'",
+          "firstArtist": "Michael Jackson",
+          "firstRow": "Wanna Be Startin' Somethin'\nMichael Jackson\nGet Link",
+          "errors": [],
+          "hasList": true
+        }
+      },
+      "playlistUrlInTrack": {
+        "submission": {
+          "timeline": [
+            {
+              "label": "pre-submit",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1000ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+2000ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+2500ms",
+              "songListExists": true,
+              "songCount": 7,
+              "hasLoadingText": true,
+              "hasGetLink": true,
+              "hasDownloadNowElement": false,
+              "firstRowText": "Enemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link",
+              "errors": []
+            }
+          ],
+          "final": {
+            "label": "t+2500ms",
+            "songListExists": true,
+            "songCount": 7,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Enemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link",
+            "errors": []
+          }
+        },
+        "dom": {
+          "resultContainerSelector": ".song-list",
+          "itemSelector": ".song-list .song",
+          "itemCount": 7,
+          "titleSelector": ".song .title",
+          "titleText": "Enemy (with JID) - from the series Arcane League of Legends",
+          "artistSelector": ".song .artist",
+          "artistText": "Imagine Dragons, JID, Arcane, League of Legends",
+          "durationSelector": null,
+          "durationText": null,
+          "albumArtSelector": ".song img",
+          "albumArtSrc": "https://image-cdn-fa.spotifycdn.com/image/ab67616d00001e02aa597e50829169e6994eb403",
+          "downloadButtonSelector": ".song .button-container button",
+          "downloadButtonText": "Get Link",
+          "pageTextSample": "FAQs\nTrack\nPlaylist\nAlbum\nArtist\nSearch\nSpotify Song Downloader\nDownload Songs and Tracks from Spotify\nDownload\n\nFacing issues? Contact Us\n\nPlease consider supporting Spotdown to keep it alive.\n\nDownload Now (All Songs)\nEnemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link\nBurn It All Down\nLeague of Legends, PVRIS\nGet Link\nDie For You\nVALORANT, Grabbitz\nGet Link\nHavana (feat. Young Thug)\nCamila Cabello, Young Thug\nGet Link\nEntertain Me\nYlona Garcia\nGet Link\nMemories\nMaroon 5\nGet Link\nCounting Stars\nOneRepublic\nGet Link\nHow to Download Spotify Songs?\n1\nCopy the Spotify URL\n\nFirstly, open your favorite Spotify song and copy its link.\n\n2\nPaste the URL\n\nNow, visit this Spotify song downloader again. Paste the copied link in the input field that is given above.\n\n3\nClick Download\n\nFinally, click on the download button to download Spotify songs.\n\nDownload Spotify Songs\n\nSpotify song downloader of Spotdown, is the best spotify down",
+          "errors": []
+        },
+        "summary": {
+          "songCount": 7,
+          "firstTitle": "Enemy (with JID) - from the series Arcane League of Legends",
+          "firstArtist": "Imagine Dragons, JID, Arcane, League of Legends",
+          "firstRow": "Enemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link",
+          "errors": [],
+          "hasList": true
+        }
+      },
+      "artistUrlInTrack": {
+        "submission": {
+          "timeline": [
+            {
+              "label": "pre-submit",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1000ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+1500ms",
+              "songListExists": false,
+              "songCount": 0,
+              "hasLoadingText": true,
+              "hasGetLink": false,
+              "hasDownloadNowElement": false,
+              "firstRowText": null,
+              "errors": []
+            },
+            {
+              "label": "t+2000ms",
+              "songListExists": true,
+              "songCount": 10,
+              "hasLoadingText": true,
+              "hasGetLink": true,
+              "hasDownloadNowElement": false,
+              "firstRowText": "Billie Jean\nMichael Jackson\nGet Link",
+              "errors": []
+            }
+          ],
+          "final": {
+            "label": "t+2000ms",
+            "songListExists": true,
+            "songCount": 10,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Billie Jean\nMichael Jackson\nGet Link",
+            "errors": []
+          }
+        },
+        "dom": {
+          "resultContainerSelector": ".song-list",
+          "itemSelector": ".song-list .song",
+          "itemCount": 10,
+          "titleSelector": ".song .title",
+          "titleText": "Billie Jean",
+          "artistSelector": ".song .artist",
+          "artistText": "Michael Jackson",
+          "durationSelector": null,
+          "durationText": null,
+          "albumArtSelector": ".song img",
+          "albumArtSrc": "https://image-cdn-fa.spotifycdn.com/image/ab67616d00001e0232a7d87248d1b75463483df5",
+          "downloadButtonSelector": ".song .button-container button",
+          "downloadButtonText": "Get Link",
+          "pageTextSample": "FAQs\nTrack\nPlaylist\nAlbum\nArtist\nSearch\nSpotify Song Downloader\nDownload Songs and Tracks from Spotify\nDownload\n\nFacing issues? Contact Us\n\nPlease consider supporting Spotdown to keep it alive.\n\nDownload Now (All Songs)\nBillie Jean\nMichael Jackson\nGet Link\nBeat It\nMichael Jackson\nGet Link\nChicago\nMichael Jackson\nGet Link\nSmooth Criminal - 2012 Remaster\nMichael Jackson\nGet Link\nRock with You - Single Version\nMichael Jackson\nGet Link\nDirty Diana - 2012 Remaster\nMichael Jackson\nGet Link\nThey Don't Care About Us\nMichael Jackson\nGet Link\nThe Way You Make Me Feel - 2012 Remaster\nMichael Jackson\nGet Link\nDon't Stop 'Til You Get Enough\nMichael Jackson\nGet Link\nRemember the Time\nMichael Jackson\nGet Link\nHow to Download Spotify Songs?\n1\nCopy the Spotify URL\n\nFirstly, open your favorite Spotify song and copy its link.\n\n2\nPaste the URL\n\nNow, visit this Spotify song downloader again. Paste the copied link in the input field that is given above.\n\n3\nClick Download\n\nFinally, click on the download butt",
+          "errors": []
+        },
+        "summary": {
+          "songCount": 10,
+          "firstTitle": "Billie Jean",
+          "firstArtist": "Michael Jackson",
+          "firstRow": "Billie Jean\nMichael Jackson\nGet Link",
+          "errors": [],
+          "hasList": true
+        }
+      }
+    },
+    "testD": {
+      "Track": {
+        "input": {
+          "tag": "input",
+          "id": "search-form-input",
+          "class": "search-form__input",
+          "name": null,
+          "type": "text",
+          "placeholder": "Search or Paste Spotify URL...",
+          "selector": "#search-form-input",
+          "outerHTML": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">"
+        },
+        "submit": {
+          "tag": "button",
+          "id": "search-form__button",
+          "class": null,
+          "name": null,
+          "type": "submit",
+          "text": "Download",
+          "selector": "#search-form__button",
+          "outerHTML": "<button id=\"search-form__button\" type=\"submit\">Download</button>"
+        },
+        "form": {
+          "exists": true,
+          "selector": "#searchForm",
+          "method": null,
+          "action": null
+        }
+      },
+      "Playlist": {
+        "input": {
+          "tag": "input",
+          "id": "search-form-input",
+          "class": "search-form__input",
+          "name": null,
+          "type": "text",
+          "placeholder": "Search or Paste Spotify URL...",
+          "selector": "#search-form-input",
+          "outerHTML": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">"
+        },
+        "submit": {
+          "tag": "button",
+          "id": "search-form__button",
+          "class": null,
+          "name": null,
+          "type": "submit",
+          "text": "Download",
+          "selector": "#search-form__button",
+          "outerHTML": "<button id=\"search-form__button\" type=\"submit\">Download</button>"
+        },
+        "form": {
+          "exists": true,
+          "selector": "#searchForm",
+          "method": null,
+          "action": null
+        }
+      },
+      "Album": {
+        "input": {
+          "tag": "input",
+          "id": "search-form-input",
+          "class": "search-form__input",
+          "name": null,
+          "type": "text",
+          "placeholder": "Search or Paste Spotify URL...",
+          "selector": "#search-form-input",
+          "outerHTML": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">"
+        },
+        "submit": {
+          "tag": "button",
+          "id": "search-form__button",
+          "class": null,
+          "name": null,
+          "type": "submit",
+          "text": "Download",
+          "selector": "#search-form__button",
+          "outerHTML": "<button id=\"search-form__button\" type=\"submit\">Download</button>"
+        },
+        "form": {
+          "exists": true,
+          "selector": "#searchForm",
+          "method": null,
+          "action": null
+        }
+      },
+      "Artist": {
+        "input": {
+          "tag": "input",
+          "id": "search-form-input",
+          "class": "search-form__input",
+          "name": null,
+          "type": "text",
+          "placeholder": "Search or Paste Spotify URL...",
+          "selector": "#search-form-input",
+          "outerHTML": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">"
+        },
+        "submit": {
+          "tag": "button",
+          "id": "search-form__button",
+          "class": null,
+          "name": null,
+          "type": "submit",
+          "text": "Download",
+          "selector": "#search-form__button",
+          "outerHTML": "<button id=\"search-form__button\" type=\"submit\">Download</button>"
+        },
+        "form": {
+          "exists": true,
+          "selector": "#searchForm",
+          "method": null,
+          "action": null
+        }
+      }
+    }
+  },
+  "step1": {
+    "Track": {
+      "inputAndSubmit": {
+        "input": {
+          "tag": "input",
+          "id": "search-form-input",
+          "class": "search-form__input",
+          "name": null,
+          "type": "text",
+          "placeholder": "Search or Paste Spotify URL...",
+          "selector": "#search-form-input",
+          "outerHTML": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">"
+        },
+        "submit": {
+          "tag": "button",
+          "id": "search-form__button",
+          "class": null,
+          "name": null,
+          "type": "submit",
+          "text": "Download",
+          "selector": "#search-form__button",
+          "outerHTML": "<button id=\"search-form__button\" type=\"submit\">Download</button>"
+        },
+        "form": {
+          "exists": true,
+          "selector": "#searchForm",
+          "method": null,
+          "action": null
+        }
+      },
+      "enterTrigger": {
+        "songCount": 15,
+        "firstRow": "Believer\nImagine Dragons\nGet Link",
+        "success": true
+      },
+      "clickTrigger": {
+        "songCount": 15,
+        "firstRow": "Believer\nImagine Dragons\nGet Link",
+        "success": true
+      }
+    },
+    "Playlist": {
+      "inputAndSubmit": {
+        "input": {
+          "tag": "input",
+          "id": "search-form-input",
+          "class": "search-form__input",
+          "name": null,
+          "type": "text",
+          "placeholder": "Search or Paste Spotify URL...",
+          "selector": "#search-form-input",
+          "outerHTML": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">"
+        },
+        "submit": {
+          "tag": "button",
+          "id": "search-form__button",
+          "class": null,
+          "name": null,
+          "type": "submit",
+          "text": "Download",
+          "selector": "#search-form__button",
+          "outerHTML": "<button id=\"search-form__button\" type=\"submit\">Download</button>"
+        },
+        "form": {
+          "exists": true,
+          "selector": "#searchForm",
+          "method": null,
+          "action": null
+        }
+      },
+      "enterTrigger": {
+        "songCount": 15,
+        "firstRow": "Believer\nImagine Dragons\nGet Link",
+        "success": true
+      },
+      "clickTrigger": {
+        "songCount": 15,
+        "firstRow": "Believer\nImagine Dragons\nGet Link",
+        "success": true
+      }
+    },
+    "Album": {
+      "inputAndSubmit": {
+        "input": {
+          "tag": "input",
+          "id": "search-form-input",
+          "class": "search-form__input",
+          "name": null,
+          "type": "text",
+          "placeholder": "Search or Paste Spotify URL...",
+          "selector": "#search-form-input",
+          "outerHTML": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">"
+        },
+        "submit": {
+          "tag": "button",
+          "id": "search-form__button",
+          "class": null,
+          "name": null,
+          "type": "submit",
+          "text": "Download",
+          "selector": "#search-form__button",
+          "outerHTML": "<button id=\"search-form__button\" type=\"submit\">Download</button>"
+        },
+        "form": {
+          "exists": true,
+          "selector": "#searchForm",
+          "method": null,
+          "action": null
+        }
+      },
+      "enterTrigger": {
+        "songCount": 15,
+        "firstRow": "Believer\nImagine Dragons\nGet Link",
+        "success": true
+      },
+      "clickTrigger": {
+        "songCount": 15,
+        "firstRow": "Believer\nImagine Dragons\nGet Link",
+        "success": true
+      }
+    },
+    "Artist": {
+      "inputAndSubmit": {
+        "input": {
+          "tag": "input",
+          "id": "search-form-input",
+          "class": "search-form__input",
+          "name": null,
+          "type": "text",
+          "placeholder": "Search or Paste Spotify URL...",
+          "selector": "#search-form-input",
+          "outerHTML": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">"
+        },
+        "submit": {
+          "tag": "button",
+          "id": "search-form__button",
+          "class": null,
+          "name": null,
+          "type": "submit",
+          "text": "Download",
+          "selector": "#search-form__button",
+          "outerHTML": "<button id=\"search-form__button\" type=\"submit\">Download</button>"
+        },
+        "form": {
+          "exists": true,
+          "selector": "#searchForm",
+          "method": null,
+          "action": null
+        }
+      },
+      "enterTrigger": {
+        "songCount": 15,
+        "firstRow": "Believer\nImagine Dragons\nGet Link",
+        "success": true
+      },
+      "clickTrigger": {
+        "songCount": 15,
+        "firstRow": "Believer\nImagine Dragons\nGet Link",
+        "success": true
+      }
+    }
+  },
+  "step2": {
+    "Track": {
+      "inputInfo": {
+        "input": {
+          "tag": "input",
+          "id": "search-form-input",
+          "class": "search-form__input",
+          "name": null,
+          "type": "text",
+          "placeholder": "Search or Paste Spotify URL...",
+          "selector": "#search-form-input",
+          "outerHTML": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">"
+        },
+        "submit": {
+          "tag": "button",
+          "id": "search-form__button",
+          "class": null,
+          "name": null,
+          "type": "submit",
+          "text": "Download",
+          "selector": "#search-form__button",
+          "outerHTML": "<button id=\"search-form__button\" type=\"submit\">Download</button>"
+        },
+        "form": {
+          "exists": true,
+          "selector": "#searchForm",
+          "method": null,
+          "action": null
+        }
+      },
+      "submission": {
+        "timeline": [
+          {
+            "label": "pre-submit",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+500ms",
+            "songListExists": true,
+            "songCount": 15,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Believer\nImagine Dragons\nGet Link",
+            "errors": []
+          },
+          {
+            "label": "t+1000ms",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+1500ms",
+            "songListExists": true,
+            "songCount": 15,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Believer\nImagine Dragons\nGet Link",
+            "errors": []
+          },
+          {
+            "label": "t+2000ms",
+            "songListExists": true,
+            "songCount": 15,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Believer\nImagine Dragons\nGet Link",
+            "errors": []
+          }
+        ],
+        "final": {
+          "label": "t+2000ms",
+          "songListExists": true,
+          "songCount": 15,
+          "hasLoadingText": true,
+          "hasGetLink": true,
+          "hasDownloadNowElement": false,
+          "firstRowText": "Believer\nImagine Dragons\nGet Link",
+          "errors": []
+        }
+      },
+      "dom": {
+        "resultContainerSelector": ".song-list",
+        "itemSelector": ".song-list .song",
+        "itemCount": 15,
+        "titleSelector": ".song .title",
+        "titleText": "Believer",
+        "artistSelector": ".song .artist",
+        "artistText": "Imagine Dragons",
+        "durationSelector": null,
+        "durationText": null,
+        "albumArtSelector": ".song img",
+        "albumArtSrc": "https://i.scdn.co/image/ab67616d0000b2735675e83f707f1d7271e5cf8a",
+        "downloadButtonSelector": ".song .button-container button",
+        "downloadButtonText": "Get Link",
+        "pageTextSample": "FAQs\nTrack\nPlaylist\nAlbum\nArtist\nSearch\nSpotify Song Downloader\nDownload Songs and Tracks from Spotify\nDownload\n\nFacing issues? Contact Us\n\nPlease consider supporting Spotdown to keep it alive.\n\nBeliever\nImagine Dragons\nGet Link\nBeliever\nImagine Dragons\nGet Link\nThunder\nImagine Dragons\nGet Link\nBeliever (feat. Lil Wayne)\nImagine Dragons, Lil Wayne\nGet Link\nWhatever It Takes\nImagine Dragons\nGet Link\nSeven Nation Army\nThe White Stripes\nGet Link\nBeliever - Live/Acoustic\nImagine Dragons\nGet Link\nBeliever - Live in Vegas\nImagine Dragons\nGet Link\nBeliever - Kaskade Remix\nImagine Dragons, Kaskade\nGet Link\nBeliever (aus \"The Voice Kids, Staffel 11\") - Live\nMartha & Norah, The Voice Kids - Germany\nGet Link\nBeliever\nImagine Dragons\nGet Link\nBeliever - Female Version\nKenke\nGet Link\nEnder Dragons\nJ Rice\nGet Link\nBelieve\nAlle Farben\nGet Link\nDungeons and Dragons\nMontt Mardié\nGet Link\nPrevious\n1\n2\nNext\nHow to Download Spotify Songs?\n1\nCopy the Spotify URL\n\nFirstly, open your favorite Spotify song an",
+        "errors": []
+      },
+      "summary": {
+        "songCount": 15,
+        "firstTitle": "Believer",
+        "firstArtist": "Imagine Dragons",
+        "firstRow": "Believer\nImagine Dragons\nGet Link",
+        "errors": [],
+        "hasList": true
+      }
+    },
+    "Playlist": {
+      "inputInfo": {
+        "input": {
+          "tag": "input",
+          "id": "search-form-input",
+          "class": "search-form__input",
+          "name": null,
+          "type": "text",
+          "placeholder": "Search or Paste Spotify URL...",
+          "selector": "#search-form-input",
+          "outerHTML": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">"
+        },
+        "submit": {
+          "tag": "button",
+          "id": "search-form__button",
+          "class": null,
+          "name": null,
+          "type": "submit",
+          "text": "Download",
+          "selector": "#search-form__button",
+          "outerHTML": "<button id=\"search-form__button\" type=\"submit\">Download</button>"
+        },
+        "form": {
+          "exists": true,
+          "selector": "#searchForm",
+          "method": null,
+          "action": null
+        }
+      },
+      "submission": {
+        "timeline": [
+          {
+            "label": "pre-submit",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+500ms",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+1000ms",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+1500ms",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+2000ms",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+2500ms",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+3000ms",
+            "songListExists": true,
+            "songCount": 7,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Enemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link",
+            "errors": []
+          }
+        ],
+        "final": {
+          "label": "t+3000ms",
+          "songListExists": true,
+          "songCount": 7,
+          "hasLoadingText": true,
+          "hasGetLink": true,
+          "hasDownloadNowElement": false,
+          "firstRowText": "Enemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link",
+          "errors": []
+        }
+      },
+      "dom": {
+        "resultContainerSelector": ".song-list",
+        "itemSelector": ".song-list .song",
+        "itemCount": 7,
+        "titleSelector": ".song .title",
+        "titleText": "Enemy (with JID) - from the series Arcane League of Legends",
+        "artistSelector": ".song .artist",
+        "artistText": "Imagine Dragons, JID, Arcane, League of Legends",
+        "durationSelector": null,
+        "durationText": null,
+        "albumArtSelector": ".song img",
+        "albumArtSrc": "https://image-cdn-fa.spotifycdn.com/image/ab67616d00001e02aa597e50829169e6994eb403",
+        "downloadButtonSelector": ".song .button-container button",
+        "downloadButtonText": "Get Link",
+        "pageTextSample": "FAQs\nTrack\nPlaylist\nAlbum\nArtist\nSearch\nSpotify Playlist Downloader\nDownload Playlists from Spotify\nDownload\n\nFacing issues? Contact Us\n\nPlease consider supporting Spotdown to keep it alive.\n\nDownload Now (All Songs)\nEnemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link\nBurn It All Down\nLeague of Legends, PVRIS\nGet Link\nDie For You\nVALORANT, Grabbitz\nGet Link\nHavana (feat. Young Thug)\nCamila Cabello, Young Thug\nGet Link\nEntertain Me\nYlona Garcia\nGet Link\nMemories\nMaroon 5\nGet Link\nCounting Stars\nOneRepublic\nGet Link\nHow to Download Playlists from Spotify?\n1\nCopy the Spotify URL\n\nFirst of all, open your favorite Spotify playlist that you want to download and copy its link.\n\n2\nPaste the URL\n\nPaste the copied playlist link in the URL field that is given above.\n\n3\nClick Download\n\nSimply hit the 'Download All' button to start downloading all playlist songs at once. You can also choose any song from the playlist and download it.\n",
+        "errors": []
+      },
+      "summary": {
+        "songCount": 7,
+        "firstTitle": "Enemy (with JID) - from the series Arcane League of Legends",
+        "firstArtist": "Imagine Dragons, JID, Arcane, League of Legends",
+        "firstRow": "Enemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends\nGet Link",
+        "errors": [],
+        "hasList": true
+      }
+    },
+    "Album": {
+      "inputInfo": {
+        "input": {
+          "tag": "input",
+          "id": "search-form-input",
+          "class": "search-form__input",
+          "name": null,
+          "type": "text",
+          "placeholder": "Search or Paste Spotify URL...",
+          "selector": "#search-form-input",
+          "outerHTML": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">"
+        },
+        "submit": {
+          "tag": "button",
+          "id": "search-form__button",
+          "class": null,
+          "name": null,
+          "type": "submit",
+          "text": "Download",
+          "selector": "#search-form__button",
+          "outerHTML": "<button id=\"search-form__button\" type=\"submit\">Download</button>"
+        },
+        "form": {
+          "exists": true,
+          "selector": "#searchForm",
+          "method": null,
+          "action": null
+        }
+      },
+      "submission": {
+        "timeline": [
+          {
+            "label": "pre-submit",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+500ms",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+1000ms",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+1500ms",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+2000ms",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+2500ms",
+            "songListExists": true,
+            "songCount": 9,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Wanna Be Startin' Somethin'\nMichael Jackson\nGet Link",
+            "errors": []
+          }
+        ],
+        "final": {
+          "label": "t+2500ms",
+          "songListExists": true,
+          "songCount": 9,
+          "hasLoadingText": true,
+          "hasGetLink": true,
+          "hasDownloadNowElement": false,
+          "firstRowText": "Wanna Be Startin' Somethin'\nMichael Jackson\nGet Link",
+          "errors": []
+        }
+      },
+      "dom": {
+        "resultContainerSelector": ".song-list",
+        "itemSelector": ".song-list .song",
+        "itemCount": 9,
+        "titleSelector": ".song .title",
+        "titleText": "Wanna Be Startin' Somethin'",
+        "artistSelector": ".song .artist",
+        "artistText": "Michael Jackson",
+        "durationSelector": null,
+        "durationText": null,
+        "albumArtSelector": ".song img",
+        "albumArtSrc": "https://image-cdn-ak.spotifycdn.com/image/ab67616d00001e0232a7d87248d1b75463483df5",
+        "downloadButtonSelector": ".song .button-container button",
+        "downloadButtonText": "Get Link",
+        "pageTextSample": "FAQs\nTrack\nPlaylist\nAlbum\nArtist\nSearch\nSpotify Album Downloader\nDownload Albums from Spotify\nDownload\n\nFacing issues? Contact Us\n\nPlease consider supporting Spotdown to keep it alive.\n\nDownload Now (All Songs)\nWanna Be Startin' Somethin'\nMichael Jackson\nGet Link\nBaby Be Mine\nMichael Jackson\nGet Link\nThe Girl Is Mine (with Paul McCartney)\nMichael Jackson, Paul McCartney\nGet Link\nThriller\nMichael Jackson\nGet Link\nBeat It\nMichael Jackson\nGet Link\nBillie Jean\nMichael Jackson\nGet Link\nHuman Nature\nMichael Jackson\nGet Link\nP.Y.T. (Pretty Young Thing)\nMichael Jackson\nGet Link\nThe Lady in My Life\nMichael Jackson\nGet Link\nHow to Download Albums from Spotify?\n1\nCopy the Spotify URL\n\nFirst of all, open the album on the Spotify app that you want to download and copy its link.\n\n2\nPaste the URL\n\nNow, paste the copied link in the URL field. You can also use the paste button to paste the copied link.\n\n3\nClick Download\n\nAt last, click on the 'Download All' button to download the entire album at once. ",
+        "errors": []
+      },
+      "summary": {
+        "songCount": 9,
+        "firstTitle": "Wanna Be Startin' Somethin'",
+        "firstArtist": "Michael Jackson",
+        "firstRow": "Wanna Be Startin' Somethin'\nMichael Jackson\nGet Link",
+        "errors": [],
+        "hasList": true
+      }
+    },
+    "Artist": {
+      "inputInfo": {
+        "input": {
+          "tag": "input",
+          "id": "search-form-input",
+          "class": "search-form__input",
+          "name": null,
+          "type": "text",
+          "placeholder": "Search or Paste Spotify URL...",
+          "selector": "#search-form-input",
+          "outerHTML": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">"
+        },
+        "submit": {
+          "tag": "button",
+          "id": "search-form__button",
+          "class": null,
+          "name": null,
+          "type": "submit",
+          "text": "Download",
+          "selector": "#search-form__button",
+          "outerHTML": "<button id=\"search-form__button\" type=\"submit\">Download</button>"
+        },
+        "form": {
+          "exists": true,
+          "selector": "#searchForm",
+          "method": null,
+          "action": null
+        }
+      },
+      "submission": {
+        "timeline": [
+          {
+            "label": "pre-submit",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+500ms",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+1000ms",
+            "songListExists": false,
+            "songCount": 0,
+            "hasLoadingText": true,
+            "hasGetLink": false,
+            "hasDownloadNowElement": false,
+            "firstRowText": null,
+            "errors": []
+          },
+          {
+            "label": "t+1500ms",
+            "songListExists": true,
+            "songCount": 10,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Billie Jean\nMichael Jackson\nGet Link",
+            "errors": []
+          },
+          {
+            "label": "t+2000ms",
+            "songListExists": true,
+            "songCount": 10,
+            "hasLoadingText": true,
+            "hasGetLink": true,
+            "hasDownloadNowElement": false,
+            "firstRowText": "Billie Jean\nMichael Jackson\nGet Link",
+            "errors": []
+          }
+        ],
+        "final": {
+          "label": "t+2000ms",
+          "songListExists": true,
+          "songCount": 10,
+          "hasLoadingText": true,
+          "hasGetLink": true,
+          "hasDownloadNowElement": false,
+          "firstRowText": "Billie Jean\nMichael Jackson\nGet Link",
+          "errors": []
+        }
+      },
+      "dom": {
+        "resultContainerSelector": ".song-list",
+        "itemSelector": ".song-list .song",
+        "itemCount": 10,
+        "titleSelector": ".song .title",
+        "titleText": "Billie Jean",
+        "artistSelector": ".song .artist",
+        "artistText": "Michael Jackson",
+        "durationSelector": null,
+        "durationText": null,
+        "albumArtSelector": ".song img",
+        "albumArtSrc": "https://image-cdn-fa.spotifycdn.com/image/ab67616d00001e0232a7d87248d1b75463483df5",
+        "downloadButtonSelector": ".song .button-container button",
+        "downloadButtonText": "Get Link",
+        "pageTextSample": "FAQs\nTrack\nPlaylist\nAlbum\nArtist\nSearch\nSpotify Artist Downloader\nDownload Artist Songs from Spotify\nDownload\n\nFacing issues? Contact Us\n\nPlease consider supporting Spotdown to keep it alive.\n\nDownload Now (All Songs)\nBillie Jean\nMichael Jackson\nGet Link\nBeat It\nMichael Jackson\nGet Link\nChicago\nMichael Jackson\nGet Link\nSmooth Criminal - 2012 Remaster\nMichael Jackson\nGet Link\nRock with You - Single Version\nMichael Jackson\nGet Link\nDirty Diana - 2012 Remaster\nMichael Jackson\nGet Link\nThey Don't Care About Us\nMichael Jackson\nGet Link\nThe Way You Make Me Feel - 2012 Remaster\nMichael Jackson\nGet Link\nDon't Stop 'Til You Get Enough\nMichael Jackson\nGet Link\nRemember the Time\nMichael Jackson\nGet Link\nHow to Download Artist Songs from Spotify?\n1\nCopy the Spotify URL\n\nFirst, open your favorite artist's profile on Spotify and copy its link.\n\n2\nPaste the URL\n\nNow, paste the copied profile link in the URL field that is given above. You can also directly type the artist's name in the field.\n\n3\nClick",
+        "errors": []
+      },
+      "summary": {
+        "songCount": 10,
+        "firstTitle": "Billie Jean",
+        "firstArtist": "Michael Jackson",
+        "firstRow": "Billie Jean\nMichael Jackson\nGet Link",
+        "errors": [],
+        "hasList": true
+      }
+    }
+  },
+  "step3": {
+    "Track": {
+      "clickedGetLink": true,
+      "clickedDownloadNow": true,
+      "cookieBefore": "",
+      "cookieAfter": "",
+      "jsLogs": {
+        "openCalls": [],
+        "fetchCalls": [
+          "/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F0pqnGHJpmpxLKifKRmU6WP"
+        ],
+        "xhrCalls": [
+          {
+            "method": "POST",
+            "url": "/api/download"
+          }
+        ],
+        "blobOrDataAnchors": [],
+        "firstRowText": "Believer\nImagine Dragons\nDownloaded Successfully"
+      },
+      "relevantNetwork": [
+        {
+          "kind": "request",
+          "t": 1772827417245,
+          "url": "https://spotdown.org/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F0pqnGHJpmpxLKifKRmU6WP",
+          "method": "GET",
+          "resourceType": "fetch",
+          "isNavigationRequest": false,
+          "headers": {
+            "x-session-token": "47e49f3f78c928818ba8982c7fe2dae07a387c3d7038d590abccb32b9e96f1e9",
+            "sec-ch-ua-platform": "\"Windows\"",
+            "referer": "https://spotdown.org/track",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36",
+            "sec-ch-ua": "\"Not:A-Brand\";v=\"99\", \"HeadlessChrome\";v=\"145\", \"Chromium\";v=\"145\"",
+            "sec-ch-ua-mobile": "?0"
+          },
+          "redirectedFrom": null
+        },
+        {
+          "kind": "response",
+          "t": 1772827417783,
+          "url": "https://spotdown.org/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F0pqnGHJpmpxLKifKRmU6WP",
+          "status": 200,
+          "method": "GET",
+          "resourceType": "fetch",
+          "isNavigationRequest": false,
+          "headers": {
+            "alt-svc": "h3=\":443\"; ma=86400",
+            "cf-cache-status": "DYNAMIC",
+            "cf-ray": "9d83f7014fb1449e-MRS",
+            "content-length": "16",
+            "content-security-policy": "frame-ancestors 'none'",
+            "content-type": "application/json; charset=utf-8",
+            "date": "Fri, 06 Mar 2026 20:03:37 GMT",
+            "etag": "W/\"10-jm+tn4BfKtQ82CPeO3TPArUdTIo\"",
+            "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "priority": "u=1,i",
+            "referrer-policy": "no-referrer-when-downgrade",
+            "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=ko%2FzZyBrtHo%2BpSTgidKN1ZPKkHz%2BOdehJ1r6zbUDwBgOej5WtBbem%2FhhTxr5T4dhVNaUrLDxNT%2FlMtRafzx6YJbNWL5bdW8GNY5P1os5m7RSeMC5L1o%3D\"}]}",
+            "server": "cloudflare",
+            "server-timing": "cfExtPri",
+            "set-cookie": "connect.sid=s%3A44cac252-71f6-4035-a988-47d6f570f78f.7gsuM2ZM8ao8%2Fz42VbKkZh7EgfkH0Nfba6XORDbp5MM; Path=/; HttpOnly",
+            "speculation-rules": "\"/cdn-cgi/speculation\"",
+            "vary": "Origin",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "x-powered-by": "Express",
+            "x-xss-protection": "1; mode=block"
+          },
+          "redirectChain": [
+            "https://spotdown.org/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F0pqnGHJpmpxLKifKRmU6WP"
+          ]
+        },
+        {
+          "kind": "request",
+          "t": 1772827417793,
+          "url": "https://spotdown.org/api/download",
+          "method": "POST",
+          "resourceType": "xhr",
+          "isNavigationRequest": false,
+          "headers": {
+            "sec-ch-ua-platform": "\"Windows\"",
+            "referer": "https://spotdown.org/track",
+            "sec-ch-ua": "\"Not:A-Brand\";v=\"99\", \"HeadlessChrome\";v=\"145\", \"Chromium\";v=\"145\"",
+            "sec-ch-ua-mobile": "?0",
+            "x-session-token": "47e49f3f78c928818ba8982c7fe2dae07a387c3d7038d590abccb32b9e96f1e9",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36",
+            "accept": "application/json, text/plain, */*",
+            "content-type": "application/json"
+          },
+          "redirectedFrom": null
+        },
+        {
+          "kind": "response",
+          "t": 1772827418537,
+          "url": "https://spotdown.org/api/download",
+          "status": 200,
+          "method": "POST",
+          "resourceType": "xhr",
+          "isNavigationRequest": false,
+          "headers": {
+            "access-control-allow-origin": "https://spotdown.org",
+            "alt-svc": "h3=\":443\"; ma=86400",
+            "cf-cache-status": "DYNAMIC",
+            "cf-ray": "9d83f704489d449e-MRS",
+            "content-disposition": "attachment; filename=\"song.mp3\"",
+            "content-security-policy": "frame-ancestors 'none'",
+            "content-type": "audio/mpeg",
+            "date": "Fri, 06 Mar 2026 20:03:38 GMT",
+            "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "priority": "u=1,i",
+            "referrer-policy": "no-referrer-when-downgrade",
+            "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=QLVpU7FNThVGDZnUK8s3kL81QnAeVxA85tqdWh32f9IKAr5ooTqPZ01teT%2B4tN3rX6oOGQzwhUo47kud1WD1T5LoXHwGRM9t3iqREkAwG9ge8aMB3JI%3D\"}]}",
+            "server": "cloudflare",
+            "server-timing": "cfExtPri",
+            "set-cookie": "connect.sid=s%3Aaa1809fb-035c-4d5a-b878-072efc7a5d34.bMrQZ7COI6loj%2BQ81%2BYa7o80PBSqeFyCRyE8IKpilzM; Path=/; HttpOnly",
+            "vary": "Origin",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "x-powered-by": "Express",
+            "x-xss-protection": "1; mode=block"
+          },
+          "redirectChain": [
+            "https://spotdown.org/api/download"
+          ]
+        }
+      ],
+      "downloadRequestHeaders": {
+        "sec-ch-ua-platform": "\"Windows\"",
+        "referer": "https://spotdown.org/track",
+        "sec-ch-ua": "\"Not:A-Brand\";v=\"99\", \"HeadlessChrome\";v=\"145\", \"Chromium\";v=\"145\"",
+        "sec-ch-ua-mobile": "?0",
+        "x-session-token": "47e49f3f78c928818ba8982c7fe2dae07a387c3d7038d590abccb32b9e96f1e9",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36",
+        "accept": "application/json, text/plain, */*",
+        "content-type": "application/json"
+      },
+      "downloadResponseHeaders": {
+        "access-control-allow-origin": "https://spotdown.org",
+        "alt-svc": "h3=\":443\"; ma=86400",
+        "cf-cache-status": "DYNAMIC",
+        "cf-ray": "9d83f704489d449e-MRS",
+        "content-disposition": "attachment; filename=\"song.mp3\"",
+        "content-security-policy": "frame-ancestors 'none'",
+        "content-type": "audio/mpeg",
+        "date": "Fri, 06 Mar 2026 20:03:38 GMT",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "priority": "u=1,i",
+        "referrer-policy": "no-referrer-when-downgrade",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=QLVpU7FNThVGDZnUK8s3kL81QnAeVxA85tqdWh32f9IKAr5ooTqPZ01teT%2B4tN3rX6oOGQzwhUo47kud1WD1T5LoXHwGRM9t3iqREkAwG9ge8aMB3JI%3D\"}]}",
+        "server": "cloudflare",
+        "server-timing": "cfExtPri",
+        "set-cookie": "connect.sid=s%3Aaa1809fb-035c-4d5a-b878-072efc7a5d34.bMrQZ7COI6loj%2BQ81%2BYa7o80PBSqeFyCRyE8IKpilzM; Path=/; HttpOnly",
+        "vary": "Origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "x-powered-by": "Express",
+        "x-xss-protection": "1; mode=block"
+      },
+      "finalDownloadResponseContentType": "audio/mpeg",
+      "redirectChain": [
+        "https://spotdown.org/api/download"
+      ],
+      "finalDownloadUrl": "https://spotdown.org/api/download",
+      "interception": {
+        "topLevelNavigation": false,
+        "windowOpen": false,
+        "fetch": true,
+        "xhr": true,
+        "blobOrDataAnchorCreated": false,
+        "hiddenAnchorDownloadAttr": false
+      }
+    },
+    "Playlist": {
+      "clickedGetLink": true,
+      "clickedDownloadNow": true,
+      "cookieBefore": "",
+      "cookieAfter": "",
+      "jsLogs": {
+        "openCalls": [],
+        "fetchCalls": [
+          "/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F1r9xUipOqoNwggBpENDsvJ"
+        ],
+        "xhrCalls": [
+          {
+            "method": "POST",
+            "url": "/api/download"
+          }
+        ],
+        "blobOrDataAnchors": [],
+        "firstRowText": "Enemy (with JID) - from the series Arcane League of Legends\nImagine Dragons, JID, Arcane, League of Legends"
+      },
+      "relevantNetwork": [
+        {
+          "kind": "request",
+          "t": 1772827427657,
+          "url": "https://spotdown.org/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F1r9xUipOqoNwggBpENDsvJ",
+          "method": "GET",
+          "resourceType": "fetch",
+          "isNavigationRequest": false,
+          "headers": {
+            "x-session-token": "47e49f3f78c928818ba8982c7fe2dae07a387c3d7038d590abccb32b9e96f1e9",
+            "sec-ch-ua-platform": "\"Windows\"",
+            "referer": "https://spotdown.org/playlist",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36",
+            "sec-ch-ua": "\"Not:A-Brand\";v=\"99\", \"HeadlessChrome\";v=\"145\", \"Chromium\";v=\"145\"",
+            "sec-ch-ua-mobile": "?0"
+          },
+          "redirectedFrom": null
+        },
+        {
+          "kind": "response",
+          "t": 1772827428196,
+          "url": "https://spotdown.org/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F1r9xUipOqoNwggBpENDsvJ",
+          "status": 200,
+          "method": "GET",
+          "resourceType": "fetch",
+          "isNavigationRequest": false,
+          "headers": {
+            "alt-svc": "h3=\":443\"; ma=86400",
+            "cf-cache-status": "DYNAMIC",
+            "cf-ray": "9d83f741f945449e-MRS",
+            "content-length": "16",
+            "content-security-policy": "frame-ancestors 'none'",
+            "content-type": "application/json; charset=utf-8",
+            "date": "Fri, 06 Mar 2026 20:03:48 GMT",
+            "etag": "W/\"10-jm+tn4BfKtQ82CPeO3TPArUdTIo\"",
+            "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "priority": "u=1,i",
+            "referrer-policy": "no-referrer-when-downgrade",
+            "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=jN8A%2BG%2BP3X7e0aXZyC78rCX%2B0nDGDy0kzDjn%2FxrYtF%2BlazypQyTuLCS8d%2F%2BzmrmKmlmJHU%2FEheUJEXFH9B%2B1WwP99Zkd9uRjR26O2mqfT1McCAkaV4U%3D\"}]}",
+            "server": "cloudflare",
+            "server-timing": "cfExtPri",
+            "set-cookie": "connect.sid=s%3A28e3b805-ffb9-4f71-8c57-65f75c575b08.YDX9tw1l4RNav0pWDUJfzx0peqn0f%2FF8kaFybvQehMI; Path=/; HttpOnly",
+            "speculation-rules": "\"/cdn-cgi/speculation\"",
+            "vary": "Origin",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "x-powered-by": "Express",
+            "x-xss-protection": "1; mode=block"
+          },
+          "redirectChain": [
+            "https://spotdown.org/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F1r9xUipOqoNwggBpENDsvJ"
+          ]
+        },
+        {
+          "kind": "request",
+          "t": 1772827428199,
+          "url": "https://spotdown.org/api/download",
+          "method": "POST",
+          "resourceType": "xhr",
+          "isNavigationRequest": false,
+          "headers": {
+            "sec-ch-ua-platform": "\"Windows\"",
+            "referer": "https://spotdown.org/playlist",
+            "sec-ch-ua": "\"Not:A-Brand\";v=\"99\", \"HeadlessChrome\";v=\"145\", \"Chromium\";v=\"145\"",
+            "sec-ch-ua-mobile": "?0",
+            "x-session-token": "47e49f3f78c928818ba8982c7fe2dae07a387c3d7038d590abccb32b9e96f1e9",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36",
+            "accept": "application/json, text/plain, */*",
+            "content-type": "application/json"
+          },
+          "redirectedFrom": null
+        },
+        {
+          "kind": "response",
+          "t": 1772827428764,
+          "url": "https://spotdown.org/api/song-details?url=https%3A%2F%2Fopen.spotify.com%2Fplaylist%2F6BN5u8GbcZdgAOWAGuxK7a%3Fsi%3Db0281607f1cf40a4",
+          "status": 200,
+          "method": "GET",
+          "resourceType": "xhr",
+          "isNavigationRequest": false,
+          "headers": {
+            "alt-svc": "h3=\":443\"; ma=86400",
+            "cf-cache-status": "DYNAMIC",
+            "cf-ray": "9d83f73ef873449e-MRS",
+            "content-encoding": "gzip",
+            "content-security-policy": "frame-ancestors 'none'",
+            "content-type": "application/json; charset=utf-8",
+            "date": "Fri, 06 Mar 2026 20:03:49 GMT",
+            "etag": "W/\"9cf-EvVyigOfQkouUIXurxya6w3SWvI\"",
+            "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "priority": "u=1,i",
+            "referrer-policy": "no-referrer-when-downgrade",
+            "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=%2FiSKJsAzeLaWu1z%2B%2BqaWgZbYBoUJuT3P3mxRGFjpFY0%2BYfIeqNfDjbJvUJ0B4yaSKRqaw9hii0ijuB%2BjBdVFneaMR%2FE%2F7N8rn4eGs9m1klVUyPQPqRA%3D\"}]}",
+            "server": "cloudflare",
+            "server-timing": "cfExtPri",
+            "set-cookie": "connect.sid=s%3A1b9a5611-6250-474b-a226-70a917b3a72f.izD%2BI0AhDoymNX58q8RELeKtFPDFm8bYQgfTA8YAQ28; Path=/; HttpOnly",
+            "speculation-rules": "\"/cdn-cgi/speculation\"",
+            "vary": "Accept-Encoding, Origin",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "x-powered-by": "Express",
+            "x-xss-protection": "1; mode=block"
+          },
+          "redirectChain": [
+            "https://spotdown.org/api/song-details?url=https%3A%2F%2Fopen.spotify.com%2Fplaylist%2F6BN5u8GbcZdgAOWAGuxK7a%3Fsi%3Db0281607f1cf40a4"
+          ]
+        },
+        {
+          "kind": "response",
+          "t": 1772827430359,
+          "url": "https://spotdown.org/api/song-details?url=https%3A%2F%2Fopen.spotify.com%2Fplaylist%2F6BN5u8GbcZdgAOWAGuxK7a%3Fsi%3Db0281607f1cf40a4",
+          "status": 200,
+          "method": "GET",
+          "resourceType": "xhr",
+          "isNavigationRequest": false,
+          "headers": {
+            "alt-svc": "h3=\":443\"; ma=86400",
+            "cf-cache-status": "DYNAMIC",
+            "cf-ray": "9d83f748fbc5449e-MRS",
+            "content-encoding": "gzip",
+            "content-security-policy": "frame-ancestors 'none'",
+            "content-type": "application/json; charset=utf-8",
+            "date": "Fri, 06 Mar 2026 20:03:50 GMT",
+            "etag": "W/\"9cf-g749VVUwrRK4AMW56/PZBQkIU4s\"",
+            "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "priority": "u=1,i",
+            "referrer-policy": "no-referrer-when-downgrade",
+            "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=9%2F%2FXgddlGuy18qvHCvLij7EJYpyZ3CZ9PNY%2BKCT3crD54iP5pS5zD3k64pVsBREUcnMcQ1Uoe%2FqAlis9TonS0X3IqfW4ZpW7XUDJCkglHG5TSl%2BEalM%3D\"}]}",
+            "server": "cloudflare",
+            "server-timing": "cfExtPri",
+            "set-cookie": "connect.sid=s%3Aa31fbf4a-4941-4f25-921a-3681da428697.F89A0nTyjuJvVSvgGUUdBp8DWfSOuN86%2Fd0ilIVeJEs; Path=/; HttpOnly",
+            "speculation-rules": "\"/cdn-cgi/speculation\"",
+            "vary": "Accept-Encoding, Origin",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "x-powered-by": "Express",
+            "x-xss-protection": "1; mode=block"
+          },
+          "redirectChain": [
+            "https://spotdown.org/api/song-details?url=https%3A%2F%2Fopen.spotify.com%2Fplaylist%2F6BN5u8GbcZdgAOWAGuxK7a%3Fsi%3Db0281607f1cf40a4"
+          ]
+        },
+        {
+          "kind": "response",
+          "t": 1772827430511,
+          "url": "https://spotdown.org/api/download",
+          "status": 200,
+          "method": "POST",
+          "resourceType": "xhr",
+          "isNavigationRequest": false,
+          "headers": {
+            "access-control-allow-origin": "https://spotdown.org",
+            "alt-svc": "h3=\":443\"; ma=86400",
+            "cf-cache-status": "DYNAMIC",
+            "cf-ray": "9d83f7462afe449e-MRS",
+            "content-disposition": "attachment; filename=\"song.mp3\"",
+            "content-security-policy": "frame-ancestors 'none'",
+            "content-type": "audio/mpeg",
+            "date": "Fri, 06 Mar 2026 20:03:50 GMT",
+            "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "priority": "u=1,i",
+            "referrer-policy": "no-referrer-when-downgrade",
+            "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=4xFtDHx3kkDlKPkLoKmLlm4x1yHxl4dpOb5DBgcv4ycMsag5%2BHAw8JZecCsNKVE0vzWQCTbxn9QhK8qPG5adyWiaoRVhAn4oGKFQR%2FBXAEXTfzqO3LI%3D\"}]}",
+            "server": "cloudflare",
+            "server-timing": "cfExtPri",
+            "set-cookie": "connect.sid=s%3A0a9384de-1557-4472-b648-cfaefb9085c0.xh8Fkep3DAx7agWSlUBPwb6Fjws3f%2Fi9VrjhpgLy2nU; Path=/; HttpOnly",
+            "vary": "Origin",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "x-powered-by": "Express",
+            "x-xss-protection": "1; mode=block"
+          },
+          "redirectChain": [
+            "https://spotdown.org/api/download"
+          ]
+        }
+      ],
+      "downloadRequestHeaders": {
+        "sec-ch-ua-platform": "\"Windows\"",
+        "referer": "https://spotdown.org/playlist",
+        "sec-ch-ua": "\"Not:A-Brand\";v=\"99\", \"HeadlessChrome\";v=\"145\", \"Chromium\";v=\"145\"",
+        "sec-ch-ua-mobile": "?0",
+        "x-session-token": "47e49f3f78c928818ba8982c7fe2dae07a387c3d7038d590abccb32b9e96f1e9",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36",
+        "accept": "application/json, text/plain, */*",
+        "content-type": "application/json"
+      },
+      "downloadResponseHeaders": {
+        "access-control-allow-origin": "https://spotdown.org",
+        "alt-svc": "h3=\":443\"; ma=86400",
+        "cf-cache-status": "DYNAMIC",
+        "cf-ray": "9d83f7462afe449e-MRS",
+        "content-disposition": "attachment; filename=\"song.mp3\"",
+        "content-security-policy": "frame-ancestors 'none'",
+        "content-type": "audio/mpeg",
+        "date": "Fri, 06 Mar 2026 20:03:50 GMT",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "priority": "u=1,i",
+        "referrer-policy": "no-referrer-when-downgrade",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=4xFtDHx3kkDlKPkLoKmLlm4x1yHxl4dpOb5DBgcv4ycMsag5%2BHAw8JZecCsNKVE0vzWQCTbxn9QhK8qPG5adyWiaoRVhAn4oGKFQR%2FBXAEXTfzqO3LI%3D\"}]}",
+        "server": "cloudflare",
+        "server-timing": "cfExtPri",
+        "set-cookie": "connect.sid=s%3A0a9384de-1557-4472-b648-cfaefb9085c0.xh8Fkep3DAx7agWSlUBPwb6Fjws3f%2Fi9VrjhpgLy2nU; Path=/; HttpOnly",
+        "vary": "Origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "x-powered-by": "Express",
+        "x-xss-protection": "1; mode=block"
+      },
+      "finalDownloadResponseContentType": "audio/mpeg",
+      "redirectChain": [
+        "https://spotdown.org/api/download"
+      ],
+      "finalDownloadUrl": "https://spotdown.org/api/download",
+      "interception": {
+        "topLevelNavigation": false,
+        "windowOpen": false,
+        "fetch": true,
+        "xhr": true,
+        "blobOrDataAnchorCreated": false,
+        "hiddenAnchorDownloadAttr": false
+      }
+    },
+    "Album": {
+      "clickedGetLink": true,
+      "clickedDownloadNow": true,
+      "cookieBefore": "",
+      "cookieAfter": "",
+      "jsLogs": {
+        "openCalls": [],
+        "fetchCalls": [
+          "/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F1hu2s7qkm5bo03eODpRQO3"
+        ],
+        "xhrCalls": [
+          {
+            "method": "POST",
+            "url": "/api/download"
+          }
+        ],
+        "blobOrDataAnchors": [],
+        "firstRowText": "Wanna Be Startin' Somethin'\nMichael Jackson"
+      },
+      "relevantNetwork": [
+        {
+          "kind": "request",
+          "t": 1772827437773,
+          "url": "https://spotdown.org/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F1hu2s7qkm5bo03eODpRQO3",
+          "method": "GET",
+          "resourceType": "fetch",
+          "isNavigationRequest": false,
+          "headers": {
+            "x-session-token": "47e49f3f78c928818ba8982c7fe2dae07a387c3d7038d590abccb32b9e96f1e9",
+            "sec-ch-ua-platform": "\"Windows\"",
+            "referer": "https://spotdown.org/album",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36",
+            "sec-ch-ua": "\"Not:A-Brand\";v=\"99\", \"HeadlessChrome\";v=\"145\", \"Chromium\";v=\"145\"",
+            "sec-ch-ua-mobile": "?0"
+          },
+          "redirectedFrom": null
+        },
+        {
+          "kind": "response",
+          "t": 1772827438170,
+          "url": "https://spotdown.org/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F1hu2s7qkm5bo03eODpRQO3",
+          "status": 200,
+          "method": "GET",
+          "resourceType": "fetch",
+          "isNavigationRequest": false,
+          "headers": {
+            "alt-svc": "h3=\":443\"; ma=86400",
+            "cf-cache-status": "DYNAMIC",
+            "cf-ray": "9d83f7811dc5449e-MRS",
+            "content-length": "16",
+            "content-security-policy": "frame-ancestors 'none'",
+            "content-type": "application/json; charset=utf-8",
+            "date": "Fri, 06 Mar 2026 20:03:58 GMT",
+            "etag": "W/\"10-jm+tn4BfKtQ82CPeO3TPArUdTIo\"",
+            "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "priority": "u=1,i",
+            "referrer-policy": "no-referrer-when-downgrade",
+            "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=JonTmzWYJZsf9g5lZIRs5OC%2FwHForsMYabgBPdRwHhlMiyfOtKT9NvBRbZEJGbHnibgHbdwGlEphAyX8lJGrT4h4GNHHQC%2FVrhcUVgIugQvR%2Boij0Iw%3D\"}]}",
+            "server": "cloudflare",
+            "server-timing": "cfExtPri",
+            "set-cookie": "connect.sid=s%3A554046aa-3b2d-4c19-b3ba-7a995c014cec.%2BZ6Fam46A7zIMxJynwA0oLJWcrzL73s4WMnvFJtuEDE; Path=/; HttpOnly",
+            "speculation-rules": "\"/cdn-cgi/speculation\"",
+            "vary": "Origin",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "x-powered-by": "Express",
+            "x-xss-protection": "1; mode=block"
+          },
+          "redirectChain": [
+            "https://spotdown.org/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F1hu2s7qkm5bo03eODpRQO3"
+          ]
+        },
+        {
+          "kind": "request",
+          "t": 1772827438174,
+          "url": "https://spotdown.org/api/download",
+          "method": "POST",
+          "resourceType": "xhr",
+          "isNavigationRequest": false,
+          "headers": {
+            "sec-ch-ua-platform": "\"Windows\"",
+            "referer": "https://spotdown.org/album",
+            "sec-ch-ua": "\"Not:A-Brand\";v=\"99\", \"HeadlessChrome\";v=\"145\", \"Chromium\";v=\"145\"",
+            "sec-ch-ua-mobile": "?0",
+            "x-session-token": "47e49f3f78c928818ba8982c7fe2dae07a387c3d7038d590abccb32b9e96f1e9",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36",
+            "accept": "application/json, text/plain, */*",
+            "content-type": "application/json"
+          },
+          "redirectedFrom": null
+        },
+        {
+          "kind": "response",
+          "t": 1772827438671,
+          "url": "https://spotdown.org/api/download",
+          "status": 200,
+          "method": "POST",
+          "resourceType": "xhr",
+          "isNavigationRequest": false,
+          "headers": {
+            "access-control-allow-origin": "https://spotdown.org",
+            "alt-svc": "h3=\":443\"; ma=86400",
+            "cf-cache-status": "DYNAMIC",
+            "cf-ray": "9d83f7839e52449e-MRS",
+            "content-disposition": "attachment; filename=\"song.mp3\"",
+            "content-security-policy": "frame-ancestors 'none'",
+            "content-type": "audio/mpeg",
+            "date": "Fri, 06 Mar 2026 20:03:58 GMT",
+            "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "priority": "u=1,i",
+            "referrer-policy": "no-referrer-when-downgrade",
+            "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=JJRaNcAWw7cE7q7Wi8xL1vAuRP2m%2BX2OtKmU7GFQEfHis%2BfvRxx3H4HuBhmQTjL%2FK0o2giEA6%2BB5kk3SKiR7lRpH86au1Z09QFKr2%2B1J8ScfQLa03rs%3D\"}]}",
+            "server": "cloudflare",
+            "server-timing": "cfExtPri",
+            "set-cookie": "connect.sid=s%3A6867eebc-dece-4f6f-9700-08d7a91b3a2c.7JogSdnaCooUqLYCYjOEEuiyntrGDzrwkrHfX74ANqA; Path=/; HttpOnly",
+            "vary": "Origin",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "x-powered-by": "Express",
+            "x-xss-protection": "1; mode=block"
+          },
+          "redirectChain": [
+            "https://spotdown.org/api/download"
+          ]
+        },
+        {
+          "kind": "response",
+          "t": 1772827439470,
+          "url": "https://spotdown.org/api/song-details?url=https%3A%2F%2Fopen.spotify.com%2Falbum%2F2ANVost0y2y52ema1E9xAZ",
+          "status": 200,
+          "method": "GET",
+          "resourceType": "xhr",
+          "isNavigationRequest": false,
+          "headers": {
+            "alt-svc": "h3=\":443\"; ma=86400",
+            "cf-cache-status": "DYNAMIC",
+            "cf-ray": "9d83f77efd3a449e-MRS",
+            "content-encoding": "gzip",
+            "content-security-policy": "frame-ancestors 'none'",
+            "content-type": "application/json; charset=utf-8",
+            "date": "Fri, 06 Mar 2026 20:03:59 GMT",
+            "etag": "W/\"c51-h69sS/3azfHilJBNf9W6/v0Xakg\"",
+            "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "priority": "u=1,i",
+            "referrer-policy": "no-referrer-when-downgrade",
+            "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=iqwmlcQyOKcbneeNYWq%2FYS1CkMV%2B2%2Fn3dsKbVp7mS7QeHfwJ5dG4fHr5XTXBDGDvEuaenHTqVKbFMSdsjRNJpYR6d41KxXtuaVtsQYmaDvMjvyjVChU%3D\"}]}",
+            "server": "cloudflare",
+            "server-timing": "cfExtPri",
+            "set-cookie": "connect.sid=s%3A569fad9f-55e9-45a1-bb23-910e40b5a1a5.0SA8NDAD3mARWjQ%2BFFpmCk6qOItIefeGUbYN3CxQca8; Path=/; HttpOnly",
+            "speculation-rules": "\"/cdn-cgi/speculation\"",
+            "vary": "Accept-Encoding, Origin",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "x-powered-by": "Express",
+            "x-xss-protection": "1; mode=block"
+          },
+          "redirectChain": [
+            "https://spotdown.org/api/song-details?url=https%3A%2F%2Fopen.spotify.com%2Falbum%2F2ANVost0y2y52ema1E9xAZ"
+          ]
+        },
+        {
+          "kind": "response",
+          "t": 1772827441432,
+          "url": "https://spotdown.org/api/song-details?url=https%3A%2F%2Fopen.spotify.com%2Falbum%2F2ANVost0y2y52ema1E9xAZ",
+          "status": 200,
+          "method": "GET",
+          "resourceType": "xhr",
+          "isNavigationRequest": false,
+          "headers": {
+            "alt-svc": "h3=\":443\"; ma=86400",
+            "cf-cache-status": "DYNAMIC",
+            "cf-ray": "9d83f78bb852449e-MRS",
+            "content-encoding": "gzip",
+            "content-security-policy": "frame-ancestors 'none'",
+            "content-type": "application/json; charset=utf-8",
+            "date": "Fri, 06 Mar 2026 20:04:01 GMT",
+            "etag": "W/\"c51-njYU3YZ51a6/WMc9WvrbaXNZVkg\"",
+            "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "priority": "u=1,i",
+            "referrer-policy": "no-referrer-when-downgrade",
+            "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=sRzHkOm9iB%2FpFUbmnBOfKC9pWWi1rqh5hx7lU4dv%2BRhYoTaHj0GWjdxtf0WVWkERzzVuOEWi7QbpDyccFldGCWgB%2Bk52JnvURDA4uu5GcrQk%2Fkrac6E%3D\"}]}",
+            "server": "cloudflare",
+            "server-timing": "cfExtPri",
+            "set-cookie": "connect.sid=s%3Aeb5139c1-5476-4fd5-afc5-12d336c8482b.0HHliATz448%2FZ1MyxkH%2FJlM%2F%2FIk%2BelDW9amjiCNrz1A; Path=/; HttpOnly",
+            "speculation-rules": "\"/cdn-cgi/speculation\"",
+            "vary": "Accept-Encoding, Origin",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "x-powered-by": "Express",
+            "x-xss-protection": "1; mode=block"
+          },
+          "redirectChain": [
+            "https://spotdown.org/api/song-details?url=https%3A%2F%2Fopen.spotify.com%2Falbum%2F2ANVost0y2y52ema1E9xAZ"
+          ]
+        }
+      ],
+      "downloadRequestHeaders": {
+        "sec-ch-ua-platform": "\"Windows\"",
+        "referer": "https://spotdown.org/album",
+        "sec-ch-ua": "\"Not:A-Brand\";v=\"99\", \"HeadlessChrome\";v=\"145\", \"Chromium\";v=\"145\"",
+        "sec-ch-ua-mobile": "?0",
+        "x-session-token": "47e49f3f78c928818ba8982c7fe2dae07a387c3d7038d590abccb32b9e96f1e9",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36",
+        "accept": "application/json, text/plain, */*",
+        "content-type": "application/json"
+      },
+      "downloadResponseHeaders": {
+        "access-control-allow-origin": "https://spotdown.org",
+        "alt-svc": "h3=\":443\"; ma=86400",
+        "cf-cache-status": "DYNAMIC",
+        "cf-ray": "9d83f7839e52449e-MRS",
+        "content-disposition": "attachment; filename=\"song.mp3\"",
+        "content-security-policy": "frame-ancestors 'none'",
+        "content-type": "audio/mpeg",
+        "date": "Fri, 06 Mar 2026 20:03:58 GMT",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "priority": "u=1,i",
+        "referrer-policy": "no-referrer-when-downgrade",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=JJRaNcAWw7cE7q7Wi8xL1vAuRP2m%2BX2OtKmU7GFQEfHis%2BfvRxx3H4HuBhmQTjL%2FK0o2giEA6%2BB5kk3SKiR7lRpH86au1Z09QFKr2%2B1J8ScfQLa03rs%3D\"}]}",
+        "server": "cloudflare",
+        "server-timing": "cfExtPri",
+        "set-cookie": "connect.sid=s%3A6867eebc-dece-4f6f-9700-08d7a91b3a2c.7JogSdnaCooUqLYCYjOEEuiyntrGDzrwkrHfX74ANqA; Path=/; HttpOnly",
+        "vary": "Origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "x-powered-by": "Express",
+        "x-xss-protection": "1; mode=block"
+      },
+      "finalDownloadResponseContentType": "audio/mpeg",
+      "redirectChain": [
+        "https://spotdown.org/api/download"
+      ],
+      "finalDownloadUrl": "https://spotdown.org/api/download",
+      "interception": {
+        "topLevelNavigation": false,
+        "windowOpen": false,
+        "fetch": true,
+        "xhr": true,
+        "blobOrDataAnchorCreated": false,
+        "hiddenAnchorDownloadAttr": false
+      }
+    },
+    "Artist": {
+      "clickedGetLink": true,
+      "clickedDownloadNow": true,
+      "cookieBefore": "",
+      "cookieAfter": "",
+      "jsLogs": {
+        "openCalls": [],
+        "fetchCalls": [
+          "/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F7J1uxwnxfQLu4APicE5Rnj"
+        ],
+        "xhrCalls": [
+          {
+            "method": "POST",
+            "url": "/api/download"
+          }
+        ],
+        "blobOrDataAnchors": [],
+        "firstRowText": "Billie Jean\nMichael Jackson"
+      },
+      "relevantNetwork": [
+        {
+          "kind": "request",
+          "t": 1772827447318,
+          "url": "https://spotdown.org/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F7J1uxwnxfQLu4APicE5Rnj",
+          "method": "GET",
+          "resourceType": "fetch",
+          "isNavigationRequest": false,
+          "headers": {
+            "x-session-token": "47e49f3f78c928818ba8982c7fe2dae07a387c3d7038d590abccb32b9e96f1e9",
+            "sec-ch-ua-platform": "\"Windows\"",
+            "referer": "https://spotdown.org/artist",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36",
+            "sec-ch-ua": "\"Not:A-Brand\";v=\"99\", \"HeadlessChrome\";v=\"145\", \"Chromium\";v=\"145\"",
+            "sec-ch-ua-mobile": "?0"
+          },
+          "redirectedFrom": null
+        },
+        {
+          "kind": "response",
+          "t": 1772827447790,
+          "url": "https://spotdown.org/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F7J1uxwnxfQLu4APicE5Rnj",
+          "status": 200,
+          "method": "GET",
+          "resourceType": "fetch",
+          "isNavigationRequest": false,
+          "headers": {
+            "alt-svc": "h3=\":443\"; ma=86400",
+            "cf-cache-status": "DYNAMIC",
+            "cf-ray": "9d83f7bcd8b3449e-MRS",
+            "content-length": "16",
+            "content-security-policy": "frame-ancestors 'none'",
+            "content-type": "application/json; charset=utf-8",
+            "date": "Fri, 06 Mar 2026 20:04:08 GMT",
+            "etag": "W/\"10-jm+tn4BfKtQ82CPeO3TPArUdTIo\"",
+            "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "priority": "u=1,i",
+            "referrer-policy": "no-referrer-when-downgrade",
+            "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=htL%2Fhyy97xaM8RtDABOQzV%2FzGTujzqRsL%2BQcClBLmrj%2FZlZiGL9gi0%2BC5KWIdeujrqYe9RuBXn7fUgHCp7NLt2R3GOm%2BFJZqOUDDTinDzZ6o2%2B0Ca%2FI%3D\"}]}",
+            "server": "cloudflare",
+            "server-timing": "cfExtPri",
+            "set-cookie": "connect.sid=s%3A6212918e-35a4-4207-adf0-72e9c3ac06c7.e9i2TvZf5DACNAOqb6rShterCrxDLlpbi%2FNMliFwl8g; Path=/; HttpOnly",
+            "speculation-rules": "\"/cdn-cgi/speculation\"",
+            "vary": "Origin",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "x-powered-by": "Express",
+            "x-xss-protection": "1; mode=block"
+          },
+          "redirectChain": [
+            "https://spotdown.org/api/check-direct-download?url=https%3A%2F%2Fopen.spotify.com%2Ftrack%2F7J1uxwnxfQLu4APicE5Rnj"
+          ]
+        },
+        {
+          "kind": "request",
+          "t": 1772827447796,
+          "url": "https://spotdown.org/api/download",
+          "method": "POST",
+          "resourceType": "xhr",
+          "isNavigationRequest": false,
+          "headers": {
+            "sec-ch-ua-platform": "\"Windows\"",
+            "referer": "https://spotdown.org/artist",
+            "sec-ch-ua": "\"Not:A-Brand\";v=\"99\", \"HeadlessChrome\";v=\"145\", \"Chromium\";v=\"145\"",
+            "sec-ch-ua-mobile": "?0",
+            "x-session-token": "47e49f3f78c928818ba8982c7fe2dae07a387c3d7038d590abccb32b9e96f1e9",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36",
+            "accept": "application/json, text/plain, */*",
+            "content-type": "application/json"
+          },
+          "redirectedFrom": null
+        },
+        {
+          "kind": "response",
+          "t": 1772827448153,
+          "url": "https://spotdown.org/api/song-details?url=https%3A%2F%2Fopen.spotify.com%2Fartist%2F3fMbdgg4jU18AjLCKBhRSm",
+          "status": 200,
+          "method": "GET",
+          "resourceType": "xhr",
+          "isNavigationRequest": false,
+          "headers": {
+            "alt-svc": "h3=\":443\"; ma=86400",
+            "cf-cache-status": "DYNAMIC",
+            "cf-ray": "9d83f7b6be81449e-MRS",
+            "content-encoding": "gzip",
+            "content-security-policy": "frame-ancestors 'none'",
+            "content-type": "application/json; charset=utf-8",
+            "date": "Fri, 06 Mar 2026 20:04:08 GMT",
+            "etag": "W/\"dc8-3HNBOBX/Mj17ZvZzQ/mfMMHbfJs\"",
+            "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "priority": "u=1,i",
+            "referrer-policy": "no-referrer-when-downgrade",
+            "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=pAKCcpKa9C2iTQRBvsiWqewbse9%2BxpLjwOcjfmVP3eTy1JG4HV3dNlB06YP1nwIU%2FretW%2BIMZvFwMn4T4KY34i3jTLCBUoyDvyz9U4mz5aGT8kkFCkU%3D\"}]}",
+            "server": "cloudflare",
+            "server-timing": "cfExtPri",
+            "set-cookie": "connect.sid=s%3Aca927411-e6da-4777-88fc-7607b93a4917.mYM6c%2Fw0Q3CXVOHGrJVw8e3uigHA5iOpolvCRLTUHSc; Path=/; HttpOnly",
+            "speculation-rules": "\"/cdn-cgi/speculation\"",
+            "vary": "Accept-Encoding, Origin",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "x-powered-by": "Express",
+            "x-xss-protection": "1; mode=block"
+          },
+          "redirectChain": [
+            "https://spotdown.org/api/song-details?url=https%3A%2F%2Fopen.spotify.com%2Fartist%2F3fMbdgg4jU18AjLCKBhRSm"
+          ]
+        },
+        {
+          "kind": "response",
+          "t": 1772827448208,
+          "url": "https://spotdown.org/api/download",
+          "status": 200,
+          "method": "POST",
+          "resourceType": "xhr",
+          "isNavigationRequest": false,
+          "headers": {
+            "access-control-allow-origin": "https://spotdown.org",
+            "alt-svc": "h3=\":443\"; ma=86400",
+            "cf-cache-status": "DYNAMIC",
+            "cf-ray": "9d83f7bfc999449e-MRS",
+            "content-disposition": "attachment; filename=\"song.mp3\"",
+            "content-security-policy": "frame-ancestors 'none'",
+            "content-type": "audio/mpeg",
+            "date": "Fri, 06 Mar 2026 20:04:08 GMT",
+            "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "priority": "u=1,i",
+            "referrer-policy": "no-referrer-when-downgrade",
+            "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=o%2F9DI3b7fYv2Q1sS7PEjtV%2BEe%2FdtrUcnmOsfHM%2BnWYPsTjuQHae%2BRiB0uBgSrP%2FfYcn%2BPuSUhRQoJibHdxBXsiwsZTTdd8eF9DthipGDMEbv4%2FxOVa4%3D\"}]}",
+            "server": "cloudflare",
+            "server-timing": "cfExtPri",
+            "set-cookie": "connect.sid=s%3Aa6a14074-266a-4c7f-b65d-9812f03761e4.n3Mvfdpxi0TJJYqdrn%2FZWO78ZbsNsYv2GjTYJva0IrA; Path=/; HttpOnly",
+            "vary": "Origin",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "x-powered-by": "Express",
+            "x-xss-protection": "1; mode=block"
+          },
+          "redirectChain": [
+            "https://spotdown.org/api/download"
+          ]
+        },
+        {
+          "kind": "response",
+          "t": 1772827450154,
+          "url": "https://spotdown.org/api/song-details?url=https%3A%2F%2Fopen.spotify.com%2Fartist%2F3fMbdgg4jU18AjLCKBhRSm",
+          "status": 200,
+          "method": "GET",
+          "resourceType": "xhr",
+          "isNavigationRequest": false,
+          "headers": {
+            "alt-svc": "h3=\":443\"; ma=86400",
+            "cf-cache-status": "DYNAMIC",
+            "cf-ray": "9d83f7c1fa5b449e-MRS",
+            "content-encoding": "gzip",
+            "content-security-policy": "frame-ancestors 'none'",
+            "content-type": "application/json; charset=utf-8",
+            "date": "Fri, 06 Mar 2026 20:04:10 GMT",
+            "etag": "W/\"dc8-6ASVYas5GDrASkPrH2fwdkC0VEI\"",
+            "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+            "permissions-policy": "camera=(), microphone=(), geolocation=()",
+            "priority": "u=1,i",
+            "referrer-policy": "no-referrer-when-downgrade",
+            "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=4FQLieDIzoZQfueLn%2FUGD2xynwAAy%2F3iZLx%2FVnxDHM77INRFaG2ALoT%2Fp26CzATET%2BZG66psnQLc1A0527da8f0Cf4s3f0aJZsWMEMIlDrZW7rT%2By0M%3D\"}]}",
+            "server": "cloudflare",
+            "server-timing": "cfExtPri",
+            "set-cookie": "connect.sid=s%3Abf4357c0-68b1-4742-9af9-2568321348f2.bkYf1FQS4nNzfDQMOjd4avvXEzImAS%2BaFbj0W4tUfPo; Path=/; HttpOnly",
+            "speculation-rules": "\"/cdn-cgi/speculation\"",
+            "vary": "Accept-Encoding, Origin",
+            "x-content-type-options": "nosniff",
+            "x-frame-options": "DENY",
+            "x-powered-by": "Express",
+            "x-xss-protection": "1; mode=block"
+          },
+          "redirectChain": [
+            "https://spotdown.org/api/song-details?url=https%3A%2F%2Fopen.spotify.com%2Fartist%2F3fMbdgg4jU18AjLCKBhRSm"
+          ]
+        }
+      ],
+      "downloadRequestHeaders": {
+        "sec-ch-ua-platform": "\"Windows\"",
+        "referer": "https://spotdown.org/artist",
+        "sec-ch-ua": "\"Not:A-Brand\";v=\"99\", \"HeadlessChrome\";v=\"145\", \"Chromium\";v=\"145\"",
+        "sec-ch-ua-mobile": "?0",
+        "x-session-token": "47e49f3f78c928818ba8982c7fe2dae07a387c3d7038d590abccb32b9e96f1e9",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36",
+        "accept": "application/json, text/plain, */*",
+        "content-type": "application/json"
+      },
+      "downloadResponseHeaders": {
+        "access-control-allow-origin": "https://spotdown.org",
+        "alt-svc": "h3=\":443\"; ma=86400",
+        "cf-cache-status": "DYNAMIC",
+        "cf-ray": "9d83f7bfc999449e-MRS",
+        "content-disposition": "attachment; filename=\"song.mp3\"",
+        "content-security-policy": "frame-ancestors 'none'",
+        "content-type": "audio/mpeg",
+        "date": "Fri, 06 Mar 2026 20:04:08 GMT",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "priority": "u=1,i",
+        "referrer-policy": "no-referrer-when-downgrade",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=o%2F9DI3b7fYv2Q1sS7PEjtV%2BEe%2FdtrUcnmOsfHM%2BnWYPsTjuQHae%2BRiB0uBgSrP%2FfYcn%2BPuSUhRQoJibHdxBXsiwsZTTdd8eF9DthipGDMEbv4%2FxOVa4%3D\"}]}",
+        "server": "cloudflare",
+        "server-timing": "cfExtPri",
+        "set-cookie": "connect.sid=s%3Aa6a14074-266a-4c7f-b65d-9812f03761e4.n3Mvfdpxi0TJJYqdrn%2FZWO78ZbsNsYv2GjTYJva0IrA; Path=/; HttpOnly",
+        "vary": "Origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "x-powered-by": "Express",
+        "x-xss-protection": "1; mode=block"
+      },
+      "finalDownloadResponseContentType": "audio/mpeg",
+      "redirectChain": [
+        "https://spotdown.org/api/download"
+      ],
+      "finalDownloadUrl": "https://spotdown.org/api/download",
+      "interception": {
+        "topLevelNavigation": false,
+        "windowOpen": false,
+        "fetch": true,
+        "xhr": true,
+        "blobOrDataAnchorCreated": false,
+        "hiddenAnchorDownloadAttr": false
+      }
+    }
+  },
+  "step5": {
+    "inputOuterHTML": {
+      "Track": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">",
+      "Playlist": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">",
+      "Album": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">",
+      "Artist": "<input type=\"text\" id=\"search-form-input\" placeholder=\"Search or Paste Spotify URL...\" class=\"search-form__input\">"
+    },
+    "submitOuterHTML": {
+      "Track": "<button id=\"search-form__button\" type=\"submit\">Download</button>",
+      "Playlist": "<button id=\"search-form__button\" type=\"submit\">Download</button>",
+      "Album": "<button id=\"search-form__button\" type=\"submit\">Download</button>",
+      "Artist": "<button id=\"search-form__button\" type=\"submit\">Download</button>"
+    },
+    "resultContainerSelectors": {
+      "Track": ".song-list",
+      "Playlist": ".song-list",
+      "Album": ".song-list",
+      "Artist": ".song-list"
+    },
+    "downloadSelectors": {
+      "Track": ".song .button-container button",
+      "Playlist": ".song .button-container button",
+      "Album": ".song .button-container button",
+      "Artist": ".song .button-container button"
+    },
+    "finalDownloadUrls": {
+      "Track": "https://spotdown.org/api/download",
+      "Playlist": "https://spotdown.org/api/download",
+      "Album": "https://spotdown.org/api/download",
+      "Artist": "https://spotdown.org/api/download"
+    }
+  }
+}

@@ -376,7 +376,7 @@ function useSquidWebViewDownloader(options = {}) {
   }, []);
 
   const emitActiveDownloadCount = useCallback(
-    reason => {
+    _reason => {
       if (!onActiveDownloadCountChange) {
         return;
       }
@@ -390,14 +390,8 @@ function useSquidWebViewDownloader(options = {}) {
       } catch (_) {
         // Ignore callback consumer errors.
       }
-      if (__DEV__) {
-        log('Active download count changed.', {
-          reason: reason || null,
-          count: nextCount,
-        });
-      }
     },
-    [getActiveDownloadCount, log, onActiveDownloadCountChange],
+    [getActiveDownloadCount, onActiveDownloadCountChange],
   );
 
   useEffect(() => {

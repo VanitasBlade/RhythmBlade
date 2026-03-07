@@ -1,6 +1,6 @@
-import { useFocusEffect } from '@react-navigation/native';
-import { FlashList } from '@shopify/flash-list';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {useFocusEffect} from '@react-navigation/native';
+import {FlashList} from '@shopify/flash-list';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,10 +13,10 @@ import {
   View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { WebView } from 'react-native-webview';
+import {WebView} from 'react-native-webview';
 
 import storageService from '../../services/storage/StorageService';
-import { MUSIC_HOME_THEME as C } from '../../theme/musicHomeTheme';
+import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
 import QueueItemCard from './components/QueueItemCard';
 import SearchResultCard from './components/SearchResultCard';
 import {
@@ -29,16 +29,30 @@ import {
   SEARCH_TYPES,
 } from './search.constants';
 import styles from './search.styles';
-import { toTrackKey } from './search.utils';
+import {toTrackKey} from './search.utils';
+import useSpotdownWebViewDownloader from './useSpotdownWebViewDownloader';
 import useSquidWebViewDownloader from './useSquidWebViewDownloader';
 
-const queueKeyExtractor = item => item.id;
+const queueKeyExtractor = item =>
+  `${String(item?.source || 'tidal')}:${item.id}`;
 const AGGRESSIVE_QUEUE_POLL_MS = 450;
 const IDLE_QUEUE_POLL_MS = 4200;
 const SEARCH_RESULT_ESTIMATED_ITEM_SIZE = 88;
 const QUEUE_ESTIMATED_ITEM_SIZE = 90;
 const IDLE_TIMEOUT_MS = 30000;
 const BACKGROUND_TIMEOUT_MS = 120000;
+const WEBVIEW_DISPLAY_FLEX = {display: 'flex'};
+const WEBVIEW_DISPLAY_NONE = {display: 'none'};
+const SOURCE_OPTIONS = [
+  {
+    value: 'Tidal',
+    borderColor: '#3b82f6',
+  },
+  {
+    value: 'Spotdown',
+    borderColor: '#22c55e',
+  },
+];
 
 const toComparableNumber = value => Number(value) || 0;
 const resolveAutoConvertAacToMp3Default = settings => {
@@ -56,10 +70,12 @@ const areQueueItemsEquivalent = (left, right) => {
     return false;
   }
   return (
+    String(left.source || 'tidal') === String(right.source || 'tidal') &&
     String(left.id || '') === String(right.id || '') &&
     String(left.status || '') === String(right.status || '') &&
     toComparableNumber(left.progress) === toComparableNumber(right.progress) &&
-    toComparableNumber(left.updatedAt) === toComparableNumber(right.updatedAt) &&
+    toComparableNumber(left.updatedAt) ===
+      toComparableNumber(right.updatedAt) &&
     toComparableNumber(left.createdAt) === toComparableNumber(right.createdAt)
   );
 };
@@ -82,6 +98,19 @@ const areQueueListsEquivalent = (left = [], right = []) => {
   return true;
 };
 
+const getSourceKey = value =>
+  String(value || '')
+    .trim()
+    .toLowerCase() === 'spotdown'
+    ? 'spotdown'
+    : 'tidal';
+const getTrackKeyForSource = (item, source) =>
+  `${getSourceKey(source)}:${toTrackKey(item)}`;
+const toJobScopeKey = job =>
+  `${getSourceKey(job?.source || 'tidal')}:${String(job?.id || '')}`;
+const isSpotifyUrlInput = value =>
+  /^https?:\/\/open\.spotify\.com\//i.test(String(value || '').trim());
+
 const SearchScreen = () => {
   const [query, setQuery] = useState('');
   const [activeSearchType, setActiveSearchType] = useState('Tracks');
@@ -93,17 +122,30 @@ const SearchScreen = () => {
   const [retryingJobs, setRetryingJobs] = useState({});
   const [cancelingJobs, setCancelingJobs] = useState({});
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
   const [downloadSetting, setDownloadSetting] = useState(
     DEFAULT_DOWNLOAD_SETTING,
   );
+  const [downloadSource, setDownloadSource] = useState('Tidal');
+  const [sourceActiveCounts, setSourceActiveCounts] = useState({
+    tidal: 0,
+    spotdown: 0,
+  });
+  const [spotdownLastSubmission, setSpotdownLastSubmission] = useState({
+    query: '',
+    isSpotifyUrl: false,
+  });
+  const [spotdownBatchJobIds, setSpotdownBatchJobIds] = useState([]);
   const [bridgeEnabled, setBridgeEnabled] = useState(true);
   const [activeAlbum, setActiveAlbum] = useState(null);
   const [albumTracks, setAlbumTracks] = useState([]);
   const [albumTracksLoading, setAlbumTracksLoading] = useState(false);
   const [albumQueueingAll, setAlbumQueueingAll] = useState(false);
   const [convertAacToMp3, setConvertAacToMp3] = useState(false);
-  const [autoDisableBridgeAfterInactivity, setAutoDisableBridgeAfterInactivity] =
-    useState(false);
+  const [
+    autoDisableBridgeAfterInactivity,
+    setAutoDisableBridgeAfterInactivity,
+  ] = useState(false);
 
   const mountedRef = useRef(true);
   const isMountedRef = useRef(true);
@@ -125,6 +167,8 @@ const SearchScreen = () => {
   const downloadDefaultsAppliedRef = useRef(false);
   const activeDownloaderTabRef = useRef('Search');
   const activeQueueCountRef = useRef(0);
+  const sourceActiveCountsRef = useRef({tidal: 0, spotdown: 0});
+  const activeSourceRef = useRef('tidal');
   const clearIdleTimer = useCallback(() => {
     if (idleTimerRef.current) {
       clearTimeout(idleTimerRef.current);
@@ -230,11 +274,30 @@ const SearchScreen = () => {
     [resetIdleTimerFromInteraction],
   );
 
-  const handleActiveDownloadCountChange = useCallback(
-    count => {
+  const handleSourceActiveDownloadCountChange = useCallback(
+    (source, count) => {
+      const sourceKey = getSourceKey(source);
       const nextCount = Math.max(0, Number(count) || 0);
-      isDownloadingRef.current = nextCount > 0;
-      if (nextCount > 0) {
+      const prevCounts = sourceActiveCountsRef.current;
+      const nextCounts = {
+        ...prevCounts,
+        [sourceKey]: nextCount,
+      };
+      sourceActiveCountsRef.current = nextCounts;
+      setSourceActiveCounts(current => {
+        if (
+          Number(current?.tidal) === Number(nextCounts.tidal) &&
+          Number(current?.spotdown) === Number(nextCounts.spotdown)
+        ) {
+          return current;
+        }
+        return nextCounts;
+      });
+
+      const totalActive =
+        (Number(nextCounts.tidal) || 0) + (Number(nextCounts.spotdown) || 0);
+      isDownloadingRef.current = totalActive > 0;
+      if (totalActive > 0) {
         clearBackgroundTimer();
         return;
       }
@@ -250,18 +313,43 @@ const SearchScreen = () => {
   );
 
   const {
-    webViewRef,
-    webViewProps,
-    searchSongs: searchSongsFromWebView,
-    getAlbumTracks: getAlbumTracksFromWebView,
-    startDownload: startDownloadFromWebView,
-    getDownloadJobs: getDownloadJobsFromWebView,
-    retryDownload: retryDownloadFromWebView,
-    cancelDownload: cancelDownloadFromWebView,
-    syncConvertToMp3: syncConvertToMp3FromWebView,
+    webViewRef: tidalWebViewRef,
+    webViewProps: tidalWebViewProps,
+    searchSongs: searchSongsFromTidalWebView,
+    getAlbumTracks: getAlbumTracksFromTidalWebView,
+    startDownload: startDownloadFromTidalWebView,
+    getDownloadJobs: getDownloadJobsFromTidalWebView,
+    retryDownload: retryDownloadFromTidalWebView,
+    cancelDownload: cancelDownloadFromTidalWebView,
+    syncConvertToMp3: syncConvertToMp3FromTidalWebView,
   } = useSquidWebViewDownloader({
-    onBridgeActivity: handleBridgeActivity,
-    onActiveDownloadCountChange: handleActiveDownloadCountChange,
+    onBridgeActivity: event => {
+      if (activeSourceRef.current === 'tidal') {
+        handleBridgeActivity({...event, source: 'tidal'});
+      }
+    },
+    onActiveDownloadCountChange: count =>
+      handleSourceActiveDownloadCountChange('tidal', count),
+  });
+
+  const {
+    webViewRef: spotdownWebViewRef,
+    webViewProps: spotdownWebViewProps,
+    searchSongs: searchSongsFromSpotdownWebView,
+    getAlbumTracks: getAlbumTracksFromSpotdownWebView,
+    startDownload: startDownloadFromSpotdownWebView,
+    getDownloadJobs: getDownloadJobsFromSpotdownWebView,
+    retryDownload: retryDownloadFromSpotdownWebView,
+    cancelDownload: cancelDownloadFromSpotdownWebView,
+    syncConvertToMp3: syncConvertToMp3FromSpotdownWebView,
+  } = useSpotdownWebViewDownloader({
+    onBridgeActivity: event => {
+      if (activeSourceRef.current === 'spotdown') {
+        handleBridgeActivity({...event, source: 'spotdown'});
+      }
+    },
+    onActiveDownloadCountChange: count =>
+      handleSourceActiveDownloadCountChange('spotdown', count),
   });
 
   const currentOptionShortLabel = useMemo(
@@ -283,6 +371,70 @@ const SearchScreen = () => {
     }
     return C.border;
   }, [downloadSetting]);
+  const sourceOutlineColor = useMemo(
+    () => (downloadSource === 'Spotdown' ? '#22c55e' : '#3b82f6'),
+    [downloadSource],
+  );
+  const activeSource = useMemo(
+    () => (downloadSource === 'Spotdown' ? 'spotdown' : 'tidal'),
+    [downloadSource],
+  );
+  const activeSearchSongsFromWebView = useMemo(
+    () =>
+      activeSource === 'spotdown'
+        ? searchSongsFromSpotdownWebView
+        : searchSongsFromTidalWebView,
+    [activeSource, searchSongsFromSpotdownWebView, searchSongsFromTidalWebView],
+  );
+  const activeGetAlbumTracksFromWebView = useMemo(
+    () =>
+      activeSource === 'spotdown'
+        ? getAlbumTracksFromSpotdownWebView
+        : getAlbumTracksFromTidalWebView,
+    [
+      activeSource,
+      getAlbumTracksFromSpotdownWebView,
+      getAlbumTracksFromTidalWebView,
+    ],
+  );
+  const activeStartDownloadFromWebView = useMemo(
+    () =>
+      activeSource === 'spotdown'
+        ? startDownloadFromSpotdownWebView
+        : startDownloadFromTidalWebView,
+    [
+      activeSource,
+      startDownloadFromSpotdownWebView,
+      startDownloadFromTidalWebView,
+    ],
+  );
+  const activeSyncConvertToMp3FromWebView = useMemo(
+    () =>
+      activeSource === 'spotdown'
+        ? syncConvertToMp3FromSpotdownWebView
+        : syncConvertToMp3FromTidalWebView,
+    [
+      activeSource,
+      syncConvertToMp3FromSpotdownWebView,
+      syncConvertToMp3FromTidalWebView,
+    ],
+  );
+
+  const getRetryHandlerForSource = useCallback(
+    source =>
+      getSourceKey(source) === 'spotdown'
+        ? retryDownloadFromSpotdownWebView
+        : retryDownloadFromTidalWebView,
+    [retryDownloadFromSpotdownWebView, retryDownloadFromTidalWebView],
+  );
+
+  const getCancelHandlerForSource = useCallback(
+    source =>
+      getSourceKey(source) === 'spotdown'
+        ? cancelDownloadFromSpotdownWebView
+        : cancelDownloadFromTidalWebView,
+    [cancelDownloadFromSpotdownWebView, cancelDownloadFromTidalWebView],
+  );
 
   const applyDownloadSetting = useCallback(nextSetting => {
     const normalized = normalizeDownloadSetting(nextSetting);
@@ -297,15 +449,73 @@ const SearchScreen = () => {
         .length,
     [queue],
   );
+  const showSpotdownDownloadAll = useMemo(
+    () =>
+      activeSource === 'spotdown' &&
+      !activeAlbum &&
+      Array.isArray(results) &&
+      results.length > 1 &&
+      spotdownLastSubmission?.isSpotifyUrl === true,
+    [activeAlbum, activeSource, results, spotdownLastSubmission],
+  );
+  const spotdownBatchActiveJobs = useMemo(() => {
+    if (!spotdownBatchJobIds.length) {
+      return [];
+    }
+    const activeStatuses = new Set(['queued', 'preparing', 'downloading']);
+    const batchSet = new Set(spotdownBatchJobIds.map(id => String(id)));
+    return queue.filter(
+      job =>
+        getSourceKey(job?.source || 'tidal') === 'spotdown' &&
+        batchSet.has(String(job?.id || '')) &&
+        activeStatuses.has(String(job?.status || '')),
+    );
+  }, [queue, spotdownBatchJobIds]);
 
   useEffect(() => {
     activeDownloaderTabRef.current = activeDownloaderTab;
   }, [activeDownloaderTab]);
 
   useEffect(() => {
+    activeSourceRef.current = activeSource;
+  }, [activeSource]);
+
+  useEffect(() => {
     activeQueueCountRef.current = activeQueueCount;
-    isDownloadingRef.current = activeQueueCount > 0;
+    const totalActiveFromHooks =
+      (Number(sourceActiveCountsRef.current?.tidal) || 0) +
+      (Number(sourceActiveCountsRef.current?.spotdown) || 0);
+    isDownloadingRef.current = totalActiveFromHooks > 0 || activeQueueCount > 0;
   }, [activeQueueCount]);
+
+  useEffect(() => {
+    sourceActiveCountsRef.current = {
+      tidal: Number(sourceActiveCounts?.tidal) || 0,
+      spotdown: Number(sourceActiveCounts?.spotdown) || 0,
+    };
+  }, [sourceActiveCounts]);
+
+  useEffect(() => {
+    if (!spotdownBatchJobIds.length) {
+      return;
+    }
+    const activeIds = new Set(
+      queue
+        .filter(
+          job =>
+            getSourceKey(job?.source || 'tidal') === 'spotdown' &&
+            ['queued', 'preparing', 'downloading'].includes(job?.status),
+        )
+        .map(job => String(job?.id || '')),
+    );
+    setSpotdownBatchJobIds(prev => {
+      const next = prev.filter(id => activeIds.has(String(id)));
+      if (next.length === prev.length) {
+        return prev;
+      }
+      return next;
+    });
+  }, [queue, spotdownBatchJobIds.length]);
 
   useEffect(() => {
     loadingRef.current = loading;
@@ -365,7 +575,8 @@ const SearchScreen = () => {
     const map = new Map();
 
     queue.forEach(job => {
-      const key = toTrackKey(job);
+      const source = getSourceKey(job?.source || 'tidal');
+      const key = getTrackKeyForSource(job, source);
       const existing = map.get(key);
       if (!existing) {
         map.set(key, job);
@@ -391,17 +602,42 @@ const SearchScreen = () => {
     }
     pollInFlightRef.current = true;
     try {
-      const jobs = await getDownloadJobsFromWebView(100);
+      const [tidalJobsRaw, spotdownJobsRaw] = await Promise.all([
+        getDownloadJobsFromTidalWebView(100).catch(() => []),
+        getDownloadJobsFromSpotdownWebView(220).catch(() => []),
+      ]);
+      const tidalJobs = Array.isArray(tidalJobsRaw)
+        ? tidalJobsRaw.map(job => ({...job, source: 'tidal'}))
+        : [];
+      const spotdownJobs = Array.isArray(spotdownJobsRaw)
+        ? spotdownJobsRaw.map(job => ({...job, source: 'spotdown'}))
+        : [];
+      const merged = [...tidalJobs, ...spotdownJobs];
+      const dedupedMap = new Map();
+      merged.forEach(job => {
+        const key = toJobScopeKey(job);
+        const existing = dedupedMap.get(key);
+        if (
+          !existing ||
+          (Number(job?.updatedAt) || 0) >= (Number(existing?.updatedAt) || 0)
+        ) {
+          dedupedMap.set(key, job);
+        }
+      });
+      const jobs = Array.from(dedupedMap.values()).sort(
+        (left, right) => (left?.createdAt || 0) - (right?.createdAt || 0),
+      );
       if (mountedRef.current) {
         jobs.forEach(job => {
           if (job.status !== 'done') {
-            dismissedDoneJobsRef.current.delete(job.id);
+            dismissedDoneJobsRef.current.delete(toJobScopeKey(job));
           }
         });
         const filtered = jobs.filter(
           job =>
             !(
-              job.status === 'done' && dismissedDoneJobsRef.current.has(job.id)
+              job.status === 'done' &&
+              dismissedDoneJobsRef.current.has(toJobScopeKey(job))
             ),
         );
         setQueue(prev =>
@@ -413,7 +649,7 @@ const SearchScreen = () => {
     } finally {
       pollInFlightRef.current = false;
     }
-  }, [getDownloadJobsFromWebView]);
+  }, [getDownloadJobsFromSpotdownWebView, getDownloadJobsFromTidalWebView]);
 
   useFocusEffect(
     useCallback(() => {
@@ -524,7 +760,9 @@ const SearchScreen = () => {
 
   useEffect(() => {
     const isBusy =
-      activeQueueCount > 0 || loadingRef.current || albumTracksLoadingRef.current;
+      activeQueueCount > 0 ||
+      loadingRef.current ||
+      albumTracksLoadingRef.current;
     if (isBusy) {
       return;
     }
@@ -547,9 +785,9 @@ const SearchScreen = () => {
           job =>
             job.status === 'done' &&
             job.song?.id &&
-            !persistedJobsRef.current.has(job.id),
+            !persistedJobsRef.current.has(toJobScopeKey(job)),
         )
-        .map(job => job.id)
+        .map(job => toJobScopeKey(job))
         .join(','),
     [queue],
   );
@@ -563,11 +801,12 @@ const SearchScreen = () => {
         job =>
           job.status === 'done' &&
           job.song?.id &&
-          !persistedJobsRef.current.has(job.id),
+          !persistedJobsRef.current.has(toJobScopeKey(job)),
       );
 
       for (const job of completedJobs) {
-        persistedJobsRef.current.add(job.id);
+        const scopedKey = toJobScopeKey(job);
+        persistedJobsRef.current.add(scopedKey);
         try {
           const isAlreadyLocalFile =
             job?.song?.isLocal &&
@@ -576,7 +815,7 @@ const SearchScreen = () => {
             await storageService.saveRemoteSongToDevice(job.song);
           }
         } catch (error) {
-          persistedJobsRef.current.delete(job.id);
+          persistedJobsRef.current.delete(scopedKey);
           // Do not block queue rendering for storage failures.
         }
       }
@@ -585,27 +824,83 @@ const SearchScreen = () => {
     persistCompletedDownloads();
   }, [doneJobIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const persistDownloadSetting = useCallback(async nextSetting => {
-    const normalized = applyDownloadSetting(nextSetting);
-    const settings = await storageService.getSettings();
-    await storageService.saveSettings({
-      ...settings,
-      downloadSetting: normalized,
-    });
-  }, [applyDownloadSetting]);
+  const persistDownloadSetting = useCallback(
+    async nextSetting => {
+      const normalized = applyDownloadSetting(nextSetting);
+      const settings = await storageService.getSettings();
+      await storageService.saveSettings({
+        ...settings,
+        downloadSetting: normalized,
+      });
+    },
+    [applyDownloadSetting],
+  );
+
+  const openSourceMenu = useCallback(() => {
+    resetIdleTimerFromInteraction('source-open');
+    setSourceMenuOpen(true);
+  }, [resetIdleTimerFromInteraction]);
+
+  const cancelPendingJobsForSource = useCallback(
+    async source => {
+      const sourceKey = getSourceKey(source);
+      const pendingJobs = queue.filter(
+        job =>
+          getSourceKey(job?.source || 'tidal') === sourceKey &&
+          (job.status === 'queued' || job.spotdownStatus === 'pending'),
+      );
+      if (!pendingJobs.length) {
+        return;
+      }
+      const cancelHandler = getCancelHandlerForSource(sourceKey);
+      await Promise.allSettled(pendingJobs.map(job => cancelHandler(job.id)));
+      if (mountedRef.current) {
+        const canceledIds = new Set(
+          pendingJobs.map(job => `${sourceKey}:${String(job?.id || '')}`),
+        );
+        setQueue(prev =>
+          prev.filter(job => !canceledIds.has(toJobScopeKey(job))),
+        );
+      }
+    },
+    [getCancelHandlerForSource, queue],
+  );
+
+  const selectDownloadSource = useCallback(
+    nextSource => {
+      resetIdleTimerFromInteraction('source-select');
+      const normalizedLabel = nextSource === 'Spotdown' ? 'Spotdown' : 'Tidal';
+      const nextSourceKey =
+        normalizedLabel === 'Spotdown' ? 'spotdown' : 'tidal';
+      const previousSourceKey = activeSourceRef.current;
+      if (previousSourceKey !== nextSourceKey) {
+        cancelPendingJobsForSource(previousSourceKey).catch(() => {});
+      }
+      setDownloadSource(normalizedLabel);
+      setResults([]);
+      setActiveAlbum(null);
+      setAlbumTracks([]);
+      setAlbumTracksLoading(false);
+      setAlbumQueueingAll(false);
+      setSourceMenuOpen(false);
+    },
+    [cancelPendingJobsForSource, resetIdleTimerFromInteraction],
+  );
 
   const isAacQuality = useMemo(
-    () =>
-      downloadSetting === '320kbps AAC' || downloadSetting === '96kbps AAC',
+    () => downloadSetting === '320kbps AAC' || downloadSetting === '96kbps AAC',
     [downloadSetting],
   );
 
-  const toggleConvertAacToMp3 = useCallback(nextValue => {
-    resetIdleTimerFromInteraction('convert-toggle');
-    const enabled = Boolean(nextValue);
-    setConvertAacToMp3(enabled);
-    syncConvertToMp3FromWebView(enabled).catch(() => {});
-  }, [resetIdleTimerFromInteraction, syncConvertToMp3FromWebView]);
+  const toggleConvertAacToMp3 = useCallback(
+    nextValue => {
+      resetIdleTimerFromInteraction('convert-toggle');
+      const enabled = Boolean(nextValue);
+      setConvertAacToMp3(enabled);
+      activeSyncConvertToMp3FromWebView(enabled).catch(() => {});
+    },
+    [activeSyncConvertToMp3FromWebView, resetIdleTimerFromInteraction],
+  );
 
   const toggleBridgeEnabled = useCallback(() => {
     if (!bridgeEnabled) {
@@ -653,23 +948,29 @@ const SearchScreen = () => {
 
   const getSearchResultKey = useCallback(
     (item, index) => {
-      const type = String(item?.type || activeSearchType || 'track').toLowerCase();
+      const sourceKey = getSourceKey(item?.source || activeSource);
+      const type = String(
+        item?.type || activeSearchType || 'track',
+      ).toLowerCase();
       const tidalId = String(item?.tidalId || '').trim();
       const url = String(item?.url || '').trim();
       const title = String(item?.title || 'unknown').trim();
       const artist = String(item?.artist || '').trim();
       const itemIndex = Number.isInteger(item?.index) ? item.index : index;
-      const identity = tidalId || url || `${title}|${artist}|${item?.duration || 0}`;
-      return `${type}-${identity}-${itemIndex}`;
+      const identity =
+        tidalId || url || `${title}|${artist}|${item?.duration || 0}`;
+      return `${sourceKey}-${type}-${identity}-${itemIndex}`;
     },
-    [activeSearchType],
+    [activeSearchType, activeSource],
   );
 
   const searchSongs = useCallback(async () => {
     if (!bridgeEnabled) {
       Alert.alert(
         'Bridge Disabled',
-        'Enable the bridge button in the top bar to search from Squid.',
+        `Enable the bridge button in the top bar to search from ${
+          activeSource === 'spotdown' ? 'Spotdown' : 'Tidal'
+        }.`,
       );
       return;
     }
@@ -685,13 +986,29 @@ const SearchScreen = () => {
       setLoading(true);
       setResults([]);
       closeAlbumView();
-      const songs = await searchSongsFromWebView(
-        query.trim(),
+      const submittedQuery = query.trim();
+      const songs = await activeSearchSongsFromWebView(
+        submittedQuery,
         activeSearchType.toLowerCase(),
       );
-      setResults(songs);
+      const nextResults = Array.isArray(songs)
+        ? songs.map(song => ({...song, source: activeSource}))
+        : [];
+      setResults(nextResults);
 
-      if (songs.length === 0) {
+      if (activeSource === 'spotdown') {
+        setSpotdownLastSubmission({
+          query: submittedQuery,
+          isSpotifyUrl: isSpotifyUrlInput(submittedQuery),
+        });
+      } else {
+        setSpotdownLastSubmission({
+          query: '',
+          isSpotifyUrl: false,
+        });
+      }
+
+      if (nextResults.length === 0) {
         Alert.alert(
           'No Results',
           `No ${activeSearchType.toLowerCase()} found for your search.`,
@@ -706,22 +1023,25 @@ const SearchScreen = () => {
       setLoading(false);
     }
   }, [
+    activeSearchSongsFromWebView,
+    activeSource,
     activeSearchType,
     closeAlbumView,
     bridgeEnabled,
     query,
     resetIdleTimerFromInteraction,
-    searchSongsFromWebView,
   ]);
 
   const queueDownload = useCallback(
     async (item, index, options = {}) => {
       const suppressAlert = Boolean(options?.suppressAlert);
       const switchToQueue =
-        typeof options?.switchToQueue === 'boolean' ? options.switchToQueue : true;
+        typeof options?.switchToQueue === 'boolean'
+          ? options.switchToQueue
+          : true;
 
       if (!item.downloadable) {
-        return { status: 'not-downloadable' };
+        return {status: 'not-downloadable'};
       }
 
       resetIdleTimerFromInteraction('queue-download');
@@ -733,32 +1053,32 @@ const SearchScreen = () => {
             'Enable the bridge button in the top bar to start downloads.',
           );
         }
-        return { status: 'bridge-disabled' };
+        return {status: 'bridge-disabled'};
       }
 
       const resolvedIndex = Number.isInteger(item?.requestIndex)
         ? item.requestIndex
         : Number.isInteger(item?.index)
-          ? item.index
+        ? item.index
         : Number.isInteger(index)
-          ? index
-          : null;
+        ? index
+        : null;
 
-      const key = toTrackKey(item);
+      const key = getTrackKeyForSource(item, activeSource);
       const existingJob = queueByTrackKey.get(key);
       if (existingJob && existingJob.status !== 'failed') {
         if (switchToQueue) {
           setActiveDownloaderTab('Queue');
         }
-        return { status: 'exists', job: existingJob };
+        return {status: 'exists', job: existingJob};
       }
 
       try {
-        setQueuingKeys(prev => ({ ...prev, [key]: true }));
+        setQueuingKeys(prev => ({...prev, [key]: true}));
         const selectedSetting = normalizeDownloadSetting(
           downloadSettingRef.current,
         );
-        const job = await startDownloadFromWebView(
+        const job = await activeStartDownloadFromWebView(
           item,
           resolvedIndex,
           selectedSetting,
@@ -766,14 +1086,18 @@ const SearchScreen = () => {
         );
         if (mountedRef.current) {
           setQueue(prev => {
-            const withoutDup = prev.filter(existing => existing.id !== job.id);
-            return [...withoutDup, job];
+            const withoutDup = prev.filter(
+              existing =>
+                toJobScopeKey(existing) !==
+                `${activeSource}:${String(job?.id || '')}`,
+            );
+            return [...withoutDup, {...job, source: activeSource}];
           });
           if (switchToQueue) {
             setActiveDownloaderTab('Queue');
           }
         }
-        return { status: 'queued', job };
+        return {status: 'queued', job};
       } catch (error) {
         if (!suppressAlert) {
           Alert.alert(
@@ -781,11 +1105,11 @@ const SearchScreen = () => {
             error.message || 'Failed to queue download. Please try again.',
           );
         }
-        return { status: 'failed', error };
+        return {status: 'failed', error};
       } finally {
         if (mountedRef.current) {
           setQueuingKeys(prev => {
-            const next = { ...prev };
+            const next = {...prev};
             delete next[key];
             return next;
           });
@@ -793,58 +1117,73 @@ const SearchScreen = () => {
       }
     },
     [
+      activeSource,
+      activeStartDownloadFromWebView,
       bridgeEnabled,
       convertAacToMp3,
       queueByTrackKey,
       resetIdleTimerFromInteraction,
-      startDownloadFromWebView,
     ],
   );
 
-  const openAlbum = useCallback(async album => {
-    if (!bridgeEnabled) {
-      Alert.alert(
-        'Bridge Disabled',
-        'Enable the bridge button in the top bar to load album tracks.',
-      );
-      return;
-    }
-
-    if (!album?.url) {
-      Alert.alert('Album Error', 'Album details are unavailable for this item.');
-      return;
-    }
-
-    resetIdleTimerFromInteraction('open-album');
-    setActiveAlbum(album);
-    setAlbumTracks([]);
-    setAlbumTracksLoading(true);
-    setAlbumQueueingAll(false);
-
-    try {
-      const tracks = await getAlbumTracksFromWebView(album);
-      if (!mountedRef.current) {
+  const openAlbum = useCallback(
+    async album => {
+      if (!bridgeEnabled) {
+        Alert.alert(
+          'Bridge Disabled',
+          'Enable the bridge button in the top bar to load album tracks.',
+        );
         return;
       }
-      setAlbumTracks(tracks);
-      if (tracks.length === 0) {
-        Alert.alert('No Tracks', 'No tracks found for this album.');
-      }
-    } catch (error) {
-      if (mountedRef.current) {
-        setActiveAlbum(null);
-        setAlbumTracks([]);
+
+      if (!album?.url) {
         Alert.alert(
           'Album Error',
-          error.message || 'Failed to load album tracks.',
+          'Album details are unavailable for this item.',
         );
+        return;
       }
-    } finally {
-      if (mountedRef.current) {
-        setAlbumTracksLoading(false);
+
+      resetIdleTimerFromInteraction('open-album');
+      setActiveAlbum(album);
+      setAlbumTracks([]);
+      setAlbumTracksLoading(true);
+      setAlbumQueueingAll(false);
+
+      try {
+        const tracks = await activeGetAlbumTracksFromWebView(album);
+        if (!mountedRef.current) {
+          return;
+        }
+        const nextTracks = Array.isArray(tracks)
+          ? tracks.map(track => ({...track, source: activeSource}))
+          : [];
+        setAlbumTracks(nextTracks);
+        if (nextTracks.length === 0) {
+          Alert.alert('No Tracks', 'No tracks found for this album.');
+        }
+      } catch (error) {
+        if (mountedRef.current) {
+          setActiveAlbum(null);
+          setAlbumTracks([]);
+          Alert.alert(
+            'Album Error',
+            error.message || 'Failed to load album tracks.',
+          );
+        }
+      } finally {
+        if (mountedRef.current) {
+          setAlbumTracksLoading(false);
+        }
       }
-    }
-  }, [bridgeEnabled, getAlbumTracksFromWebView, resetIdleTimerFromInteraction]);
+    },
+    [
+      activeGetAlbumTracksFromWebView,
+      activeSource,
+      bridgeEnabled,
+      resetIdleTimerFromInteraction,
+    ],
+  );
 
   const queueAlbumTracksAll = useCallback(async () => {
     if (!activeAlbum || albumQueueingAll || albumTracks.length === 0) {
@@ -903,9 +1242,127 @@ const SearchScreen = () => {
     resetIdleTimerFromInteraction,
   ]);
 
+  const queueSpotdownResultsAllInternal = useCallback(async () => {
+    if (!showSpotdownDownloadAll || loading || results.length <= 1) {
+      return;
+    }
+
+    resetIdleTimerFromInteraction('queue-spotdown-all');
+    let queued = 0;
+    let skipped = 0;
+    let failed = 0;
+    const queuedIds = [];
+
+    for (const item of results) {
+      const result = await queueDownload(item, item?.index, {
+        suppressAlert: true,
+        switchToQueue: false,
+      });
+      if (result?.status === 'queued') {
+        queued += 1;
+        if (result?.job?.id) {
+          queuedIds.push(result.job.id);
+        }
+      } else if (
+        result?.status === 'exists' ||
+        result?.status === 'not-downloadable'
+      ) {
+        skipped += 1;
+      } else {
+        failed += 1;
+      }
+    }
+
+    setSpotdownBatchJobIds(queuedIds);
+
+    Alert.alert(
+      'Batch Queued',
+      `Queued ${queued} tracks${skipped > 0 ? `, skipped ${skipped}` : ''}${
+        failed > 0 ? `, failed ${failed}` : ''
+      }.`,
+      [
+        {text: 'Stay', style: 'cancel'},
+        {
+          text: 'View Queue',
+          onPress: () => {
+            setActiveDownloaderTab('Queue');
+          },
+        },
+      ],
+    );
+  }, [
+    loading,
+    queueDownload,
+    resetIdleTimerFromInteraction,
+    results,
+    showSpotdownDownloadAll,
+  ]);
+
+  const queueSpotdownResultsAll = useCallback(() => {
+    if (!showSpotdownDownloadAll || loading || results.length <= 1) {
+      return;
+    }
+    if (results.length > 50) {
+      Alert.alert(
+        'Large Batch',
+        `Downloading ${results.length} tracks. This may take a while.`,
+        [
+          {text: 'Cancel', style: 'cancel'},
+          {
+            text: 'Continue',
+            onPress: () => {
+              queueSpotdownResultsAllInternal().catch(() => {});
+            },
+          },
+        ],
+      );
+      return;
+    }
+    queueSpotdownResultsAllInternal().catch(() => {});
+  }, [
+    loading,
+    queueSpotdownResultsAllInternal,
+    results.length,
+    showSpotdownDownloadAll,
+  ]);
+
+  const cancelSpotdownBatch = useCallback(async () => {
+    if (!spotdownBatchActiveJobs.length) {
+      return;
+    }
+    resetIdleTimerFromInteraction('cancel-spotdown-batch');
+    const cancelHandler = getCancelHandlerForSource('spotdown');
+    const targetIds = new Set(
+      spotdownBatchActiveJobs.map(job => String(job?.id || '')),
+    );
+    await Promise.allSettled(
+      spotdownBatchActiveJobs.map(job => cancelHandler(job.id)),
+    );
+    if (mountedRef.current) {
+      setQueue(prev =>
+        prev.filter(job => {
+          const isSpotdown =
+            getSourceKey(job?.source || 'tidal') === 'spotdown';
+          if (!isSpotdown) {
+            return true;
+          }
+          return !targetIds.has(String(job?.id || ''));
+        }),
+      );
+      setSpotdownBatchJobIds(prev =>
+        prev.filter(id => !targetIds.has(String(id))),
+      );
+    }
+  }, [
+    getCancelHandlerForSource,
+    resetIdleTimerFromInteraction,
+    spotdownBatchActiveJobs,
+  ]);
+
   const retryQueueItem = useCallback(
     async job => {
-      if (!job?.id || retryingJobs[job.id]) {
+      const scopedKey = toJobScopeKey(job);
+      if (!job?.id || retryingJobs[scopedKey]) {
         return;
       }
 
@@ -919,7 +1376,9 @@ const SearchScreen = () => {
 
       resetIdleTimerFromInteraction('retry-download');
       try {
-        setRetryingJobs(prev => ({ ...prev, [job.id]: true }));
+        setRetryingJobs(prev => ({...prev, [scopedKey]: true}));
+        const sourceKey = getSourceKey(job?.source || activeSource);
+        const retryHandler = getRetryHandlerForSource(sourceKey);
         const fallbackSong = {
           title: job.title,
           artist: job.artist || 'Unknown Artist',
@@ -928,7 +1387,7 @@ const SearchScreen = () => {
           duration: job.duration || 0,
           downloadable: true,
         };
-        const retriedJob = await retryDownloadFromWebView(
+        const retriedJob = await retryHandler(
           job.id,
           fallbackSong,
           normalizeDownloadSetting(
@@ -940,11 +1399,14 @@ const SearchScreen = () => {
         );
         if (mountedRef.current && retriedJob) {
           setQueue(prev => {
-            const filtered = prev.filter(
-              existing =>
-                existing.id !== job.id && existing.id !== retriedJob.id,
-            );
-            return [...filtered, retriedJob];
+            const filtered = prev.filter(existing => {
+              const scoped = toJobScopeKey(existing);
+              return (
+                scoped !== `${sourceKey}:${String(job?.id || '')}` &&
+                scoped !== `${sourceKey}:${String(retriedJob?.id || '')}`
+              );
+            });
+            return [...filtered, {...retriedJob, source: sourceKey}];
           });
         }
       } catch (error) {
@@ -955,8 +1417,8 @@ const SearchScreen = () => {
       } finally {
         if (mountedRef.current) {
           setRetryingJobs(prev => {
-            const next = { ...prev };
-            delete next[job.id];
+            const next = {...prev};
+            delete next[scopedKey];
             return next;
           });
         }
@@ -965,24 +1427,34 @@ const SearchScreen = () => {
     [
       bridgeEnabled,
       convertAacToMp3,
+      activeSource,
+      getRetryHandlerForSource,
       resetIdleTimerFromInteraction,
-      retryDownloadFromWebView,
       retryingJobs,
     ],
   );
 
   const cancelQueueItem = useCallback(
     async job => {
-      if (!job?.id || cancelingJobs[job.id]) {
+      const scopedKey = toJobScopeKey(job);
+      if (!job?.id || cancelingJobs[scopedKey]) {
         return;
       }
 
       resetIdleTimerFromInteraction('cancel-download');
       try {
-        setCancelingJobs(prev => ({ ...prev, [job.id]: true }));
-        await cancelDownloadFromWebView(job.id);
+        setCancelingJobs(prev => ({...prev, [scopedKey]: true}));
+        const sourceKey = getSourceKey(job?.source || activeSource);
+        const cancelHandler = getCancelHandlerForSource(sourceKey);
+        await cancelHandler(job.id);
         if (mountedRef.current) {
-          setQueue(prev => prev.filter(existing => existing.id !== job.id));
+          setQueue(prev =>
+            prev.filter(
+              existing =>
+                toJobScopeKey(existing) !==
+                `${sourceKey}:${String(job?.id || '')}`,
+            ),
+          );
         }
       } catch (error) {
         Alert.alert(
@@ -992,30 +1464,40 @@ const SearchScreen = () => {
       } finally {
         if (mountedRef.current) {
           setCancelingJobs(prev => {
-            const next = { ...prev };
-            delete next[job.id];
+            const next = {...prev};
+            delete next[scopedKey];
             return next;
           });
         }
       }
     },
-    [cancelDownloadFromWebView, cancelingJobs, resetIdleTimerFromInteraction],
+    [
+      activeSource,
+      cancelingJobs,
+      getCancelHandlerForSource,
+      resetIdleTimerFromInteraction,
+    ],
   );
 
-  const dismissDoneQueueItem = useCallback(jobId => {
+  const dismissDoneQueueItem = useCallback((jobId, source = 'tidal') => {
     if (!jobId) {
       return;
     }
-    dismissedDoneJobsRef.current.add(jobId);
+    const scopedKey = `${getSourceKey(source)}:${String(jobId)}`;
+    dismissedDoneJobsRef.current.add(scopedKey);
     if (mountedRef.current) {
-      setQueue(prev => prev.filter(existing => existing.id !== jobId));
+      setQueue(prev =>
+        prev.filter(existing => toJobScopeKey(existing) !== scopedKey),
+      );
     }
   }, []);
 
   const renderSearchResult = useCallback(
-    ({ item, index }) => {
-      const key = toTrackKey(item);
+    ({item, index}) => {
+      const sourceKey = getSourceKey(item?.source || activeSource);
+      const key = getTrackKeyForSource(item, sourceKey);
       const canOpenAlbum =
+        sourceKey === 'tidal' &&
         activeSearchType === 'Albums' &&
         (item?.type === 'album' || String(item?.url || '').includes('/album/'));
 
@@ -1031,12 +1513,20 @@ const SearchScreen = () => {
         />
       );
     },
-    [activeSearchType, openAlbum, queueByTrackKey, queuingKeys, queueDownload],
+    [
+      activeSearchType,
+      activeSource,
+      openAlbum,
+      queueByTrackKey,
+      queuingKeys,
+      queueDownload,
+    ],
   );
 
   const renderAlbumTrack = useCallback(
-    ({ item, index }) => {
-      const key = toTrackKey(item);
+    ({item, index}) => {
+      const sourceKey = getSourceKey(item?.source || activeSource);
+      const key = getTrackKeyForSource(item, sourceKey);
       return (
         <SearchResultCard
           item={item}
@@ -1049,18 +1539,20 @@ const SearchScreen = () => {
         />
       );
     },
-    [queueByTrackKey, queuingKeys, queueDownload],
+    [activeSource, queueByTrackKey, queuingKeys, queueDownload],
   );
 
   const renderQueueItem = useCallback(
-    ({ item }) => (
+    ({item}) => (
       <QueueItemCard
         item={item}
-        retrying={Boolean(retryingJobs[item.id])}
-        canceling={Boolean(cancelingJobs[item.id])}
+        retrying={Boolean(retryingJobs[toJobScopeKey(item)])}
+        canceling={Boolean(cancelingJobs[toJobScopeKey(item)])}
         onRetry={retryQueueItem}
         onCancel={cancelQueueItem}
-        onDoneAnimationComplete={dismissDoneQueueItem}
+        onDoneAnimationComplete={() =>
+          dismissDoneQueueItem(item?.id, item?.source || 'tidal')
+        }
       />
     ),
     [
@@ -1090,9 +1582,7 @@ const SearchScreen = () => {
             ? `No ${activeSearchType.toLowerCase()} found`
             : `Search ${activeSearchType.toLowerCase()}`}
         </Text>
-        <Text style={styles.emptySubtitle}>
-          Find tracks or albums.
-        </Text>
+        <Text style={styles.emptySubtitle}>Find tracks or albums.</Text>
       </View>
     );
   }, [activeSearchType, loading, query]);
@@ -1111,11 +1601,15 @@ const SearchScreen = () => {
           <TouchableOpacity
             style={[
               styles.albumQueueAllButton,
-              (albumQueueingAll || albumTracksLoading || albumTracks.length === 0) &&
-              styles.albumQueueAllButtonDisabled,
+              (albumQueueingAll ||
+                albumTracksLoading ||
+                albumTracks.length === 0) &&
+                styles.albumQueueAllButtonDisabled,
             ]}
             onPress={queueAlbumTracksAll}
-            disabled={albumQueueingAll || albumTracksLoading || albumTracks.length === 0}>
+            disabled={
+              albumQueueingAll || albumTracksLoading || albumTracks.length === 0
+            }>
             {albumQueueingAll ? (
               <ActivityIndicator size="small" color={C.accentFg} />
             ) : (
@@ -1149,7 +1643,9 @@ const SearchScreen = () => {
         {albumTracksLoading ? (
           <>
             <ActivityIndicator size="small" color={C.accent} />
-            <Text style={styles.albumTracksLoadingText}>Loading album tracks...</Text>
+            <Text style={styles.albumTracksLoadingText}>
+              Loading album tracks...
+            </Text>
           </>
         ) : (
           <>
@@ -1159,13 +1655,60 @@ const SearchScreen = () => {
               color={C.textDeep}
               style={styles.emptyIcon}
             />
-            <Text style={styles.emptySubtitle}>No tracks found for this album.</Text>
+            <Text style={styles.emptySubtitle}>
+              No tracks found for this album.
+            </Text>
           </>
         )}
       </View>
     ),
     [albumTracksLoading],
   );
+
+  const renderSpotdownBatchHeader = useCallback(() => {
+    if (!showSpotdownDownloadAll && !spotdownBatchActiveJobs.length) {
+      return null;
+    }
+    const batchRunning = spotdownBatchActiveJobs.length > 0;
+    return (
+      <View style={styles.albumHeaderCard}>
+        <View style={styles.albumHeaderTopRow}>
+          <Text style={styles.albumHeaderTitle} numberOfLines={1}>
+            Spotdown Collection
+          </Text>
+          <TouchableOpacity
+            style={[
+              styles.albumQueueAllButton,
+              (loading || results.length === 0) &&
+                styles.albumQueueAllButtonDisabled,
+            ]}
+            onPress={
+              batchRunning ? cancelSpotdownBatch : queueSpotdownResultsAll
+            }
+            disabled={loading || results.length === 0}>
+            <Icon
+              name={batchRunning ? 'close' : 'download-multiple'}
+              size={14}
+              color={C.accentFg}
+            />
+            <Text style={styles.albumQueueAllText}>
+              {batchRunning ? 'Cancel all' : 'Download all'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.albumHeaderMeta} numberOfLines={2}>
+          {results.length} tracks from a Spotify URL result.
+        </Text>
+      </View>
+    );
+  }, [
+    cancelSpotdownBatch,
+    loading,
+    queueSpotdownResultsAll,
+    results.length,
+    showSpotdownDownloadAll,
+    spotdownBatchActiveJobs.length,
+  ]);
 
   const renderQueueEmpty = useCallback(
     () => (
@@ -1189,10 +1732,19 @@ const SearchScreen = () => {
   const searchListKey = useMemo(
     () =>
       activeAlbum
-        ? `album-${String(activeAlbum?.url || activeAlbum?.title || 'current')}`
-        : `search-${activeSearchType.toLowerCase()}`,
-    [activeAlbum, activeSearchType],
+        ? `${activeSource}-album-${String(
+            activeAlbum?.url || activeAlbum?.title || 'current',
+          )}`
+        : `${activeSource}-search-${activeSearchType.toLowerCase()}`,
+    [activeAlbum, activeSearchType, activeSource],
   );
+  const shouldMountTidalWebView =
+    bridgeEnabled &&
+    (activeSource === 'tidal' || (Number(sourceActiveCounts?.tidal) || 0) > 0);
+  const shouldMountSpotdownWebView =
+    bridgeEnabled &&
+    (activeSource === 'spotdown' ||
+      (Number(sourceActiveCounts?.spotdown) || 0) > 0);
   return (
     <View style={styles.container}>
       <View style={styles.topBar}>
@@ -1218,11 +1770,13 @@ const SearchScreen = () => {
             <TouchableOpacity
               style={[
                 styles.qualitySelectorSegment,
-                { borderColor: qualityOutlineColor },
+                {borderColor: qualityOutlineColor},
               ]}
               onPress={() => setSettingsOpen(true)}>
               <Icon name="music-note-eighth" size={14} color={C.textDim} />
-              <Text style={styles.settingsValue}>{currentOptionShortLabel}</Text>
+              <Text style={styles.settingsValue}>
+                {currentOptionShortLabel}
+              </Text>
               <Icon name="chevron-down" size={15} color={C.textMute} />
             </TouchableOpacity>
           </View>
@@ -1279,9 +1833,19 @@ const SearchScreen = () => {
                 />
                 <TouchableOpacity
                   style={[
+                    styles.searchSourceButton,
+                    {borderColor: sourceOutlineColor},
+                  ]}
+                  onPress={openSourceMenu}
+                  activeOpacity={0.8}>
+                  <Icon name="earth" size={13} color={C.textDim} />
+                  <Icon name="chevron-down" size={12} color={C.textMute} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
                     styles.searchActionButton,
                     (!query.trim() || loading) &&
-                    styles.searchActionButtonDisabled,
+                      styles.searchActionButtonDisabled,
                   ]}
                   onPress={searchSongs}
                   disabled={!query.trim() || loading}>
@@ -1302,7 +1866,7 @@ const SearchScreen = () => {
                       style={[
                         styles.searchTypeButton,
                         index < SEARCH_TYPES.length - 1 &&
-                        styles.searchTypeButtonGap,
+                          styles.searchTypeButtonGap,
                         active && styles.searchTypeButtonActive,
                       ]}
                       onPress={() => {
@@ -1333,7 +1897,15 @@ const SearchScreen = () => {
               keyExtractor={getSearchResultKey}
               estimatedItemSize={SEARCH_RESULT_ESTIMATED_ITEM_SIZE}
               contentContainerStyle={styles.searchListContent}
-              ListHeaderComponent={activeAlbum ? renderAlbumTracksHeader : null}
+              ListHeaderComponent={
+                activeAlbum
+                  ? renderAlbumTracksHeader
+                  : activeSource === 'spotdown' &&
+                    (showSpotdownDownloadAll ||
+                      spotdownBatchActiveJobs.length > 0)
+                  ? renderSpotdownBatchHeader
+                  : null
+              }
               ListEmptyComponent={
                 activeAlbum ? renderAlbumTracksEmpty : renderSearchEmpty
               }
@@ -1358,6 +1930,46 @@ const SearchScreen = () => {
           />
         </View>
       )}
+
+      <Modal
+        transparent
+        visible={sourceMenuOpen}
+        animationType="fade"
+        onRequestClose={() => setSourceMenuOpen(false)}>
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.sourceModalBackdrop}
+          onPress={() => setSourceMenuOpen(false)}>
+          <View style={styles.sourceModalCard}>
+            <Text style={styles.modalTitle}>Download source</Text>
+            {SOURCE_OPTIONS.map(option => {
+              const selected = option.value === downloadSource;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.optionRow,
+                    selected && styles.optionRowSelected,
+                  ]}
+                  onPress={() => selectDownloadSource(option.value)}>
+                  <View style={styles.optionTextWrap}>
+                    <Text style={styles.optionTitle}>{option.value}</Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.sourceOptionIndicator,
+                      {borderColor: option.borderColor},
+                    ]}>
+                    {selected ? (
+                      <Icon name="check" size={11} color={option.borderColor} />
+                    ) : null}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       <Modal
         transparent
@@ -1413,7 +2025,9 @@ const SearchScreen = () => {
                   styles.conversionToggle,
                   convertAacToMp3 && styles.conversionToggleOn,
                 ]}
-                onPress={() => isAacQuality && toggleConvertAacToMp3(!convertAacToMp3)}
+                onPress={() =>
+                  isAacQuality && toggleConvertAacToMp3(!convertAacToMp3)
+                }
                 disabled={!isAacQuality}
                 activeOpacity={0.7}>
                 <Text
@@ -1429,19 +2043,40 @@ const SearchScreen = () => {
         </TouchableOpacity>
       </Modal>
 
-      {bridgeEnabled ? (
+      {shouldMountTidalWebView || shouldMountSpotdownWebView ? (
         <View
           style={styles.hiddenWebViewHost}
           pointerEvents="none"
           accessible={false}
           importantForAccessibility="no-hide-descendants">
-          <WebView
-            ref={webViewRef}
-            {...webViewProps}
-            pointerEvents="none"
-            importantForAccessibility="no-hide-descendants"
-            style={styles.hiddenWebView}
-          />
+          {shouldMountTidalWebView ? (
+            <WebView
+              ref={tidalWebViewRef}
+              {...tidalWebViewProps}
+              pointerEvents="none"
+              importantForAccessibility="no-hide-descendants"
+              style={[
+                styles.hiddenWebView,
+                activeSource === 'tidal'
+                  ? WEBVIEW_DISPLAY_FLEX
+                  : WEBVIEW_DISPLAY_NONE,
+              ]}
+            />
+          ) : null}
+          {shouldMountSpotdownWebView ? (
+            <WebView
+              ref={spotdownWebViewRef}
+              {...spotdownWebViewProps}
+              pointerEvents="none"
+              importantForAccessibility="no-hide-descendants"
+              style={[
+                styles.hiddenWebView,
+                activeSource === 'spotdown'
+                  ? WEBVIEW_DISPLAY_FLEX
+                  : WEBVIEW_DISPLAY_NONE,
+              ]}
+            />
+          ) : null}
         </View>
       ) : null}
     </View>

@@ -175,6 +175,36 @@ function isSameTrackOrder(left = [], right = []) {
   return true;
 }
 
+function buildQueueMetadataPatch(currentTrack = {}, nextTrack = {}) {
+  const patch = {};
+
+  const currentTitle = normalizeMetadataValue(currentTrack.title);
+  const nextTitle = normalizeMetadataValue(nextTrack.title);
+  if (nextTitle && nextTitle !== currentTitle) {
+    patch.title = nextTitle;
+  }
+
+  const currentArtist = normalizeMetadataValue(currentTrack.artist);
+  const nextArtist = normalizeMetadataValue(nextTrack.artist);
+  if (nextArtist && nextArtist !== currentArtist) {
+    patch.artist = nextArtist;
+  }
+
+  const currentAlbum = normalizeMetadataValue(currentTrack.album);
+  const nextAlbum = normalizeMetadataValue(nextTrack.album);
+  if (nextAlbum && nextAlbum !== currentAlbum) {
+    patch.album = nextAlbum;
+  }
+
+  const currentArtwork = normalizeArtworkUri(currentTrack.artwork);
+  const nextArtwork = normalizeArtworkUri(nextTrack.artwork);
+  if (nextArtwork && nextArtwork !== currentArtwork) {
+    patch.artwork = nextArtwork;
+  }
+
+  return patch;
+}
+
 function findTrackIndexByKey(reference = [], track = null) {
   const targetKey = getTrackOrderKey(track || {});
   if (!targetKey) {
@@ -1164,6 +1194,7 @@ class PlaybackService {
     const repeatModeBeforeReset = await this.getRepeatMode();
     this.repeatMode = repeatModeBeforeReset;
     let reusedCurrentQueue = false;
+    let metadataUpdates = [];
     try {
       const [currentQueue, activeIndex] = await Promise.all([
         TrackPlayer.getQueue(),
@@ -1175,11 +1206,33 @@ class PlaybackService {
         isSameTrackOrder(currentQueue, queueTracks)
       ) {
         reusedCurrentQueue = true;
+        metadataUpdates = queueTracks
+          .map((nextTrack, index) => {
+            const currentTrack = currentQueue[index] || {};
+            const patch = buildQueueMetadataPatch(currentTrack, nextTrack);
+            return {
+              index,
+              patch,
+            };
+          })
+          .filter(item => Object.keys(item.patch).length > 0);
         const numericActiveIndex = Number.isInteger(activeIndex)
           ? Number(activeIndex)
           : 0;
         if (numericActiveIndex !== boundedIndex) {
           await TrackPlayer.skip(boundedIndex);
+        }
+        if (metadataUpdates.length > 0) {
+          await Promise.all(
+            metadataUpdates.map(({index, patch}) =>
+              TrackPlayer.updateMetadataForTrack(index, patch).catch(error => {
+                console.warn('Error refreshing reused queue metadata:', {
+                  index,
+                  error: String(error?.message || error),
+                });
+              }),
+            ),
+          );
         }
       }
     } catch (error) {

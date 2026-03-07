@@ -57,6 +57,13 @@ function toMsNumber(value) {
   return numeric > 0 ? Math.round(numeric) : 0;
 }
 
+function isMediaStoreAlbumArtUri(value) {
+  const text = String(value || '')
+    .trim()
+    .toLowerCase();
+  return text.startsWith('content://media/external/audio/albumart/');
+}
+
 export const mediaStoreMethods = {
   async getLibraryProvider() {
     const settings = await this.getSettings();
@@ -821,6 +828,15 @@ export const mediaStoreMethods = {
     const fileSources = await this.getFileSources();
     const provider = normalizeProvider(settings?.libraryProvider);
     const selectedOnly = settings?.mediaStoreSelectedFoldersOnly !== false;
+    const existingLibrary = await this.getLocalLibrary();
+    const existingByMediaStoreId = new Map();
+    existingLibrary.forEach(song => {
+      const mediaStoreId = normalizeMediaStoreId(song?.mediaStoreId);
+      if (!mediaStoreId) {
+        return;
+      }
+      existingByMediaStoreId.set(mediaStoreId, song);
+    });
 
     if (
       !(
@@ -904,11 +920,20 @@ export const mediaStoreMethods = {
         isAppOwned,
       });
       if (mapped) {
+        // Preserve non-MediaStore artwork for app-owned tracks so an old
+        // MediaStore albumArtUri does not override embedded/local artwork.
+        const existingMatch = existingByMediaStoreId.get(mediaStoreId);
+        const existingArtwork = String(existingMatch?.artwork || '').trim();
+        if (
+          isAppOwned &&
+          existingArtwork &&
+          !isMediaStoreAlbumArtUri(existingArtwork)
+        ) {
+          mapped.artwork = existingArtwork;
+        }
         mediaSongs.push(mapped);
       }
     });
-
-    const existingLibrary = await this.getLocalLibrary();
     await this.hydrateLibraryStoreFromDisk();
     const enabledSourceCount = fileSources.filter(
       source => source?.on !== false,
@@ -1177,8 +1202,19 @@ export const mediaStoreMethods = {
     if (!song) {
       return null;
     }
+    const mergedSong = this.mergeSongRecords(song, {
+      ...(localSong || {}),
+      id: song.id,
+      mediaStoreId: song.mediaStoreId,
+      provider: 'media_store',
+      contentUri: song.contentUri,
+      url: song.contentUri,
+      localPath: song.localPath || localPath,
+      absolutePath: song.absolutePath || localPath,
+      isAppOwned: true,
+    });
 
-    await this.addToLibrary(song);
-    return song;
+    await this.addToLibrary(mergedSong);
+    return mergedSong;
   },
 };
