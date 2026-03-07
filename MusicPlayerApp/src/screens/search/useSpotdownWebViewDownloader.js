@@ -5,11 +5,17 @@ import {
   canExtractEmbeddedArtwork,
   extractEmbeddedArtworkDataUri,
 } from '../../services/artwork/ArtworkService';
+import useArtworkUpgrade from '../../hooks/useArtworkUpgrade';
+import {
+  buildArtworkKey,
+  isSpotidownArtworkUrl,
+} from '../../services/SpotidownArtworkService';
 import storageService from '../../services/storage/StorageService';
 import {
   sanitizeFileSegment,
   toFileUriFromPath,
 } from '../../services/storage/storage.helpers';
+import {buildSpotidownArtworkSnapshotScript} from '../../utils/spotidownWebViewInjector';
 import {
   ACTIVE_QUEUE_STATUSES,
   DEFAULT_DOWNLOAD_SETTING,
@@ -354,6 +360,11 @@ function useSpotdownWebViewDownloader(options = {}) {
     typeof options?.onActiveDownloadCountChange === 'function'
       ? options.onActiveDownloadCountChange
       : null;
+  const onBridgeReadyChange =
+    typeof options?.onBridgeReadyChange === 'function'
+      ? options.onBridgeReadyChange
+      : null;
+  const {upgradeArtwork} = useArtworkUpgrade();
 
   const webViewRef = useRef(null);
   const bridgeReadyRef = useRef(false);
@@ -369,11 +380,15 @@ function useSpotdownWebViewDownloader(options = {}) {
   const pendingDownloadSignalsRef = useRef(new Map());
   const downloadTriggerAttemptRef = useRef(new Map());
   const lastStartedDownloadJobIdRef = useRef(null);
+  const blobFileInterceptInFlightRef = useRef(new Set());
   const sessionTokenRef = useRef({token: null, expires: 0});
   const tokenWaitersRef = useRef([]);
   const tokenRefreshInFlightRef = useRef(false);
   const lastActiveCountRef = useRef(null);
   const lastRecoveryAtRef = useRef(0);
+  const pendingArtworkByJobIdRef = useRef(new Map());
+  const pendingArtworkByTrackKeyRef = useRef(new Map());
+  const lastBridgeReadyStateRef = useRef(null);
 
   const log = useCallback((message, context = null) => {
     if (!__DEV__) {
@@ -386,6 +401,29 @@ function useSpotdownWebViewDownloader(options = {}) {
     }
     console.log(`[SpotdownWV ${timestamp}] ${message}`, context);
   }, []);
+
+  const emitBridgeReadyState = useCallback(
+    ready => {
+      if (!onBridgeReadyChange) {
+        return;
+      }
+      const nextReady = ready === true;
+      if (lastBridgeReadyStateRef.current === nextReady) {
+        return;
+      }
+      lastBridgeReadyStateRef.current = nextReady;
+      try {
+        onBridgeReadyChange(nextReady);
+      } catch (_) {
+        // Ignore callback consumer errors.
+      }
+    },
+    [onBridgeReadyChange],
+  );
+
+  useEffect(() => {
+    emitBridgeReadyState(bridgeReadyRef.current);
+  }, [emitBridgeReadyState]);
 
   const getActiveDownloadCount = useCallback(() => {
     let count = 0;
@@ -471,318 +509,70 @@ function useSpotdownWebViewDownloader(options = {}) {
     webView.postMessage(JSON.stringify(command));
   }, []);
 
-  const installPreDispatchDiagnostics = useCallback(
-    (jobId, itemIndex) => {
-      const safeJobId = String(jobId || '').trim();
-      if (!safeJobId) {
+  const cleanupPendingArtworkForJob = useCallback(
+    jobId => {
+      const normalizedJobId = String(jobId || '').trim();
+      if (!normalizedJobId) {
         return;
       }
+      const byJobMap = pendingArtworkByJobIdRef.current;
+      const byTrackMap = pendingArtworkByTrackKeyRef.current;
+      const jobEntry = byJobMap.get(normalizedJobId);
+      if (!jobEntry) {
+        return;
+      }
+      byJobMap.delete(normalizedJobId);
+      const key = String(jobEntry?.trackKey || '').trim();
+      if (!key) {
+        return;
+      }
+      const trackEntry = byTrackMap.get(key);
+      if (!trackEntry) {
+        return;
+      }
+      trackEntry.jobIds.delete(normalizedJobId);
+      if (trackEntry.jobIds.size < 1) {
+        byTrackMap.delete(key);
+      }
+    },
+    [pendingArtworkByJobIdRef, pendingArtworkByTrackKeyRef],
+  );
+
+  const injectArtworkSnapshotForJob = useCallback(
+    (targetJob, commandIndex) => {
       const webView = webViewRef.current;
       if (!webView || typeof webView.injectJavaScript !== 'function') {
         return;
       }
-      const contextPayload = JSON.stringify({
-        jobId: safeJobId,
-        itemIndex: Number.isInteger(itemIndex) ? itemIndex : null,
-      });
-      const diagnosticScript = `
-        (function(){
-          try {
-            var ctx = ${contextPayload};
-            window.__spotdownDiagContext = ctx;
-            var getCtx = function(){
-              var active = window.__spotdownDiagContext || ctx || {};
-              return active && typeof active === 'object' ? active : {};
-            };
-            var rn = window.ReactNativeWebView;
-            var toText = function(value){
-              if (typeof value === 'string') { return value.trim(); }
-              if (value === null || typeof value === 'undefined') { return ''; }
-              return String(value).trim();
-            };
-            var postRaw = function(payload){
-              try {
-                if (!rn || typeof rn.postMessage !== 'function') { return false; }
-                rn.postMessage(JSON.stringify(payload));
-                return true;
-              } catch (_) { return false; }
-            };
-            var postDiag = function(label, data){
-              var activeCtx = getCtx();
-              postRaw({
-                type: 'SPOTDOWN_DIAG',
-                jobId: activeCtx && activeCtx.jobId ? activeCtx.jobId : null,
-                itemIndex: Number.isInteger(activeCtx && activeCtx.itemIndex) ? activeCtx.itemIndex : null,
-                label: label || 'unknown',
-                data: data || {}
-              });
-            };
-            var normalizeUrl = function(raw){
-              var text = toText(raw);
-              if (!text) { return ''; }
-              try {
-                return new URL(text, window.location.origin).toString();
-              } catch (_) {
-                return text;
-              }
-            };
-            var deriveFilename = function(rawUrl){
-              var value = toText(rawUrl);
-              if (!value) { return 'song.mp3'; }
-              var tail = value.split('/').pop() || '';
-              var base = tail.split('?')[0] || '';
-              if (base && base.indexOf('.') !== -1) { return base; }
-              return 'song.mp3';
-            };
-            var encodeBase64Chunk = function(uint8){
-              if (!uint8 || !uint8.length) { return ''; }
-              var STEP = 0x8000;
-              var binary = '';
-              for (var offset = 0; offset < uint8.length; offset += STEP) {
-                var slice = uint8.subarray(offset, Math.min(offset + STEP, uint8.length));
-                binary += String.fromCharCode.apply(null, slice);
-              }
-              return btoa(binary);
-            };
-            var emitBlobChunks = function(blobUrl, source){
-              var fetchFn = window.fetch && window.fetch.bind ? window.fetch.bind(window) : null;
-              if (!fetchFn) {
-                postDiag('download-url-skipped', {source: source || null, url: blobUrl || null, reason: 'blob-fetch-missing'});
-                return false;
-              }
-              fetchFn(blobUrl, {method:'GET', credentials:'include'})
-                .then(function(response){
-                  var status = Number(response && response.status) || 200;
-                  var contentType = toText(response && response.headers && response.headers.get && response.headers.get('content-type')) || 'audio/mpeg';
-                  var filename = deriveFilename(blobUrl);
-                  return response.arrayBuffer().then(function(buffer){
-                    var bytes = buffer ? new Uint8Array(buffer) : null;
-                    if (!bytes || !bytes.length) {
-                      var activeCtx = getCtx();
-                      postRaw({
-                        type: 'SPOTDOWN_DOWNLOAD_ERROR',
-                        jobId: activeCtx && activeCtx.jobId ? activeCtx.jobId : null,
-                        index: Number.isInteger(activeCtx && activeCtx.itemIndex) ? activeCtx.itemIndex : null,
-                        reason: 'blob-empty-response',
-                        requestUrl: blobUrl || null,
-                        responseUrl: blobUrl || null,
-                        status: status
-                      });
-                      return;
-                    }
-                    var chunkByteSize = 96 * 1024;
-                    var chunkCount = Math.max(1, Math.ceil(bytes.length / chunkByteSize));
-                    for (var chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
-                      var activeCtx = getCtx();
-                      var start = chunkIndex * chunkByteSize;
-                      var end = Math.min(start + chunkByteSize, bytes.length);
-                      postRaw({
-                        type: 'SPOTDOWN_DOWNLOAD_CHUNK',
-                        jobId: activeCtx && activeCtx.jobId ? activeCtx.jobId : null,
-                        index: Number.isInteger(activeCtx && activeCtx.itemIndex) ? activeCtx.itemIndex : null,
-                        chunkIndex: chunkIndex,
-                        chunkCount: chunkCount,
-                        totalBytes: bytes.length,
-                        mimeType: contentType || null,
-                        filename: filename,
-                        data: encodeBase64Chunk(bytes.subarray(start, end))
-                      });
-                    }
-                    var activeCtx = getCtx();
-                    postRaw({
-                      type: 'SPOTDOWN_DOWNLOAD_URL',
-                      jobId: activeCtx && activeCtx.jobId ? activeCtx.jobId : null,
-                      index: Number.isInteger(activeCtx && activeCtx.itemIndex) ? activeCtx.itemIndex : null,
-                      title: null,
-                      url: null,
-                      status: status,
-                      requestUrl: blobUrl || null,
-                      responseUrl: blobUrl || null,
-                      contentType: contentType || null,
-                      filename: filename,
-                      chunkTransfer: {
-                        chunkCount: chunkCount,
-                        totalBytes: bytes.length,
-                        mimeType: contentType || null,
-                        filename: filename
-                      }
-                    });
-                    postDiag('download-url-emitted', {
-                      source: source || null,
-                      url: blobUrl || null,
-                      isBlob: true,
-                      chunkCount: chunkCount,
-                      totalBytes: bytes.length
-                    });
-                  });
-                })
-                .catch(function(error){
-                  var activeCtx = getCtx();
-                  postRaw({
-                    type: 'SPOTDOWN_DOWNLOAD_ERROR',
-                    jobId: activeCtx && activeCtx.jobId ? activeCtx.jobId : null,
-                    index: Number.isInteger(activeCtx && activeCtx.itemIndex) ? activeCtx.itemIndex : null,
-                    reason: toText(error && error.message || error) || 'blob-fetch-failed',
-                    requestUrl: blobUrl || null,
-                    responseUrl: blobUrl || null,
-                    status: null
-                  });
-                });
-              return true;
-            };
-            var shouldIgnore = function(urlLower){
-              return (
-                urlLower.indexOf('amskiploomr.com') !== -1 ||
-                urlLower.indexOf('doubleclick.net') !== -1 ||
-                urlLower.indexOf('googlesyndication.com') !== -1
-              );
-            };
-            var emitDownload = function(rawUrl, source){
-              var normalized = normalizeUrl(rawUrl);
-              var lower = toText(normalized).toLowerCase();
-              if (lower.indexOf('blob:') === 0) {
-                return emitBlobChunks(normalized, source || null);
-              }
-              var isHttp = lower.indexOf('https://') === 0 || lower.indexOf('http://') === 0;
-              if (!normalized || !isHttp) {
-                postDiag('download-url-skipped', {source: source || null, url: normalized || null, reason: 'not-http'});
-                return false;
-              }
-              if (shouldIgnore(lower)) {
-                postDiag('download-url-skipped', {source: source || null, url: normalized, reason: 'ignored-domain'});
-                return false;
-              }
-              var activeCtx = getCtx();
-              var isApi = lower.indexOf('/api/download') !== -1;
-              var filename = deriveFilename(normalized);
-              postRaw({
-                type: 'SPOTDOWN_DOWNLOAD_URL',
-                jobId: activeCtx && activeCtx.jobId ? activeCtx.jobId : null,
-                index: Number.isInteger(activeCtx && activeCtx.itemIndex) ? activeCtx.itemIndex : null,
-                title: null,
-                url: normalized,
-                status: 0,
-                requestUrl: normalized,
-                responseUrl: normalized,
-                contentType: null,
-                filename: filename,
-                chunkTransfer: null,
-                allowApiUrl: Boolean(isApi),
-                method: isApi ? 'POST' : 'GET'
-              });
-              postDiag('download-url-emitted', {
-                source: source || null,
-                url: normalized,
-                isApi: isApi,
-                filename: filename
-              });
-              return true;
-            };
-
-            var prevOpen = window.open;
-            var createPopupProxy = function(){
-              var proxy = {closed:false, opener:null, close:function(){this.closed=true;}, focus:function(){}};
-              var locationProxy = {
-                assign: function(url){ emitDownload(url, 'window.open.location.assign'); },
-                replace: function(url){ emitDownload(url, 'window.open.location.replace'); },
-                toString: function(){ return ''; }
-              };
-              try {
-                Object.defineProperty(locationProxy, 'href', {
-                  set: function(url){ emitDownload(url, 'window.open.location.href'); },
-                  get: function(){ return ''; },
-                  configurable: true
-                });
-              } catch (_) {}
-              proxy.location = locationProxy;
-              return proxy;
-            };
-            window.open = function(url, target, features){
-              var handled = emitDownload(url, 'window.open');
-              postDiag('window.open fired', {
-                url: toText(url) || null,
-                target: toText(target) || null,
-                features: toText(features) || null,
-                handled: handled
-              });
-              if (handled) { return createPopupProxy(); }
-              try {
-                return typeof prevOpen === 'function' ? prevOpen.apply(window, arguments) : null;
-              } catch (e) {
-                postDiag('window.open error', {err: String(e && e.message || e)});
-                return createPopupProxy();
-              }
-            };
-
-            try {
-              var prevAssign = window.location.assign.bind(window.location);
-              window.location.assign = function(url){
-                var handled = emitDownload(url, 'location.assign');
-                postDiag('location.assign fired', {url: toText(url) || null, handled: handled});
-                if (handled) { return; }
-                return prevAssign(url);
-              };
-            } catch (e) {
-              postDiag('location.assign intercept failed', {err: String(e && e.message || e)});
-            }
-
-            try {
-              var prevReplace = window.location.replace.bind(window.location);
-              window.location.replace = function(url){
-                var handled = emitDownload(url, 'location.replace');
-                postDiag('location.replace fired', {url: toText(url) || null, handled: handled});
-                if (handled) { return; }
-                return prevReplace(url);
-              };
-            } catch (e) {
-              postDiag('location.replace intercept failed', {err: String(e && e.message || e)});
-            }
-
-            if (!window.__spotdownDiagAnchorHooked) {
-              window.__spotdownDiagAnchorHooked = true;
-              document.addEventListener('click', function(event){
-                try {
-                  var target = event && event.target ? event.target : null;
-                  var anchor = target && target.closest ? target.closest('a[href]') : null;
-                  if (!anchor) { return; }
-                  var href = normalizeUrl((anchor.getAttribute && anchor.getAttribute('href')) || anchor.href || '');
-                  var hasDownload = Boolean(anchor && anchor.hasAttribute && anchor.hasAttribute('download'));
-                  var handled = false;
-                  if (href && (hasDownload || toText(href).toLowerCase().indexOf('http') === 0)) {
-                    handled = emitDownload(href, 'anchor.click');
-                  }
-                  postDiag('anchor click event', {
-                    href: href || null,
-                    hasDownload: hasDownload,
-                    handled: handled
-                  });
-                } catch (_) {}
-              }, true);
-            }
-
-            postDiag('diag-ready-pre-dispatch', {
-              jobId: ctx && ctx.jobId ? ctx.jobId : null,
-              index: Number.isInteger(ctx && ctx.itemIndex) ? ctx.itemIndex : null
-            });
-          } catch (error) {
-            try {
-              var rn2 = window.ReactNativeWebView;
-              rn2 && rn2.postMessage && rn2.postMessage(JSON.stringify({
-                type: 'SPOTDOWN_DIAG',
-                jobId: ${JSON.stringify(safeJobId)},
-                label: 'diag-install-crashed',
-                data: {err: String(error && error.message || error)}
-              }));
-            } catch (_) {}
-          }
-        })();
-        true;
-      `;
+      const jobId = String(targetJob?.id || '').trim();
+      if (!jobId) {
+        return;
+      }
+      const snapshotContext = {
+        jobId,
+        index: Number.isInteger(commandIndex) ? commandIndex : null,
+        title:
+          String(
+            targetJob?.request?.song?.title ||
+              targetJob?.title ||
+              targetJob?.request?.song?.name ||
+              '',
+          ).trim() || null,
+        artist:
+          String(
+            targetJob?.request?.song?.artist ||
+              targetJob?.artist ||
+              targetJob?.request?.song?.subtitle ||
+              '',
+          ).trim() || null,
+      };
       try {
-        webView.injectJavaScript(diagnosticScript);
+        webView.injectJavaScript(
+          buildSpotidownArtworkSnapshotScript(snapshotContext),
+        );
       } catch (error) {
-        log('Failed to inject pre-dispatch Spotdown diagnostics.', {
-          jobId: safeJobId,
+        log('Failed to inject Spotidown artwork snapshot script.', {
+          jobId,
           error: error?.message || String(error),
         });
       }
@@ -790,8 +580,101 @@ function useSpotdownWebViewDownloader(options = {}) {
     [log],
   );
 
+  const resolveArtworkSnapshotUrlForJob = useCallback(
+    job => {
+      const normalizedJobId = String(job?.id || '').trim();
+      const byJobMap = pendingArtworkByJobIdRef.current;
+      const byTrackMap = pendingArtworkByTrackKeyRef.current;
+      const byJob = normalizedJobId ? byJobMap.get(normalizedJobId) : null;
+      const byJobUrl = String(byJob?.artworkUrl || '').trim();
+      if (isSpotidownArtworkUrl(byJobUrl)) {
+        return byJobUrl;
+      }
+
+      const key = buildArtworkKey(
+        job?.request?.song?.artist || job?.artist || '',
+        job?.request?.song?.title || job?.title || '',
+      );
+      if (!key) {
+        return null;
+      }
+      const byTrack = byTrackMap.get(key);
+      const byTrackUrl = String(byTrack?.artworkUrl || '').trim();
+      if (isSpotidownArtworkUrl(byTrackUrl)) {
+        return byTrackUrl;
+      }
+      return null;
+    },
+    [pendingArtworkByJobIdRef, pendingArtworkByTrackKeyRef],
+  );
+
+  const runArtworkUpgradeForCompletedJob = useCallback(
+    async (job, songPath) => {
+      const normalizedJobId = String(job?.id || '').trim();
+      const normalizedSongPath = String(songPath || '').trim();
+      if (!normalizedJobId || !normalizedSongPath) {
+        if (normalizedJobId) {
+          cleanupPendingArtworkForJob(normalizedJobId);
+        }
+        return null;
+      }
+
+      const title = String(
+        job?.title || job?.request?.song?.title || '',
+      ).trim();
+      const artist = String(
+        job?.artist || job?.request?.song?.artist || '',
+      ).trim();
+      const artworkUrl = resolveArtworkSnapshotUrlForJob(job);
+      if (!isSpotidownArtworkUrl(artworkUrl)) {
+        cleanupPendingArtworkForJob(normalizedJobId);
+        return null;
+      }
+
+      try {
+        log('Preparing Spotdown artwork upgrade from DOM snapshot.', {
+          jobId: normalizedJobId,
+          title: title || null,
+          artist: artist || null,
+          artworkUrl,
+          songPath: normalizedSongPath,
+        });
+        // ADD THIS to your existing download completion handler
+        const upgradeResult = await upgradeArtwork(
+          normalizedSongPath,
+          artworkUrl,
+          artist,
+          title,
+          {source: 'spotdown', jobId: normalizedJobId},
+        );
+        return upgradeResult;
+      } catch (error) {
+        log('Artwork upgrade invocation failed for Spotdown job.', {
+          jobId: normalizedJobId,
+          error: error?.message || String(error),
+        });
+        return null;
+      } finally {
+        cleanupPendingArtworkForJob(normalizedJobId);
+      }
+    },
+    [
+      cleanupPendingArtworkForJob,
+      log,
+      resolveArtworkSnapshotUrlForJob,
+      upgradeArtwork,
+    ],
+  );
+
+  const installPreDispatchDiagnostics = useCallback(() => {
+    // Intentionally no-op.
+    // Previous diagnostic monkey patches (window.open/location/anchor hooks)
+    // were interfering with Spotdown's live download flow.
+  }, []);
+
   const resetBridgeState = useCallback(() => {
     bridgeReadyRef.current = false;
+    emitBridgeReadyState(false);
     lastStartedDownloadJobIdRef.current = null;
     downloadTriggerAttemptRef.current.clear();
     if (pendingSearchRef.current) {
@@ -806,7 +689,10 @@ function useSpotdownWebViewDownloader(options = {}) {
       signal.reject(new Error('Spotdown webview reloaded.'));
     });
     pendingDownloadSignalsRef.current.clear();
-  }, []);
+    blobFileInterceptInFlightRef.current.clear();
+    pendingArtworkByJobIdRef.current.clear();
+    pendingArtworkByTrackKeyRef.current.clear();
+  }, [emitBridgeReadyState]);
 
   const recoverSpotdownWebView = useCallback(
     reason => {
@@ -864,6 +750,7 @@ function useSpotdownWebViewDownloader(options = {}) {
     if (!signal) {
       return false;
     }
+    blobFileInterceptInFlightRef.current.delete(jobId);
     pendingDownloadSignalsRef.current.delete(jobId);
     downloadTriggerAttemptRef.current.delete(jobId);
     if (lastStartedDownloadJobIdRef.current === jobId) {
@@ -879,6 +766,7 @@ function useSpotdownWebViewDownloader(options = {}) {
     if (!signal) {
       return false;
     }
+    blobFileInterceptInFlightRef.current.delete(jobId);
     pendingDownloadSignalsRef.current.delete(jobId);
     downloadTriggerAttemptRef.current.delete(jobId);
     if (lastStartedDownloadJobIdRef.current === jobId) {
@@ -1045,6 +933,15 @@ function useSpotdownWebViewDownloader(options = {}) {
       };
       const savedSong = await storageService.saveRemoteSongToDevice(localSong);
       const finalSong = savedSong || localSong;
+      const finalSongPath =
+        String(finalSong?.localPath || destinationPath || '').trim() ||
+        destinationPath;
+      const artworkUpgrade = await runArtworkUpgradeForCompletedJob(
+        job,
+        finalSongPath,
+      );
+      const upgradedArtworkUri =
+        String(artworkUpgrade?.coverUri || '').trim() || null;
       patchJob(job.id, {
         status: 'done',
         spotdownStatus: 'complete',
@@ -1055,6 +952,12 @@ function useSpotdownWebViewDownloader(options = {}) {
         error: null,
         song: {
           ...finalSong,
+          artwork:
+            upgradedArtworkUri ||
+            finalSong?.artwork ||
+            embeddedArtwork ||
+            job.artwork ||
+            null,
           duration: null,
           downloadable: true,
         },
@@ -1062,7 +965,7 @@ function useSpotdownWebViewDownloader(options = {}) {
       chunkStoreRef.current.delete(job.id);
       return cloneJob(jobsRef.current.get(job.id));
     },
-    [patchJob],
+    [patchJob, runArtworkUpgradeForCompletedJob],
   );
 
   const downloadFromDirectUrl = useCallback(
@@ -1186,6 +1089,15 @@ function useSpotdownWebViewDownloader(options = {}) {
       };
       const savedSong = await storageService.saveRemoteSongToDevice(localSong);
       const finalSong = savedSong || localSong;
+      const finalSongPath =
+        String(finalSong?.localPath || destinationPath || '').trim() ||
+        destinationPath;
+      const artworkUpgrade = await runArtworkUpgradeForCompletedJob(
+        job,
+        finalSongPath,
+      );
+      const upgradedArtworkUri =
+        String(artworkUpgrade?.coverUri || '').trim() || null;
       patchJob(job.id, {
         status: 'done',
         spotdownStatus: 'complete',
@@ -1196,6 +1108,12 @@ function useSpotdownWebViewDownloader(options = {}) {
         error: null,
         song: {
           ...finalSong,
+          artwork:
+            upgradedArtworkUri ||
+            finalSong?.artwork ||
+            embeddedArtwork ||
+            job.artwork ||
+            null,
           duration: null,
           downloadable: true,
         },
@@ -1203,7 +1121,7 @@ function useSpotdownWebViewDownloader(options = {}) {
       chunkStoreRef.current.delete(job.id);
       return cloneJob(jobsRef.current.get(job.id));
     },
-    [buildDownloadHeaders, patchJob],
+    [buildDownloadHeaders, patchJob, runArtworkUpgradeForCompletedJob],
   );
 
   const executeJobDownload = useCallback(
@@ -1247,6 +1165,7 @@ function useSpotdownWebViewDownloader(options = {}) {
           : Number.isInteger(targetJob?.request?.index)
           ? targetJob.request.index
           : 0;
+        injectArtworkSnapshotForJob(targetJob, commandIndex);
         installPreDispatchDiagnostics(targetJob.id, commandIndex);
         const attempt =
           Number(downloadTriggerAttemptRef.current.get(targetJob.id) || 0) + 1;
@@ -1337,6 +1256,7 @@ function useSpotdownWebViewDownloader(options = {}) {
     [
       downloadTriggerAttemptRef,
       downloadFromDirectUrl,
+      injectArtworkSnapshotForJob,
       installPreDispatchDiagnostics,
       log,
       patchJob,
@@ -1405,6 +1325,7 @@ function useSpotdownWebViewDownloader(options = {}) {
           })
           .finally(() => {
             activeJobIdsRef.current.delete(nextJob.id);
+            cleanupPendingArtworkForJob(nextJob.id);
             emitActiveDownloadCount('job-finished');
             processQueue().catch(() => {});
           });
@@ -1412,7 +1333,13 @@ function useSpotdownWebViewDownloader(options = {}) {
     } finally {
       processingRef.current = false;
     }
-  }, [emitActiveDownloadCount, executeJobDownload, log, patchJob]);
+  }, [
+    cleanupPendingArtworkForJob,
+    emitActiveDownloadCount,
+    executeJobDownload,
+    log,
+    patchJob,
+  ]);
 
   const searchSongs = useCallback(
     async query => {
@@ -1568,13 +1495,20 @@ function useSpotdownWebViewDownloader(options = {}) {
       }
       activeNativeDownloadRef.current.delete(jobId);
       activeJobIdsRef.current.delete(jobId);
+      blobFileInterceptInFlightRef.current.delete(jobId);
       downloadTriggerAttemptRef.current.delete(jobId);
+      cleanupPendingArtworkForJob(jobId);
       jobsRef.current.delete(jobId);
       emitActiveDownloadCount('cancel-download');
       processQueue().catch(() => {});
       return true;
     },
-    [emitActiveDownloadCount, processQueue, rejectDownloadSignal],
+    [
+      cleanupPendingArtworkForJob,
+      emitActiveDownloadCount,
+      processQueue,
+      rejectDownloadSignal,
+    ],
   );
 
   const syncConvertToMp3 = useCallback(async () => false, []);
@@ -1610,7 +1544,65 @@ function useSpotdownWebViewDownloader(options = {}) {
 
       if (type === 'SPOTDOWN_BRIDGE_READY') {
         bridgeReadyRef.current = true;
+        emitBridgeReadyState(true);
         flushBridgeReadyWaiters();
+        return;
+      }
+      if (type === 'SPOTIDOWN_ARTWORK_SNAPSHOT') {
+        const jobId = String(parsed?.jobId || '').trim();
+        const artworkUrl = String(parsed?.artworkUrl || '').trim();
+        const title = String(parsed?.title || '').trim();
+        const artist = String(parsed?.artist || '').trim();
+        const reason = String(parsed?.reason || '').trim() || null;
+        if (!jobId) {
+          return;
+        }
+        if (!isSpotidownArtworkUrl(artworkUrl)) {
+          if (reason || artworkUrl) {
+            log(
+              'Ignoring Spotidown artwork snapshot without valid i.scdn.co URL.',
+              {
+                jobId,
+                artworkUrl: artworkUrl || null,
+                reason,
+              },
+            );
+          }
+          return;
+        }
+
+        cleanupPendingArtworkForJob(jobId);
+        const job = jobsRef.current.get(jobId);
+        const trackKey =
+          buildArtworkKey(
+            artist || job?.request?.song?.artist || job?.artist || '',
+            title || job?.request?.song?.title || job?.title || '',
+          ) || '';
+        pendingArtworkByJobIdRef.current.set(jobId, {
+          trackKey: trackKey || null,
+          artworkUrl,
+          artist: artist || null,
+          title: title || null,
+          timestamp: Number(parsed?.timestamp) || Date.now(),
+        });
+        if (trackKey) {
+          const existingTrackEntry = pendingArtworkByTrackKeyRef.current.get(
+            trackKey,
+          ) || {
+            artworkUrl: artworkUrl,
+            jobIds: new Set(),
+          };
+          existingTrackEntry.artworkUrl = artworkUrl;
+          existingTrackEntry.jobIds.add(jobId);
+          pendingArtworkByTrackKeyRef.current.set(trackKey, existingTrackEntry);
+        }
+        log('Stored Spotidown 640x640 artwork snapshot.', {
+          jobId,
+          title: title || job?.title || null,
+          artist: artist || job?.artist || null,
+          artworkUrl,
+          trackKey: trackKey || null,
+        });
         return;
       }
       if (type === 'SPOTDOWN_SESSION_TOKEN') {
@@ -1810,6 +1802,7 @@ function useSpotdownWebViewDownloader(options = {}) {
                 : Number.isInteger(currentJob?.request?.index)
                 ? currentJob.request.index
                 : 0;
+              injectArtworkSnapshotForJob(currentJob, retryIndex);
               installPreDispatchDiagnostics(currentJob.id, retryIndex);
               sendBridgeCommand({
                 type: 'SPOTDOWN_CMD_DOWNLOAD',
@@ -1875,8 +1868,11 @@ function useSpotdownWebViewDownloader(options = {}) {
       }
     },
     [
+      cleanupPendingArtworkForJob,
+      emitBridgeReadyState,
       flushBridgeReadyWaiters,
       flushTokenWaiters,
+      injectArtworkSnapshotForJob,
       onBridgeActivity,
       installPreDispatchDiagnostics,
       log,
@@ -1974,16 +1970,181 @@ function useSpotdownWebViewDownloader(options = {}) {
       if (!url) {
         return;
       }
-      const lowerUrl = url.toLowerCase();
-      if (lowerUrl.startsWith('blob:')) {
-        log('Ignoring file-download intercept for blob URL.', {url});
-        return;
-      }
-      log('Intercepted WebView file download.', {url});
       const interceptedJobId = pickPendingSignalJobId(
         pendingDownloadSignalsRef.current,
         lastStartedDownloadJobIdRef.current,
       );
+      const lowerUrl = url.toLowerCase();
+      if (lowerUrl.startsWith('blob:')) {
+        if (!interceptedJobId) {
+          log('Ignoring blob file-download intercept without pending job.', {
+            url,
+          });
+          return;
+        }
+        if (blobFileInterceptInFlightRef.current.has(interceptedJobId)) {
+          log('Blob file-download intercept already in flight for job.', {
+            jobId: interceptedJobId,
+            url,
+          });
+          return;
+        }
+
+        blobFileInterceptInFlightRef.current.add(interceptedJobId);
+        const webView = webViewRef.current;
+        if (!webView || typeof webView.injectJavaScript !== 'function') {
+          blobFileInterceptInFlightRef.current.delete(interceptedJobId);
+          rejectDownloadSignal(
+            interceptedJobId,
+            'Spotdown blob download bridge is unavailable.',
+          );
+          return;
+        }
+        const job = jobsRef.current.get(interceptedJobId);
+        const blobContext = {
+          jobId: interceptedJobId,
+          index: Number.isInteger(job?.requestIndex) ? job.requestIndex : null,
+          title: String(job?.title || '').trim() || null,
+          url,
+        };
+        const extractionScript = `
+          (function () {
+            try {
+              var ctx = ${JSON.stringify(blobContext)};
+              var rn = window.ReactNativeWebView;
+              var toText = function (value) {
+                if (typeof value === 'string') { return value.trim(); }
+                if (value === null || typeof value === 'undefined') { return ''; }
+                return String(value).trim();
+              };
+              var post = function (type, payload) {
+                if (!rn || typeof rn.postMessage !== 'function') { return false; }
+                try {
+                  rn.postMessage(JSON.stringify(Object.assign({ type: type }, payload || {})));
+                  return true;
+                } catch (_) { return false; }
+              };
+              var fail = function (reason, extra) {
+                post('SPOTDOWN_DOWNLOAD_ERROR', Object.assign({
+                  jobId: ctx.jobId || null,
+                  index: Number.isInteger(ctx.index) ? ctx.index : null,
+                  title: ctx.title || null,
+                  reason: reason || 'blob-download-failed',
+                  requestUrl: ctx.url || null,
+                  responseUrl: ctx.url || null,
+                  status: null
+                }, extra || {}));
+              };
+              var fetchFn = window.fetch && window.fetch.bind ? window.fetch.bind(window) : null;
+              if (!fetchFn) {
+                fail('blob-fetch-missing');
+                return true;
+              }
+              var encodeBase64Chunk = function (uint8) {
+                if (!uint8 || !uint8.length) { return ''; }
+                var STEP = 0x8000;
+                var binary = '';
+                for (var offset = 0; offset < uint8.length; offset += STEP) {
+                  var slice = uint8.subarray(offset, Math.min(offset + STEP, uint8.length));
+                  binary += String.fromCharCode.apply(null, slice);
+                }
+                return btoa(binary);
+              };
+              var deriveFilename = function (rawUrl) {
+                var value = toText(rawUrl);
+                if (!value) { return 'song.mp3'; }
+                var tail = value.split('/').pop() || '';
+                var base = tail.split('?')[0] || '';
+                if (base && base.indexOf('.') !== -1) { return base; }
+                return 'song.mp3';
+              };
+
+              fetchFn(ctx.url, { method: 'GET', credentials: 'include' })
+                .then(function (response) {
+                  var status = Number(response && response.status) || 200;
+                  var contentType = toText(response && response.headers && response.headers.get && response.headers.get('content-type')) || 'audio/mpeg';
+                  var filename = deriveFilename(ctx.url);
+                  return response.arrayBuffer().then(function (buffer) {
+                    var bytes = buffer ? new Uint8Array(buffer) : null;
+                    if (!bytes || !bytes.length) {
+                      fail('blob-empty-response', { status: status });
+                      return;
+                    }
+
+                    var chunkByteSize = 96 * 1024;
+                    var chunkCount = Math.max(1, Math.ceil(bytes.length / chunkByteSize));
+                    for (var chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+                      var start = chunkIndex * chunkByteSize;
+                      var end = Math.min(start + chunkByteSize, bytes.length);
+                      post('SPOTDOWN_DOWNLOAD_CHUNK', {
+                        jobId: ctx.jobId || null,
+                        index: Number.isInteger(ctx.index) ? ctx.index : null,
+                        chunkIndex: chunkIndex,
+                        chunkCount: chunkCount,
+                        totalBytes: bytes.length,
+                        mimeType: contentType || null,
+                        filename: filename,
+                        data: encodeBase64Chunk(bytes.subarray(start, end))
+                      });
+                    }
+
+                    post('SPOTDOWN_DOWNLOAD_URL', {
+                      jobId: ctx.jobId || null,
+                      index: Number.isInteger(ctx.index) ? ctx.index : null,
+                      title: ctx.title || null,
+                      url: null,
+                      status: status,
+                      requestUrl: ctx.url || null,
+                      responseUrl: ctx.url || null,
+                      contentType: contentType || null,
+                      filename: filename,
+                      chunkTransfer: {
+                        chunkCount: chunkCount,
+                        totalBytes: bytes.length,
+                        mimeType: contentType || null,
+                        filename: filename
+                      }
+                    });
+                  }).catch(function (error) {
+                    fail(toText(error && error.message || error) || 'blob-buffer-read-failed', { status: status });
+                  });
+                })
+                .catch(function (error) {
+                  fail(toText(error && error.message || error) || 'blob-fetch-failed');
+                });
+            } catch (error) {
+              var message = String((error && error.message) || error || 'blob-intercept-crashed');
+              try {
+                var bridge = window.ReactNativeWebView;
+                if (bridge && typeof bridge.postMessage === 'function') {
+                  bridge.postMessage(JSON.stringify({
+                    type: 'SPOTDOWN_DOWNLOAD_ERROR',
+                    jobId: ${JSON.stringify(interceptedJobId)},
+                    reason: message
+                  }));
+                }
+              } catch (_) {}
+            }
+            return true;
+          })();
+          true;
+        `;
+        try {
+          webView.injectJavaScript(extractionScript);
+          log('Intercepted blob file-download and injected blob extractor.', {
+            jobId: interceptedJobId,
+            url,
+          });
+        } catch (error) {
+          blobFileInterceptInFlightRef.current.delete(interceptedJobId);
+          rejectDownloadSignal(
+            interceptedJobId,
+            error?.message || 'Failed to inject Spotdown blob extractor.',
+          );
+        }
+        return;
+      }
+      log('Intercepted WebView file download.', {url});
       if (!interceptedJobId) {
         return;
       }
@@ -2003,7 +2164,7 @@ function useSpotdownWebViewDownloader(options = {}) {
         chunkTransfer: null,
       });
     },
-    [log, resolveDownloadSignal],
+    [log, rejectDownloadSignal, resolveDownloadSignal],
   );
 
   const handleWebViewLoadStart = useCallback(
@@ -2089,6 +2250,7 @@ function useSpotdownWebViewDownloader(options = {}) {
   useEffect(
     () => () => {
       rejectTokenWaiters('Spotdown hook unmounted.');
+      emitBridgeReadyState(false);
       if (pendingSearchRef.current) {
         clearTimeout(pendingSearchRef.current.timeout);
         pendingSearchRef.current.reject(new Error('Spotdown hook unmounted.'));
@@ -2099,10 +2261,13 @@ function useSpotdownWebViewDownloader(options = {}) {
         signal.reject(new Error('Spotdown hook unmounted.'));
       });
       pendingDownloadSignalsRef.current.clear();
+      blobFileInterceptInFlightRef.current.clear();
       lastStartedDownloadJobIdRef.current = null;
       downloadTriggerAttemptRef.current.clear();
+      pendingArtworkByJobIdRef.current.clear();
+      pendingArtworkByTrackKeyRef.current.clear();
     },
-    [rejectTokenWaiters],
+    [emitBridgeReadyState, rejectTokenWaiters],
   );
 
   return {

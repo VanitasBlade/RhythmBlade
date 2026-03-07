@@ -73,6 +73,9 @@ const styles = StyleSheet.create({
     gap: 4,
     backgroundColor: '#1e1445',
   },
+  qualitySelectorSegmentLocked: {
+    opacity: 0.78,
+  },
   settingsValue: {
     color: C.accentFg,
     fontWeight: '600',
@@ -519,6 +522,36 @@ const styles = StyleSheet.create({
     width: 1280,
     height: 2400,
     opacity: 0,
+  },
+  bridgeLoadingBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(8, 5, 18, 0.58)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  bridgeLoadingCard: {
+    minWidth: 230,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+  },
+  bridgeLoadingTitle: {
+    marginTop: 10,
+    color: C.text,
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  bridgeLoadingSubtitle: {
+    marginTop: 6,
+    color: C.textMute,
+    fontSize: 11,
+    textAlign: 'center',
   },
   modalBackdrop: {
     flex: 1,

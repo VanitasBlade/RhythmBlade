@@ -25,6 +25,7 @@
     "@shopify/flash-list": "^1.8.3",
     "android": "^0.0.8",
     "axios": "^1.7.7",
+    "jsmediatags": "^3.9.5",
     "react": "18.2.0",
     "react-native": "0.74.1",
     "react-native-document-picker": "^9.3.1",

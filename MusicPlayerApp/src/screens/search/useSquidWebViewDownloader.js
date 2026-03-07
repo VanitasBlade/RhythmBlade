@@ -335,6 +335,10 @@ function useSquidWebViewDownloader(options = {}) {
     typeof options?.onActiveDownloadCountChange === 'function'
       ? options.onActiveDownloadCountChange
       : null;
+  const onBridgeReadyChange =
+    typeof options?.onBridgeReadyChange === 'function'
+      ? options.onBridgeReadyChange
+      : null;
   const webViewRef = useRef(null);
   const bridgeReadyRef = useRef(false);
   const bridgeBootstrappingRef = useRef(false);
@@ -351,6 +355,7 @@ function useSquidWebViewDownloader(options = {}) {
   const pendingAlbumUrlRef = useRef('');
   const activeAlbumUrlRef = useRef('');
   const lastActiveDownloadCountRef = useRef(null);
+  const lastBridgeReadyStateRef = useRef(null);
 
   // Logging is __DEV__-gated to suppress output in production builds.
   const log = useCallback((message, context = null) => {
@@ -364,6 +369,29 @@ function useSquidWebViewDownloader(options = {}) {
     }
     console.log(`[SquidWV ${timestamp}] ${message}`, context);
   }, []);
+
+  const emitBridgeReadyState = useCallback(
+    ready => {
+      if (!onBridgeReadyChange) {
+        return;
+      }
+      const nextReady = ready === true;
+      if (lastBridgeReadyStateRef.current === nextReady) {
+        return;
+      }
+      lastBridgeReadyStateRef.current = nextReady;
+      try {
+        onBridgeReadyChange(nextReady);
+      } catch (_) {
+        // Ignore callback consumer errors.
+      }
+    },
+    [onBridgeReadyChange],
+  );
+
+  useEffect(() => {
+    emitBridgeReadyState(bridgeReadyRef.current);
+  }, [emitBridgeReadyState]);
 
   const getActiveDownloadCount = useCallback(() => {
     let count = 0;
@@ -502,17 +530,20 @@ function useSquidWebViewDownloader(options = {}) {
   const resetBridgeState = useCallback(() => {
     log('WebView load start -> bridge state reset.');
     bridgeReadyRef.current = false;
+    emitBridgeReadyState(false);
     rejectPendingRequests('Hidden webview reloaded.');
-  }, [log, rejectPendingRequests]);
+  }, [emitBridgeReadyState, log, rejectPendingRequests]);
 
   const markBridgeReady = useCallback(() => {
     if (bridgeReadyRef.current) {
+      emitBridgeReadyState(true);
       return;
     }
     log('Bridge marked ready.');
     bridgeReadyRef.current = true;
+    emitBridgeReadyState(true);
     flushBridgeWaiters();
-  }, [flushBridgeWaiters, log]);
+  }, [emitBridgeReadyState, flushBridgeWaiters, log]);
 
   const waitForBridgeReady = useCallback(
     (timeoutMs = 25000) => {

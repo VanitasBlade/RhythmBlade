@@ -103,6 +103,89 @@ export const filesystemMethods = {
     }
   },
 
+  async ensureImageReadPermission(shouldPrompt = false) {
+    if (Platform.OS !== 'android') {
+      return true;
+    }
+
+    const permission =
+      Platform.Version >= 33
+        ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+        : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+    if (!permission) {
+      return true;
+    }
+
+    try {
+      const alreadyGranted = await PermissionsAndroid.check(permission);
+      if (alreadyGranted) {
+        return true;
+      }
+    } catch (error) {
+      // Continue to optional request path.
+    }
+
+    if (!shouldPrompt) {
+      return false;
+    }
+
+    try {
+      const granted = await PermissionsAndroid.request(permission);
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (error) {
+      return false;
+    }
+  },
+
+  async ensureArtworkReadWritePermission(shouldPrompt = false) {
+    if (Platform.OS !== 'android') {
+      return true;
+    }
+
+    if (Platform.Version >= 33) {
+      // On Android 13+, image collection access is split from audio.
+      return this.ensureImageReadPermission(shouldPrompt);
+    }
+
+    const readPermission = PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+    const writePermission =
+      PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
+    const required = [readPermission, writePermission].filter(Boolean);
+    if (required.length === 0) {
+      return true;
+    }
+
+    let allGranted = true;
+    for (const permission of required) {
+      try {
+        const granted = await PermissionsAndroid.check(permission);
+        if (!granted) {
+          allGranted = false;
+          break;
+        }
+      } catch (error) {
+        allGranted = false;
+        break;
+      }
+    }
+    if (allGranted) {
+      return true;
+    }
+    if (!shouldPrompt) {
+      return false;
+    }
+
+    try {
+      const result = await PermissionsAndroid.requestMultiple(required);
+      return required.every(
+        permission =>
+          result?.[permission] === PermissionsAndroid.RESULTS.GRANTED,
+      );
+    } catch (error) {
+      return false;
+    }
+  },
+
   addPathCandidate(list, rawPath) {
     const candidate = toPathFromUri(rawPath);
     if (!candidate || candidate.startsWith('content://')) {

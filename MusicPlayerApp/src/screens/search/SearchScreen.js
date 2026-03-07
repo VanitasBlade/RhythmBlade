@@ -53,6 +53,14 @@ const SOURCE_OPTIONS = [
     borderColor: '#22c55e',
   },
 ];
+const SPOTDOWN_LOCKED_QUALITY_LABEL = 'MP3';
+const SPOTDOWN_IDLE_ACTIVITY_TYPES = new Set([
+  'SPOTDOWN_DOWNLOAD_STARTED',
+  'SPOTDOWN_DOWNLOAD_CHUNK',
+  'SPOTDOWN_DOWNLOAD_URL',
+  'SPOTDOWN_DOWNLOAD_ERROR',
+  'SPOTDOWN_SESSION_TOKEN',
+]);
 
 const toComparableNumber = value => Number(value) || 0;
 const resolveAutoConvertAacToMp3Default = settings => {
@@ -130,6 +138,10 @@ const SearchScreen = () => {
   const [sourceActiveCounts, setSourceActiveCounts] = useState({
     tidal: 0,
     spotdown: 0,
+  });
+  const [bridgeReadyBySource, setBridgeReadyBySource] = useState({
+    tidal: false,
+    spotdown: false,
   });
   const [spotdownLastSubmission, setSpotdownLastSubmission] = useState({
     query: '',
@@ -269,7 +281,11 @@ const SearchScreen = () => {
   const handleBridgeActivity = useCallback(
     event => {
       const type = String(event?.type || 'bridge').trim() || 'bridge';
-      resetIdleTimerFromInteraction(`bridge:${type}`);
+      const source = getSourceKey(event?.source || activeSourceRef.current);
+      if (source === 'spotdown' && !SPOTDOWN_IDLE_ACTIVITY_TYPES.has(type)) {
+        return;
+      }
+      resetIdleTimerFromInteraction(`bridge:${source}:${type}`);
     },
     [resetIdleTimerFromInteraction],
   );
@@ -312,6 +328,58 @@ const SearchScreen = () => {
     [clearBackgroundTimer, startBackgroundTimer],
   );
 
+  const handleBridgeReadyChange = useCallback((source, ready) => {
+    const sourceKey = getSourceKey(source);
+    const nextReady = ready === true;
+    setBridgeReadyBySource(current => {
+      if (Boolean(current?.[sourceKey]) === nextReady) {
+        return current;
+      }
+      return {
+        ...current,
+        [sourceKey]: nextReady,
+      };
+    });
+  }, []);
+
+  const onTidalBridgeActivity = useCallback(
+    event => {
+      if (activeSourceRef.current === 'tidal') {
+        handleBridgeActivity({...event, source: 'tidal'});
+      }
+    },
+    [handleBridgeActivity],
+  );
+
+  const onSpotdownBridgeActivity = useCallback(
+    event => {
+      if (activeSourceRef.current === 'spotdown') {
+        handleBridgeActivity({...event, source: 'spotdown'});
+      }
+    },
+    [handleBridgeActivity],
+  );
+
+  const onTidalActiveDownloadCountChange = useCallback(
+    count => handleSourceActiveDownloadCountChange('tidal', count),
+    [handleSourceActiveDownloadCountChange],
+  );
+
+  const onSpotdownActiveDownloadCountChange = useCallback(
+    count => handleSourceActiveDownloadCountChange('spotdown', count),
+    [handleSourceActiveDownloadCountChange],
+  );
+
+  const onTidalBridgeReadyChange = useCallback(
+    ready => handleBridgeReadyChange('tidal', ready),
+    [handleBridgeReadyChange],
+  );
+
+  const onSpotdownBridgeReadyChange = useCallback(
+    ready => handleBridgeReadyChange('spotdown', ready),
+    [handleBridgeReadyChange],
+  );
+
   const {
     webViewRef: tidalWebViewRef,
     webViewProps: tidalWebViewProps,
@@ -323,13 +391,9 @@ const SearchScreen = () => {
     cancelDownload: cancelDownloadFromTidalWebView,
     syncConvertToMp3: syncConvertToMp3FromTidalWebView,
   } = useSquidWebViewDownloader({
-    onBridgeActivity: event => {
-      if (activeSourceRef.current === 'tidal') {
-        handleBridgeActivity({...event, source: 'tidal'});
-      }
-    },
-    onActiveDownloadCountChange: count =>
-      handleSourceActiveDownloadCountChange('tidal', count),
+    onBridgeActivity: onTidalBridgeActivity,
+    onActiveDownloadCountChange: onTidalActiveDownloadCountChange,
+    onBridgeReadyChange: onTidalBridgeReadyChange,
   });
 
   const {
@@ -343,20 +407,22 @@ const SearchScreen = () => {
     cancelDownload: cancelDownloadFromSpotdownWebView,
     syncConvertToMp3: syncConvertToMp3FromSpotdownWebView,
   } = useSpotdownWebViewDownloader({
-    onBridgeActivity: event => {
-      if (activeSourceRef.current === 'spotdown') {
-        handleBridgeActivity({...event, source: 'spotdown'});
-      }
-    },
-    onActiveDownloadCountChange: count =>
-      handleSourceActiveDownloadCountChange('spotdown', count),
+    onBridgeActivity: onSpotdownBridgeActivity,
+    onActiveDownloadCountChange: onSpotdownActiveDownloadCountChange,
+    onBridgeReadyChange: onSpotdownBridgeReadyChange,
   });
 
   const currentOptionShortLabel = useMemo(
-    () => getDownloadSettingShortLabel(downloadSetting),
-    [downloadSetting],
+    () =>
+      downloadSource === 'Spotdown'
+        ? SPOTDOWN_LOCKED_QUALITY_LABEL
+        : getDownloadSettingShortLabel(downloadSetting),
+    [downloadSource, downloadSetting],
   );
   const qualityOutlineColor = useMemo(() => {
+    if (downloadSource === 'Spotdown') {
+      return '#22c55e';
+    }
     if (downloadSetting === 'Hi-Res') {
       return '#eab308';
     }
@@ -370,7 +436,7 @@ const SearchScreen = () => {
       return '#ec4899';
     }
     return C.border;
-  }, [downloadSetting]);
+  }, [downloadSource, downloadSetting]);
   const sourceOutlineColor = useMemo(
     () => (downloadSource === 'Spotdown' ? '#22c55e' : '#3b82f6'),
     [downloadSource],
@@ -379,6 +445,13 @@ const SearchScreen = () => {
     () => (downloadSource === 'Spotdown' ? 'spotdown' : 'tidal'),
     [downloadSource],
   );
+  const activeBridgeReady = useMemo(
+    () => bridgeReadyBySource?.[activeSource] === true,
+    [activeSource, bridgeReadyBySource],
+  );
+  const activeBridgeLabel = activeSource === 'spotdown' ? 'Spotdown' : 'Tidal';
+  const showBridgeLoadingModal = bridgeEnabled && !activeBridgeReady;
+  const isSpotdownSource = activeSource === 'spotdown';
   const activeSearchSongsFromWebView = useMemo(
     () =>
       activeSource === 'spotdown'
@@ -548,6 +621,12 @@ const SearchScreen = () => {
     if (!bridgeEnabled) {
       clearAllBridgeTimers();
       hasInteractedSinceEnableRef.current = false;
+      setBridgeReadyBySource(current => {
+        if (!current?.tidal && !current?.spotdown) {
+          return current;
+        }
+        return {tidal: false, spotdown: false};
+      });
       return;
     }
 
@@ -882,6 +961,7 @@ const SearchScreen = () => {
       setAlbumTracks([]);
       setAlbumTracksLoading(false);
       setAlbumQueueingAll(false);
+      setSettingsOpen(false);
       setSourceMenuOpen(false);
     },
     [cancelPendingJobsForSource, resetIdleTimerFromInteraction],
@@ -907,6 +987,7 @@ const SearchScreen = () => {
       clearBackgroundTimer();
       pendingBackgroundAfterDownloadRef.current = false;
       hasInteractedSinceEnableRef.current = false;
+      setBridgeReadyBySource({tidal: false, spotdown: false});
       setBridgeEnabled(true);
       return;
     }
@@ -974,6 +1055,13 @@ const SearchScreen = () => {
       );
       return;
     }
+    if (!activeBridgeReady) {
+      Alert.alert(
+        'Bridge Loading',
+        `${activeBridgeLabel} bridge is still loading. Please wait a moment.`,
+      );
+      return;
+    }
 
     if (!query.trim()) {
       return;
@@ -1024,6 +1112,8 @@ const SearchScreen = () => {
     }
   }, [
     activeSearchSongsFromWebView,
+    activeBridgeLabel,
+    activeBridgeReady,
     activeSource,
     activeSearchType,
     closeAlbumView,
@@ -1771,13 +1861,24 @@ const SearchScreen = () => {
               style={[
                 styles.qualitySelectorSegment,
                 {borderColor: qualityOutlineColor},
+                isSpotdownSource && styles.qualitySelectorSegmentLocked,
               ]}
-              onPress={() => setSettingsOpen(true)}>
+              onPress={() => {
+                if (isSpotdownSource) {
+                  return;
+                }
+                setSettingsOpen(true);
+              }}
+              disabled={isSpotdownSource}>
               <Icon name="music-note-eighth" size={14} color={C.textDim} />
               <Text style={styles.settingsValue}>
                 {currentOptionShortLabel}
               </Text>
-              <Icon name="chevron-down" size={15} color={C.textMute} />
+              <Icon
+                name={isSpotdownSource ? 'lock-outline' : 'chevron-down'}
+                size={15}
+                color={C.textMute}
+              />
             </TouchableOpacity>
           </View>
         </View>
@@ -1844,11 +1945,11 @@ const SearchScreen = () => {
                 <TouchableOpacity
                   style={[
                     styles.searchActionButton,
-                    (!query.trim() || loading) &&
+                    (!query.trim() || loading || !activeBridgeReady) &&
                       styles.searchActionButtonDisabled,
                   ]}
                   onPress={searchSongs}
-                  disabled={!query.trim() || loading}>
+                  disabled={!query.trim() || loading || !activeBridgeReady}>
                   {loading ? (
                     <ActivityIndicator size="small" color={C.accentFg} />
                   ) : (
@@ -1930,6 +2031,24 @@ const SearchScreen = () => {
           />
         </View>
       )}
+
+      <Modal
+        transparent
+        visible={showBridgeLoadingModal}
+        animationType="fade"
+        onRequestClose={() => {}}>
+        <View style={styles.bridgeLoadingBackdrop}>
+          <View style={styles.bridgeLoadingCard}>
+            <ActivityIndicator size="small" color={C.accentFg} />
+            <Text style={styles.bridgeLoadingTitle}>
+              Loading {activeBridgeLabel} bridge...
+            </Text>
+            <Text style={styles.bridgeLoadingSubtitle}>
+              Search is disabled until the bridge is ready.
+            </Text>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         transparent
