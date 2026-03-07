@@ -281,6 +281,8 @@ const LibraryScreen = ({ navigation, route }) => {
   const [tab, setTab] = useState('tracks');
   const [sortBy, setSortBy] = useState('Name');
   const [sortOpen, setSortOpen] = useState(false);
+  const [trackSearchOpen, setTrackSearchOpen] = useState(false);
+  const [trackQuery, setTrackQuery] = useState('');
 
   const [playlistQuery, setPlaylistQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
@@ -331,6 +333,10 @@ const LibraryScreen = ({ navigation, route }) => {
       const requested = String(route?.params?.libraryTab || '').toLowerCase();
       if (requested && SUB_TABS.some(item => item.id === requested)) {
         setTab(requested);
+        if (requested !== 'tracks') {
+          setTrackSearchOpen(false);
+          setTrackQuery('');
+        }
         navigation.setParams({ libraryTab: undefined });
       }
       let active = true;
@@ -420,6 +426,22 @@ const LibraryScreen = ({ navigation, route }) => {
   }, [loadLibrary, refreshingLibrary, showLibraryMessage]);
 
   const sortedSongs = useMemo(() => sortSongs(songs, sortBy), [songs, sortBy]);
+  const filteredTracks = useMemo(() => {
+    const query = trackQuery.trim().toLowerCase();
+    if (!query) {
+      return sortedSongs;
+    }
+    return sortedSongs.filter(song => {
+      const title = String(song?.title || '').toLowerCase();
+      const artist = String(song?.artist || '').toLowerCase();
+      const album = String(song?.album || '').toLowerCase();
+      return (
+        title.includes(query) ||
+        artist.includes(query) ||
+        album.includes(query)
+      );
+    });
+  }, [sortedSongs, trackQuery]);
 
   const filteredPlaylists = useMemo(() => {
     const query = playlistQuery.trim().toLowerCase();
@@ -467,13 +489,13 @@ const LibraryScreen = ({ navigation, route }) => {
   }, [normalizedSources]);
 
   const playSong = useCallback(async index => {
-    const nextTrack = sortedSongs[index];
+    const nextTrack = filteredTracks[index];
     if (!nextTrack) {
       return;
     }
 
     try {
-      await playbackService.playSongs(sortedSongs, { startIndex: index });
+      await playbackService.playSongs(filteredTracks, { startIndex: index });
       navigation.navigate('NowPlaying', {
         optimisticTrack: nextTrack,
         shuffleActive: false,
@@ -485,17 +507,17 @@ const LibraryScreen = ({ navigation, route }) => {
         error.message || 'Could not play this track.',
       );
     }
-  }, [sortedSongs, navigation]);
+  }, [filteredTracks, navigation]);
 
   const playAll = useCallback(async () => {
-    if (!sortedSongs.length) {
+    if (!filteredTracks.length) {
       return;
     }
 
-    const nextTrack = sortedSongs[0];
+    const nextTrack = filteredTracks[0];
 
     try {
-      await playbackService.playSongs(sortedSongs, { startIndex: 0 });
+      await playbackService.playSongs(filteredTracks, { startIndex: 0 });
       navigation.navigate('NowPlaying', {
         optimisticTrack: nextTrack,
         shuffleActive: false,
@@ -507,13 +529,13 @@ const LibraryScreen = ({ navigation, route }) => {
         error.message || 'Could not play songs right now.',
       );
     }
-  }, [sortedSongs, navigation]);
+  }, [filteredTracks, navigation]);
 
   const shufflePlay = useCallback(async () => {
-    if (!sortedSongs.length) {
+    if (!filteredTracks.length) {
       return;
     }
-    const shuffled = [...sortedSongs];
+    const shuffled = [...filteredTracks];
     for (let index = shuffled.length - 1; index > 0; index -= 1) {
       const randomIndex = Math.floor(Math.random() * (index + 1));
       [shuffled[index], shuffled[randomIndex]] = [
@@ -528,7 +550,7 @@ const LibraryScreen = ({ navigation, route }) => {
       await playbackService.playSongs(shuffled, {
         startIndex: 0,
         shuffleEnabled: true,
-        shuffleOriginalQueue: sortedSongs,
+        shuffleOriginalQueue: filteredTracks,
       });
       navigation.navigate('NowPlaying', {
         optimisticTrack: nextTrack,
@@ -541,7 +563,7 @@ const LibraryScreen = ({ navigation, route }) => {
         error.message || 'Could not start shuffle playback.',
       );
     }
-  }, [sortedSongs, navigation]);
+  }, [filteredTracks, navigation]);
 
   const deleteSong = useCallback(song => {
     Alert.alert('Delete Song', `Delete "${song.title}" from your library?`, [
@@ -906,9 +928,30 @@ const LibraryScreen = ({ navigation, route }) => {
     );
   }, [openSongMenu, playSong]);
 
+  const closeTrackSearch = useCallback(() => {
+    setTrackSearchOpen(false);
+    setTrackQuery('');
+  }, []);
+
+  const toggleTrackSearch = useCallback(() => {
+    closeSongMenu();
+    setSortOpen(false);
+    setTrackSearchOpen(previous => {
+      const next = !previous;
+      if (!next) {
+        setTrackQuery('');
+      }
+      return next;
+    });
+  }, [closeSongMenu]);
+
   const onTabPress = useCallback(id => {
     closeSongMenu();
     setSortOpen(false);
+    if (id !== 'tracks') {
+      setTrackSearchOpen(false);
+      setTrackQuery('');
+    }
     setTab(id);
   }, [closeSongMenu]);
 
@@ -935,24 +978,66 @@ const LibraryScreen = ({ navigation, route }) => {
           <Icon name="chevron-left" size={24} color={C.accentFg} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Library</Text>
+        <View style={styles.headerActionWrap}>
+          {tab === 'tracks' ? (
+            <TouchableOpacity
+              style={styles.headerActionBtn}
+              onPress={toggleTrackSearch}>
+              <Icon
+                name={trackSearchOpen ? 'close' : 'magnify'}
+                size={20}
+                color={C.accentFg}
+              />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.headerActionPlaceholder} />
+          )}
+        </View>
       </View>
 
       <LibrarySubTabs activeTab={tab} onTabPress={onTabPress} />
 
       {tab === 'tracks' ? (
         <View style={styles.panel}>
-          <LibraryTrackControls
-            trackCount={sortedSongs.length}
-            sortBy={sortBy}
-            sortOpen={sortOpen}
-            onToggleSort={toggleSortMenu}
-            onSelectSort={selectSortOption}
-            onPlayAll={playAll}
-            onShuffle={shufflePlay}
-          />
+          {trackSearchOpen ? (
+            <>
+              <View style={styles.trackSearchRow}>
+                <View style={styles.searchBox}>
+                  <Icon name="magnify" size={18} color={C.textMute} />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search tracks..."
+                    placeholderTextColor={C.textMute}
+                    value={trackQuery}
+                    onChangeText={setTrackQuery}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                    autoFocus
+                  />
+                </View>
+                <TouchableOpacity
+                  style={styles.trackSearchCloseBtn}
+                  onPress={closeTrackSearch}>
+                  <Icon name="close" size={18} color={C.textDim} />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.metaText}>{filteredTracks.length} tracks</Text>
+            </>
+          ) : (
+            <LibraryTrackControls
+              trackCount={filteredTracks.length}
+              sortBy={sortBy}
+              sortOpen={sortOpen}
+              onToggleSort={toggleSortMenu}
+              onSelectSort={selectSortOption}
+              onPlayAll={playAll}
+              onShuffle={shufflePlay}
+            />
+          )}
 
           <FlashList
-            data={sortedSongs}
+            data={filteredTracks}
             renderItem={renderTrackItem}
             keyExtractor={idKeyExtractor}
             estimatedItemSize={TRACK_ITEM_HEIGHT}
@@ -968,10 +1053,24 @@ const LibraryScreen = ({ navigation, route }) => {
             ListEmptyComponent={
               loading ? null : (
                 <View style={styles.emptyState}>
-                  <Icon name="music-note-off" size={56} color={C.textMute} />
-                  <Text style={styles.emptyTitle}>Your library is empty</Text>
+                  <Icon
+                    name={
+                      trackSearchOpen && trackQuery.trim().length
+                        ? 'music-note-search'
+                        : 'music-note-off'
+                    }
+                    size={56}
+                    color={C.textMute}
+                  />
+                  <Text style={styles.emptyTitle}>
+                    {trackSearchOpen && trackQuery.trim().length
+                      ? 'No matching tracks'
+                      : 'Your library is empty'}
+                  </Text>
                   <Text style={styles.emptySub}>
-                    Add file sources in the Files tab to import songs.
+                    {trackSearchOpen && trackQuery.trim().length
+                      ? 'Try searching by another title, artist, or album.'
+                      : 'Add file sources in the Files tab to import songs.'}
                   </Text>
                 </View>
               )

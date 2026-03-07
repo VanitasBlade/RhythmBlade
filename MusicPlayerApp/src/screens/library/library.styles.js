@@ -20,6 +20,24 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.3,
   },
+  headerActionWrap: {
+    marginLeft: 'auto',
+    paddingLeft: 8,
+  },
+  headerActionBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerActionPlaceholder: {
+    width: 34,
+    height: 34,
+  },
   subTabs: {
     flexDirection: 'row',
     marginHorizontal: 16,
@@ -206,6 +224,24 @@ const styles = StyleSheet.create({
   },
   songMenuItemTextDanger: {
     color: '#f87171',
+  },
+  trackSearchRow: {
+    paddingTop: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  trackSearchCloseBtn: {
+    width: 42,
+    height: 42,
+    marginLeft: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   playlistSearchRow: {
     paddingTop: 12,
