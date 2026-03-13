@@ -255,6 +255,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 10,
   },
+  searchBoxFocused: {
+    borderColor: C.accent,
+  },
   searchInput: {
     flex: 1,
     marginLeft: 8,

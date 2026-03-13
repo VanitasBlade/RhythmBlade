@@ -1,5 +1,5 @@
-import {StyleSheet} from 'react-native';
-import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
+import { StyleSheet } from 'react-native';
+import { MUSIC_HOME_THEME as C } from '../../theme/musicHomeTheme';
 
 const styles = StyleSheet.create({
   container: {
@@ -60,23 +60,190 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
   },
-  searchWrap: {
-    marginTop: 8,
-    marginBottom: 10,
-    minHeight: 42,
-    borderRadius: 8,
+  bentoGrid: {
+    marginBottom: 20,
+  },
+  bentoSectionTitle: {
+    color: C.text,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  bentoEmpty: {
+    padding: 24,
+    backgroundColor: C.bgCard,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: C.border,
-    backgroundColor: C.bgCard,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
     alignItems: 'center',
   },
-  searchInput: {
+  bentoEmptyText: {
+    color: C.textMute,
+    fontSize: 14,
+  },
+  bentoRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  bentoCard: {
+    backgroundColor: C.bgCard,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 14,
+  },
+  bentoCardLarge: {
+    marginBottom: 8,
+  },
+  bentoCardMedium: {
     flex: 1,
-    marginLeft: 8,
+  },
+  bentoCardWide: {
+    marginBottom: 8,
+  },
+  bentoTitle: {
     color: C.text,
     fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  bentoSubtitle: {
+    color: C.accentFg,
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  bentoSubtitleCentered: {
+    color: C.accentFg,
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  barChartContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    height: 80,
+    paddingTop: 8,
+  },
+  barCol: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  barTrack: {
+    width: 24,
+    height: 60,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 4,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  barFill: {
+    width: '100%',
+    backgroundColor: C.accent,
+    borderRadius: 4,
+  },
+  barLabel: {
+    color: C.textMute,
+    fontSize: 10,
+  },
+  storageDonutContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 60,
+    marginTop: 8,
+  },
+  storageDonutOuter: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  storageDonutFill: {
+    width: '100%',
+    backgroundColor: C.accent,
+  },
+  storageDonutHole: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: C.bgCard,
+  },
+  topArtistContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  topArtistName: {
+    color: C.text,
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  topArtistPlays: {
+    color: C.textMute,
+    fontSize: 12,
+  },
+  weeklyHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  bentoSubtitleInline: {
+    color: C.accentFg,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  bentoPlaceholder: {
+    color: C.textMute,
+    fontSize: 12,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  mostPlayedContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  mostPlayedArtworkLarge: {
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  mostPlayedArtworkFallbackLarge: {
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+    backgroundColor: '#2a1b49',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  mostPlayedTitle: {
+    color: C.text,
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  mostPlayedArtist: {
+    color: C.textMute,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 2,
   },
   syncBanner: {
     marginBottom: 10,

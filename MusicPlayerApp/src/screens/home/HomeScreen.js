@@ -2,21 +2,25 @@ import { useFocusEffect } from '@react-navigation/native';
 import { FlashList } from '@shopify/flash-list';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Dimensions,
   Image,
   InteractionManager,
   RefreshControl,
   Text,
-  TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
+import RNFS from 'react-native-fs';
+import Svg, { Circle } from 'react-native-svg';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import PlaylistArtwork from '../../components/PlaylistArtwork';
 import playbackService from '../../services/playback/PlaybackService';
 import storageService from '../../services/storage/StorageService';
+import {
+  getExtensionFromSong,
+  normalizeFormatLabel,
+} from '../../services/storage/storage.helpers';
 import { MUSIC_HOME_THEME as C } from '../../theme/musicHomeTheme';
 import SongCard from './SongCard';
 import styles from './home.styles';
@@ -64,21 +68,166 @@ const areSongListsEquivalent = (left = [], right = []) => {
     return false;
   }
   for (let index = 0; index < left.length; index += 1) {
-    const previous = left[index];
-    const next = right[index];
-    if (
-      previous !== next &&
-      (String(previous?.id || '') !== String(next?.id || '') ||
-        String(previous?.title || '') !== String(next?.title || '') ||
-        String(previous?.artist || '') !== String(next?.artist || '') ||
-        String(previous?.artwork || '') !== String(next?.artwork || '') ||
-        (Number(previous?.duration) || 0) !== (Number(next?.duration) || 0) ||
-        (Number(previous?.addedAt) || 0) !== (Number(next?.addedAt) || 0))
-    ) {
+    if (left[index]?.id !== right[index]?.id) {
       return false;
     }
   }
   return true;
+};
+
+const formatBytes = (bytes, decimals = 1) => {
+  if (!+bytes) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+};
+
+const StorageDonutChart = ({ breakdown = [], totalBytes, size = 60, strokeWidth = 8 }) => {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const colors = ['#a288f5', '#ff7a9f', '#ffc168', '#4db2f8', '#20c997', '#a7a0be'];
+
+  let currentPercentOffset = 0;
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="rgba(255,255,255,0.05)"
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+        {breakdown.map((item, index) => {
+          const percent = Math.min(Math.max(item.bytes / totalBytes, 0), 1);
+          if (percent <= 0) return null;
+
+          const strokeLength = percent * circumference;
+          const strokeDasharray = `${strokeLength} ${circumference}`;
+          const rotationAngle = -90 + (currentPercentOffset * 360);
+
+          currentPercentOffset += percent;
+
+          return (
+            <Circle
+              key={item.type}
+              cx={size / 2}
+              cy={size / 2}
+              r={radius}
+              stroke={colors[index % colors.length]}
+              strokeWidth={strokeWidth}
+              fill="none"
+              strokeDasharray={strokeDasharray}
+              strokeDashoffset={0}
+              transform={`rotate(${rotationAngle} ${size / 2} ${size / 2})`}
+            />
+          );
+        })}
+      </Svg>
+      <View style={{ marginLeft: 16 }}>
+        {breakdown.length === 0 && <Text style={{ color: '#a7a0be', fontSize: 10 }}>No files yet</Text>}
+        {breakdown.slice(0, 3).map((item, index) => (
+          <View key={item.type} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors[index % colors.length], marginRight: 6 }} />
+            <Text style={{ color: '#f0eaff', fontSize: 10, textTransform: 'uppercase', fontWeight: 'bold' }}>{item.type}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+};
+
+const LibraryAtAGlance = ({ stats, storageBytes, totalStorageBytes, storageBreakdown }) => {
+  if (!stats) return null;
+
+  // 1. Weekly Listening
+  const today = new Date();
+  const last7Days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() - (6 - i));
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+    return { dateStr, dayName, seconds: stats.dailyListening?.[dateStr] || 0 };
+  });
+
+  const totalWeeklySeconds = last7Days.reduce((sum, day) => sum + day.seconds, 0);
+  const maxDailySeconds = Math.max(...last7Days.map(d => d.seconds), 1);
+  const weeklyHours = (totalWeeklySeconds / 3600).toFixed(1);
+
+  // 2. Storage
+  const storageGB = (storageBytes / (1024 ** 3)).toFixed(1);
+  const totalGB = (totalStorageBytes / (1024 ** 3)).toFixed(1);
+
+  // 3. Most Played
+  const mostPlayed = stats.topSongData;
+  const hasData = totalWeeklySeconds > 0 || storageBytes > 0;
+
+  return (
+    <View style={styles.bentoGrid}>
+      {!hasData ? (
+        <View style={styles.bentoEmpty}>
+          <Text style={styles.bentoEmptyText}>Start listening to see your stats!</Text>
+        </View>
+      ) : (
+        <>
+          <View style={[styles.bentoCard, styles.bentoCardLarge]}>
+            <View style={styles.weeklyHeaderRow}>
+              <Text style={styles.bentoTitle}>Weekly Listening</Text>
+              <Text style={styles.bentoSubtitleInline}>{weeklyHours} hrs</Text>
+            </View>
+            <View style={styles.barChartContainer}>
+              {last7Days.map((day, i) => {
+                const heightPercent = (day.seconds / maxDailySeconds) * 100;
+                return (
+                  <View key={i} style={styles.barCol}>
+                    <View style={styles.barTrack}>
+                      <View style={[styles.barFill, { height: `${heightPercent}%` }]} />
+                    </View>
+                    <Text style={styles.barLabel}>{day.dayName}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.bentoRow}>
+            <View style={[styles.bentoCard, styles.bentoCardMedium, { marginRight: 8 }]}>
+              <Text style={styles.bentoTitle}>Music Storage</Text>
+              <View style={styles.storageDonutContainer}>
+                <StorageDonutChart breakdown={storageBreakdown} totalBytes={totalStorageBytes} size={60} strokeWidth={8} />
+              </View>
+              <Text style={styles.bentoSubtitleCentered}>{storageGB} GB / {totalGB} GB</Text>
+            </View>
+
+            <View style={[styles.bentoCard, styles.bentoCardMedium]}>
+              <Text style={styles.bentoTitle}>Most Played</Text>
+              <View style={styles.mostPlayedContainer}>
+                {mostPlayed ? (
+                  <>
+                    {mostPlayed.artwork ? (
+                      <Image source={{ uri: mostPlayed.artwork }} style={styles.mostPlayedArtworkLarge} />
+                    ) : (
+                      <View style={styles.mostPlayedArtworkFallbackLarge}>
+                        <Icon name="music-note" size={24} color={C.textMute} />
+                      </View>
+                    )}
+                    <Text style={styles.mostPlayedTitle} numberOfLines={1}>{mostPlayed.title || 'Unknown'}</Text>
+                    <Text style={styles.mostPlayedArtist} numberOfLines={1}>{mostPlayed.artist || 'Unknown'}</Text>
+                  </>
+                ) : (
+                  <Text style={styles.bentoPlaceholder}>Your most played song will appear here</Text>
+                )}
+              </View>
+            </View>
+          </View>
+        </>
+      )}
+    </View>
+  );
 };
 
 const getPlaylistArtworkSignature = playlist => {
@@ -132,8 +281,7 @@ const areSyncStatesEquivalent = (left = {}, right = {}) =>
 
 const HomeListHeader = React.memo(
   ({
-    search,
-    onSearchChange,
+    dashboardData,
     isSyncing,
     onTriggerSync,
     onOpenSettings,
@@ -169,53 +317,12 @@ const HomeListHeader = React.memo(
         </TouchableOpacity>
       </View>
 
-      <View style={styles.searchWrap}>
-        <Icon name="magnify" size={18} color={C.textMute} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search your recent tracks"
-          placeholderTextColor={C.textMute}
-          value={search}
-          onChangeText={onSearchChange}
-          autoCorrect={false}
-          autoCapitalize="none"
-        />
-      </View>
-
-      <TouchableOpacity
-        style={styles.syncBanner}
-        activeOpacity={0.9}
-        onPress={onTriggerSync}
-        disabled={Boolean(isSyncing)}>
-        {isSyncing ? (
-          <ActivityIndicator size="small" color={C.accentFg} />
-        ) : (
-          <Icon name="refresh" size={16} color={C.accentFg} />
-        )}
-        <Text style={styles.syncBannerText}>
-          {isSyncing ? 'Updating library in background' : 'Update Library'}
-        </Text>
-      </TouchableOpacity>
-
-      <View style={styles.quickActionsRow}>
-        <TouchableOpacity
-          style={[styles.quickActionCard, styles.quickActionGap]}
-          onPress={onOpenLibrary}>
-          <Icon name="music-box-multiple" size={20} color={C.accentFg} />
-          <Text style={styles.quickActionLabel}>Library</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.quickActionCard}
-          onPress={onOpenDownloader}>
-          <Icon
-            name="cloud-download-outline"
-            size={20}
-            color={C.accentFg}
-          />
-          <Text style={styles.quickActionLabel}>Downloader</Text>
-        </TouchableOpacity>
-      </View>
+      <LibraryAtAGlance
+        stats={dashboardData.listeningStats}
+        storageBytes={dashboardData.storageUsageBytes}
+        totalStorageBytes={dashboardData.storageTotalBytes}
+        storageBreakdown={dashboardData.storageUsageBreakdown}
+      />
 
       <View style={styles.sectionRow}>
         <Text style={styles.sectionTitle}>Playlists</Text>
@@ -256,7 +363,12 @@ const HomeScreen = ({ navigation }) => {
   const [recentSongs, setRecentSongs] = useState([]);
   const [playlists, setPlaylists] = useState([]);
   const [favoriteIds, setFavoriteIds] = useState(new Set());
-  const [search, setSearch] = useState('');
+  const [dashboardData, setDashboardData] = useState({
+    listeningStats: null,
+    storageUsageBytes: 0,
+    storageUsageBreakdown: [],
+    storageTotalBytes: 10 * 1024 * 1024 * 1024,
+  });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [profileAvatarDataUri, setProfileAvatarDataUri] = useState('');
@@ -270,15 +382,69 @@ const HomeScreen = ({ navigation }) => {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [library, playlistData, avatarUri] = await Promise.all([
+      const [library, playlistData, avatarUri, listeningStats, fsInfo] = await Promise.all([
         storageService.getLocalLibrary(),
         storageService.getPlaylists(),
         storageService.getProfileAvatar(),
+        storageService.getListeningStats(),
+        RNFS.getFSInfo().catch(() => ({ totalSpace: 0 })),
       ]);
 
       const recent = [...library]
         .sort((a, b) => (Number(b.addedAt) || 0) - (Number(a.addedAt) || 0))
         .slice(0, RECENT_TRACKS_LIMIT);
+
+      const usageByFormat = new Map();
+      const unresolvedSongs = [];
+
+      library.forEach(song => {
+        const type = normalizeFormatLabel(getExtensionFromSong(song));
+        const current = usageByFormat.get(type) || { type, bytes: 0 };
+
+        const knownSize = Math.max(0, Number(song?.fileSizeBytes) || 0);
+        if (knownSize > 0) {
+          current.bytes += knownSize;
+        } else {
+          const path = storageService.resolveSongLocalPath(song);
+          if (path) {
+            unresolvedSongs.push({ type, path });
+          }
+        }
+        usageByFormat.set(type, current);
+      });
+
+      const STAT_BATCH_SIZE = 8;
+      for (let index = 0; index < unresolvedSongs.length; index += STAT_BATCH_SIZE) {
+        const batch = unresolvedSongs.slice(index, index + STAT_BATCH_SIZE);
+        const stats = await Promise.all(
+          batch.map(async entry => {
+            const stat = await RNFS.stat(entry.path).catch(() => null);
+            return {
+              type: entry.type,
+              bytes: Math.max(0, Number(stat?.size) || 0),
+            };
+          })
+        );
+        stats.forEach(statEntry => {
+          if (!statEntry.bytes) return;
+          const target = usageByFormat.get(statEntry.type);
+          if (target) {
+            target.bytes += statEntry.bytes;
+          }
+        });
+      }
+
+      const storageUsageBreakdown = Array.from(usageByFormat.values())
+        .filter(item => item.bytes > 0)
+        .sort((a, b) => b.bytes - a.bytes);
+      const storageUsageBytes = storageUsageBreakdown.reduce((sum, item) => sum + item.bytes, 0);
+
+      setDashboardData({
+        listeningStats,
+        storageUsageBytes,
+        storageUsageBreakdown,
+        storageTotalBytes: 10 * 1024 * 1024 * 1024, // 10 GB FIXED
+      });
 
       const favorites =
         playlistData.find(playlist =>
@@ -353,28 +519,48 @@ const HomeScreen = ({ navigation }) => {
     }
   }, []);
 
-  const filteredSongs = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) {
-      return recentSongs;
-    }
-
-    return recentSongs.filter(song => {
-      const title = String(song.title || '').toLowerCase();
-      const artist = String(song.artist || '').toLowerCase();
-      return title.includes(query) || artist.includes(query);
+  const loadDataWithFallback = useCallback(() => {
+    loadData().catch(error => {
+      console.error('Home data load failed:', error);
     });
-  }, [recentSongs, search]);
+  }, [loadData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadDataWithFallback();
+    }, [loadDataWithFallback]),
+  );
+
+  const resumePlayback = useCallback(async (trackToResume) => {
+    if (!trackToResume) return;
+
+    try {
+      const currentTrack = await playbackService.getCurrentTrack();
+      if (currentTrack?.id === trackToResume.id) {
+        // Already active, just play
+        await playbackService.play();
+      } else {
+        // Fallback track, set it as queue
+        await playbackService.playSong(trackToResume);
+      }
+      navigation.navigate('NowPlaying', {
+        optimisticTrack: trackToResume,
+        shuffleActive: playbackService.isShuffleEnabled(),
+      });
+    } catch (error) {
+      console.error('Error resuming playback:', error);
+    }
+  }, [navigation]);
 
   const playSong = useCallback(
     async index => {
-      const nextTrack = filteredSongs[index];
+      const nextTrack = recentSongs[index];
       if (!nextTrack) {
         return;
       }
 
       try {
-        await playbackService.playSongs(filteredSongs, { startIndex: index });
+        await playbackService.playSongs(recentSongs, { startIndex: index });
         navigation.navigate('NowPlaying', {
           optimisticTrack: nextTrack,
           shuffleActive: false,
@@ -383,7 +569,7 @@ const HomeScreen = ({ navigation }) => {
         console.error('Error playing song:', error);
       }
     },
-    [filteredSongs, navigation],
+    [recentSongs, navigation],
   );
 
   const toggleFavorite = useCallback(async song => {
@@ -461,8 +647,7 @@ const HomeScreen = ({ navigation }) => {
   const listHeader = useMemo(
     () => (
       <HomeListHeader
-        search={search}
-        onSearchChange={setSearch}
+        dashboardData={dashboardData}
         isSyncing={Boolean(syncState?.isRunning)}
         onTriggerSync={triggerLibrarySync}
         onOpenSettings={openSettings}
@@ -477,16 +662,7 @@ const HomeScreen = ({ navigation }) => {
       />
     ),
     [
-      onRefresh,
-      openDownloader,
-      openLibrary,
-      openPlaylistsTab,
-      openSettings,
-      playlistKeyExtractor,
-      playlists,
-      profileAvatarDataUri,
-      renderPlaylistCard,
-      search,
+      dashboardData,
       syncState?.isRunning,
       triggerLibrarySync,
     ],
@@ -510,30 +686,27 @@ const HomeScreen = ({ navigation }) => {
       return null;
     }
 
-    const hasSearch = search.trim().length > 0;
     return (
       <View style={styles.emptyContainer}>
         <Icon
-          name={hasSearch ? 'text-search' : 'music-off'}
+          name="music-off"
           size={58}
           color={C.textMute}
         />
         <Text style={styles.emptyTitle}>
-          {hasSearch ? 'No matching tracks' : 'No songs in your library'}
+          No songs in your library
         </Text>
         <Text style={styles.emptySubtitle}>
-          {hasSearch
-            ? 'Try searching for another title or artist.'
-            : 'Download songs from the Downloader tab.'}
+          Download songs from the Downloader tab.
         </Text>
       </View>
     );
-  }, [loading, search]);
+  }, [loading]);
 
   return (
     <View style={styles.container}>
       <FlashList
-        data={filteredSongs}
+        data={recentSongs}
         renderItem={renderSongItem}
         keyExtractor={idKeyExtractor}
         estimatedItemSize={SONG_ITEM_HEIGHT}

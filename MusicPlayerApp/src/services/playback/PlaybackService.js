@@ -245,7 +245,7 @@ function orderTracksByReference(tracks = [], reference = []) {
     const rank = Number.isFinite(positions[used])
       ? positions[used]
       : Number.MAX_SAFE_INTEGER - 1000 + index;
-    return {index, rank, track};
+    return { index, rank, track };
   });
 
   ranked.sort((left, right) => {
@@ -301,13 +301,64 @@ class PlaybackService {
       enabled: false,
       originalQueue: [],
     };
+    this.currentStatsTrackIndex = null;
+    this.currentStatsPosition = null;
+    this.currentStatsDurationListened = 0;
+  }
+
+  async flushListeningStats(trackIndexToFlush, durationToFlush) {
+    if (trackIndexToFlush !== null && durationToFlush > 0) {
+      try {
+        const queue = await TrackPlayer.getQueue().catch(() => []);
+        const track = queue[trackIndexToFlush];
+        if (track) {
+          await storageService.recordListeningActivity(track, durationToFlush);
+        }
+      } catch (error) {
+        console.error('Error flushing listening stats:', error);
+      }
+    }
+  }
+
+  handleListeningStatsProgress(event = {}) {
+    const position = Number(event?.position);
+
+    // PlaybackProgressUpdated does NOT reliably contain track index natively.
+    // If it's absent in the event, assume we are still on currentStatsTrackIndex, 
+    // unless another event (like ActiveTrackChanged) triggers a flush.
+    // If we haven't locked onto a track index yet, we return until an active track changes.
+    const trackIndex = Number.isInteger(event?.track) ? Number(event.track) : this.currentStatsTrackIndex;
+
+    if (trackIndex === null || !Number.isFinite(position)) {
+      return;
+    }
+
+    if (this.currentStatsTrackIndex !== trackIndex) {
+      if (this.currentStatsTrackIndex !== null && this.currentStatsDurationListened > 0) {
+        const flushIndex = this.currentStatsTrackIndex;
+        const flushDuration = this.currentStatsDurationListened;
+        runDetached(() => this.flushListeningStats(flushIndex, flushDuration), 'flushing stats on track transition');
+      }
+      this.currentStatsTrackIndex = trackIndex;
+      this.currentStatsPosition = position;
+      this.currentStatsDurationListened = 0;
+      return;
+    }
+
+    if (this.currentStatsPosition !== null && position > this.currentStatsPosition) {
+      const delta = position - this.currentStatsPosition;
+      if (delta < 2.5) {
+        this.currentStatsDurationListened += delta;
+      }
+    }
+    this.currentStatsPosition = position;
   }
 
   setLoopBehavior(mode) {
     const nextBehavior =
       mode === LOOP_BEHAVIOR.ONE ||
-      mode === LOOP_BEHAVIOR.ALL ||
-      mode === LOOP_BEHAVIOR.OFF
+        mode === LOOP_BEHAVIOR.ALL ||
+        mode === LOOP_BEHAVIOR.OFF
         ? mode
         : LOOP_BEHAVIOR.OFF;
     const changed = this.loopBehavior !== nextBehavior;
@@ -332,7 +383,7 @@ class PlaybackService {
   setAutoContinueEnabled(enabled) {
     this.autoContinueEnabled = enabled !== false;
     if (!this.autoContinueEnabled) {
-      this.resetCrossfadeRuntime({resetVolume: true});
+      this.resetCrossfadeRuntime({ resetVolume: true });
     }
     return this.autoContinueEnabled;
   }
@@ -352,7 +403,7 @@ class PlaybackService {
 
   subscribeShuffleState(listener) {
     if (typeof listener !== 'function') {
-      return () => {};
+      return () => { };
     }
     this.shuffleStateListeners.add(listener);
     try {
@@ -367,7 +418,7 @@ class PlaybackService {
 
   subscribeLoopBehavior(listener) {
     if (typeof listener !== 'function') {
-      return () => {};
+      return () => { };
     }
     this.loopBehaviorListeners.add(listener);
     try {
@@ -434,8 +485,8 @@ class PlaybackService {
       compactCapabilities: TRACK_PLAYER_COMPACT_CAPABILITIES,
       backwardJumpInterval: TRACK_PLAYER_BACKWARD_JUMP_INTERVAL,
       forwardJumpInterval: TRACK_PLAYER_FORWARD_JUMP_INTERVAL,
-      rewindIcon: {uri: loopUri},
-      forwardIcon: {uri: shuffleUri},
+      rewindIcon: { uri: loopUri },
+      forwardIcon: { uri: shuffleUri },
       progressUpdateEventInterval: TRACK_PLAYER_PROGRESS_UPDATE_INTERVAL,
     };
   }
@@ -467,7 +518,7 @@ class PlaybackService {
   setCrossfadeEnabled(enabled) {
     this.crossfadeEnabled = enabled === true;
     if (!this.crossfadeEnabled) {
-      this.resetCrossfadeRuntime({resetVolume: true});
+      this.resetCrossfadeRuntime({ resetVolume: true });
     }
     return this.crossfadeEnabled;
   }
@@ -526,7 +577,7 @@ class PlaybackService {
     TrackPlayer.setVolume(nextLevel).catch(() => null);
   }
 
-  runVolumeRamp({targetVolume, durationMs, onComplete = null}) {
+  runVolumeRamp({ targetVolume, durationMs, onComplete = null }) {
     const fromLevel = clampUnitVolume(this.currentVolumeLevel);
     const toLevel = clampUnitVolume(targetVolume);
     const safeDurationMs = Math.max(0, Number(durationMs) || 0);
@@ -571,7 +622,7 @@ class PlaybackService {
     this.volumeRampInterval = intervalId;
   }
 
-  resetCrossfadeRuntime({resetVolume = false} = {}) {
+  resetCrossfadeRuntime({ resetVolume = false } = {}) {
     this.crossfadeFadeOutTrackIndex = null;
     this.crossfadePendingFadeIn = false;
     this.crossfadeFadeOutInProgress = false;
@@ -615,7 +666,7 @@ class PlaybackService {
         this.crossfadeFadeInInProgress ||
         this.currentVolumeLevel < 0.98
       ) {
-        this.resetCrossfadeRuntime({resetVolume: true});
+        this.resetCrossfadeRuntime({ resetVolume: true });
       }
       return;
     }
@@ -767,7 +818,7 @@ class PlaybackService {
         this.crossfadeFadeInInProgress ||
         this.currentVolumeLevel < 0.98
       ) {
-        this.resetCrossfadeRuntime({resetVolume: true});
+        this.resetCrossfadeRuntime({ resetVolume: true });
       }
       return;
     }
@@ -787,7 +838,7 @@ class PlaybackService {
     }
 
     if (nextIndex === null && !this.isLoopLibraryPlaylistEnabled()) {
-      this.resetCrossfadeRuntime({resetVolume: true});
+      this.resetCrossfadeRuntime({ resetVolume: true });
     }
   }
 
@@ -802,7 +853,7 @@ class PlaybackService {
 
   subscribeAutoContinueStop(listener) {
     if (typeof listener !== 'function') {
-      return () => {};
+      return () => { };
     }
     this.autoContinueStopListeners.add(listener);
     return () => {
@@ -990,7 +1041,7 @@ class PlaybackService {
       }
 
       await TrackPlayer.pause().catch(() => null);
-      this.resetCrossfadeRuntime({resetVolume: true});
+      this.resetCrossfadeRuntime({ resetVolume: true });
     } catch (error) {
       console.error('Error enforcing auto-continue disabled state:', error);
     } finally {
@@ -1000,7 +1051,7 @@ class PlaybackService {
 
   async handleQueueEnded() {
     if (!this.isLoopLibraryPlaylistEnabled() || !this.isAutoContinueEnabled()) {
-      this.resetCrossfadeRuntime({resetVolume: true});
+      this.resetCrossfadeRuntime({ resetVolume: true });
       return;
     }
 
@@ -1014,7 +1065,7 @@ class PlaybackService {
     try {
       const queue = await TrackPlayer.getQueue().catch(() => []);
       if (!Array.isArray(queue) || queue.length === 0) {
-        this.resetCrossfadeRuntime({resetVolume: true});
+        this.resetCrossfadeRuntime({ resetVolume: true });
         return;
       }
 
@@ -1056,7 +1107,7 @@ class PlaybackService {
     this.shuffleState = {
       enabled: Boolean(enabled),
       originalQueue: Array.isArray(originalQueue)
-        ? originalQueue.map(track => ({...track}))
+        ? originalQueue.map(track => ({ ...track }))
         : [],
     };
     if (emit) {
@@ -1068,8 +1119,8 @@ class PlaybackService {
   }
 
   normalizeTrackForQueue(track = {}, options = {}) {
-    const {allowInlineArtwork = false} = options;
-    const normalized = {...track};
+    const { allowInlineArtwork = false } = options;
+    const normalized = { ...track };
     const title = normalizeMetadataValue(normalized.title);
     const artist = normalizeMetadataValue(normalized.artist);
     const album = normalizeMetadataValue(normalized.album);
@@ -1111,27 +1162,27 @@ class PlaybackService {
       : '';
     const mediaStoreId = normalizeText(
       song.mediaStoreId ||
-        (String(song.id || '').trim().startsWith('ms_')
-          ? String(song.id || '').trim().slice(3)
-          : ''),
+      (String(song.id || '').trim().startsWith('ms_')
+        ? String(song.id || '').trim().slice(3)
+        : ''),
     );
     const contentUri = normalizeText(
       song.contentUri ||
-        (mediaStoreId
-          ? `content://media/external/audio/media/${mediaStoreId}`
-          : ''),
+      (mediaStoreId
+        ? `content://media/external/audio/media/${mediaStoreId}`
+        : ''),
     );
     const isMediaStoreTrack = Boolean(
       String(song.provider || '').trim().toLowerCase() === 'media_store' ||
-        mediaStoreId ||
-        String(song.id || '').trim().startsWith('ms_'),
+      mediaStoreId ||
+      String(song.id || '').trim().startsWith('ms_'),
     );
     const rawUrl = normalizeText(
       (isMediaStoreTrack && contentUri.startsWith('content://')
         ? contentUri
         : '') ||
-        song.url ||
-        fallbackUrl,
+      song.url ||
+      fallbackUrl,
     );
     if (!rawUrl) {
       return null;
@@ -1154,7 +1205,7 @@ class PlaybackService {
   }
 
   buildQueueTracks(songs = [], options = {}) {
-    const {inlineArtworkIndex = -1, allowInlineArtworkForAll = false} = options;
+    const { inlineArtworkIndex = -1, allowInlineArtworkForAll = false } = options;
     if (!Array.isArray(songs) || songs.length === 0) {
       return [];
     }
@@ -1189,7 +1240,7 @@ class PlaybackService {
     if (queueTracks.length === 0) {
       return false;
     }
-    this.resetCrossfadeRuntime({resetVolume: true});
+    this.resetCrossfadeRuntime({ resetVolume: true });
 
     const repeatModeBeforeReset = await this.getRepeatMode();
     this.repeatMode = repeatModeBeforeReset;
@@ -1224,7 +1275,7 @@ class PlaybackService {
         }
         if (metadataUpdates.length > 0) {
           await Promise.all(
-            metadataUpdates.map(({index, patch}) =>
+            metadataUpdates.map(({ index, patch }) =>
               TrackPlayer.updateMetadataForTrack(index, patch).catch(error => {
                 console.warn('Error refreshing reused queue metadata:', {
                   index,
@@ -1271,11 +1322,11 @@ class PlaybackService {
   }
 
   async playSong(song) {
-    const track = this.toQueueTrack(song, {allowInlineArtwork: true});
+    const track = this.toQueueTrack(song, { allowInlineArtwork: true });
     if (!track) {
       return false;
     }
-    this.resetCrossfadeRuntime({resetVolume: true});
+    this.resetCrossfadeRuntime({ resetVolume: true });
 
     const repeatModeBeforeReset = await this.getRepeatMode();
     this.repeatMode = repeatModeBeforeReset;
@@ -1433,6 +1484,15 @@ class PlaybackService {
     const activeTrackChangedSubscription = TrackPlayer.addEventListener(
       Event.PlaybackActiveTrackChanged,
       event => {
+        if (this.currentStatsTrackIndex !== null && this.currentStatsDurationListened > 0) {
+          const flushIndex = this.currentStatsTrackIndex;
+          const flushDuration = this.currentStatsDurationListened;
+          runDetached(() => this.flushListeningStats(flushIndex, flushDuration), 'flushing listening stats on track change');
+        }
+        this.currentStatsTrackIndex = Number.isInteger(event?.index) ? Number(event.index) : null;
+        this.currentStatsPosition = null;
+        this.currentStatsDurationListened = 0;
+
         this.handleCrossfadeTrackChange(event || {});
         runDetached(
           () => this.applyArtworkFallbackForActiveTrack(),
@@ -1448,12 +1508,21 @@ class PlaybackService {
       Event.PlaybackProgressUpdated,
       event => {
         this.handleCrossfadeProgress(event || {});
+        this.handleListeningStatsProgress(event || {});
       },
     );
 
     const queueEndedSubscription = TrackPlayer.addEventListener(
       Event.PlaybackQueueEnded,
       event => {
+        if (this.currentStatsTrackIndex !== null && this.currentStatsDurationListened > 0) {
+          const flushIndex = this.currentStatsTrackIndex;
+          const flushDuration = this.currentStatsDurationListened;
+          this.currentStatsDurationListened = 0;
+          this.currentStatsTrackIndex = null;
+          this.currentStatsPosition = null;
+          runDetached(() => this.flushListeningStats(flushIndex, flushDuration), 'flushing listening stats on queue end');
+        }
         runDetached(
           () => this.handleQueueEnded(event || {}),
           'handling queue-end loop behavior',
@@ -1546,7 +1615,7 @@ class PlaybackService {
 
   async skipToNext() {
     try {
-      this.resetCrossfadeRuntime({resetVolume: true});
+      this.resetCrossfadeRuntime({ resetVolume: true });
       await TrackPlayer.skipToNext();
     } catch (error) {
       console.error('Error skipping to next:', error);
@@ -1555,7 +1624,7 @@ class PlaybackService {
 
   async skipToPrevious() {
     try {
-      this.resetCrossfadeRuntime({resetVolume: true});
+      this.resetCrossfadeRuntime({ resetVolume: true });
       await TrackPlayer.skipToPrevious();
     } catch (error) {
       console.error('Error skipping to previous:', error);
@@ -1626,7 +1695,7 @@ class PlaybackService {
     try {
       await TrackPlayer.reset();
       this.clearShuffleState();
-      this.resetCrossfadeRuntime({resetVolume: true});
+      this.resetCrossfadeRuntime({ resetVolume: true });
       console.log('Queue reset');
     } catch (error) {
       console.error('Error resetting queue:', error);
@@ -1635,7 +1704,7 @@ class PlaybackService {
 
   async skipTo(index) {
     try {
-      this.resetCrossfadeRuntime({resetVolume: true});
+      this.resetCrossfadeRuntime({ resetVolume: true });
       await TrackPlayer.skip(index);
       await TrackPlayer.play();
     } catch (error) {
@@ -1931,7 +2000,7 @@ class PlaybackService {
       return await TrackPlayer.getProgress();
     } catch (error) {
       console.error('Error getting progress:', error);
-      return {position: 0, duration: 0};
+      return { position: 0, duration: 0 };
     }
   }
 }

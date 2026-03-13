@@ -283,8 +283,10 @@ const LibraryScreen = ({ navigation, route }) => {
   const [sortOpen, setSortOpen] = useState(false);
   const [trackSearchOpen, setTrackSearchOpen] = useState(false);
   const [trackQuery, setTrackQuery] = useState('');
+  const [isTrackSearchFocused, setIsTrackSearchFocused] = useState(false);
 
   const [playlistQuery, setPlaylistQuery] = useState('');
+  const [isPlaylistSearchFocused, setIsPlaylistSearchFocused] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [newPlaylistDesc, setNewPlaylistDesc] = useState('');
@@ -1002,7 +1004,7 @@ const LibraryScreen = ({ navigation, route }) => {
           {trackSearchOpen ? (
             <>
               <View style={styles.trackSearchRow}>
-                <View style={styles.searchBox}>
+                <View style={[styles.searchBox, isTrackSearchFocused && styles.searchBoxFocused]}>
                   <Icon name="magnify" size={14} color={C.textMute} />
                   <TextInput
                     style={styles.searchInput}
@@ -1010,6 +1012,8 @@ const LibraryScreen = ({ navigation, route }) => {
                     placeholderTextColor={C.textMute}
                     value={trackQuery}
                     onChangeText={setTrackQuery}
+                    onFocus={() => setIsTrackSearchFocused(true)}
+                    onBlur={() => setIsTrackSearchFocused(false)}
                     autoCorrect={false}
                     autoCapitalize="none"
                     autoFocus
@@ -1083,7 +1087,7 @@ const LibraryScreen = ({ navigation, route }) => {
       {tab === 'playlists' ? (
         <View style={styles.panel}>
           <View style={styles.playlistSearchRow}>
-            <View style={styles.searchBox}>
+            <View style={[styles.searchBox, isPlaylistSearchFocused && styles.searchBoxFocused]}>
               <Icon name="magnify" size={18} color={C.textMute} />
               <TextInput
                 style={styles.searchInput}
@@ -1091,6 +1095,8 @@ const LibraryScreen = ({ navigation, route }) => {
                 placeholderTextColor={C.textMute}
                 value={playlistQuery}
                 onChangeText={setPlaylistQuery}
+                onFocus={() => setIsPlaylistSearchFocused(true)}
+                onBlur={() => setIsPlaylistSearchFocused(false)}
                 autoCorrect={false}
                 autoCapitalize="none"
               />

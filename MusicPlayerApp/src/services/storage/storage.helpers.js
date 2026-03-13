@@ -37,9 +37,9 @@ export function normalizeFileSourceFormats(value) {
   const list = Array.isArray(value)
     ? value
     : String(value || '')
-        .split(',')
-        .map(item => item.trim())
-        .filter(Boolean);
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean);
   const normalized = list
     .map(format =>
       String(format || '')
@@ -123,7 +123,7 @@ export function parseMetadataFromFilename(filename) {
     .replace(/\.[a-z0-9]{2,5}$/i, '')
     .trim();
   if (!base) {
-    return {artist: '', title: ''};
+    return { artist: '', title: '' };
   }
 
   const parts = base
@@ -137,7 +137,7 @@ export function parseMetadataFromFilename(filename) {
     };
   }
 
-  return {artist: '', title: base};
+  return { artist: '', title: base };
 }
 
 export function getFileExtensionFromPath(pathValue) {
@@ -217,4 +217,12 @@ export function getFileNameFromUriOrPath(value) {
   }
 
   return safeDecodeUriComponent(cleaned).split('/').filter(Boolean).pop() || '';
+}
+
+export function normalizeFormatLabel(value = '') {
+  const compact = String(value || '')
+    .replace(/^\./, '')
+    .trim()
+    .toUpperCase();
+  return compact || 'OTHER';
 }

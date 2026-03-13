@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -17,10 +17,11 @@ import storageService from '../../services/storage/StorageService';
 import {
   getExtensionFromSong,
   normalizeFileSourcePath,
+  normalizeFormatLabel,
   toFileUriFromPath,
   toPathFromUri,
 } from '../../services/storage/storage.helpers';
-import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
+import { MUSIC_HOME_THEME as C } from '../../theme/musicHomeTheme';
 import PlaybackSettingsSection from './components/PlaybackSettingsSection';
 import styles from './settings.styles';
 
@@ -122,13 +123,7 @@ const PRIVACY_POLICY_ITEMS = [
   },
 ];
 
-function normalizeFormatLabel(value = '') {
-  const compact = String(value || '')
-    .replace(/^\./, '')
-    .trim()
-    .toUpperCase();
-  return compact || 'OTHER';
-}
+
 
 function formatStorageBytes(bytes) {
   const size = Number(bytes) || 0;
@@ -185,7 +180,7 @@ function isManagedAvatarPath(pathValue = '') {
   return normalizedCandidate.indexOf(normalizedDir + '/') === 0;
 }
 
-const ToggleSwitch = ({value, onValueChange, disabled = false}) => (
+const ToggleSwitch = ({ value, onValueChange, disabled = false }) => (
   <Switch
     value={Boolean(value)}
     onValueChange={onValueChange}
@@ -242,7 +237,7 @@ const SettingsRow = ({
   );
 };
 
-const SettingsSection = ({title, children}) => (
+const SettingsSection = ({ title, children }) => (
   <View style={styles.sectionWrap}>
     <Text style={styles.sectionLabel}>{title}</Text>
     <View style={styles.sectionCard}>{children}</View>
@@ -499,7 +494,7 @@ const SettingsScreen = () => {
         } else {
           const path = storageService.resolveSongLocalPath(song);
           if (path) {
-            unresolvedSongs.push({format, path});
+            unresolvedSongs.push({ format, path });
           }
         }
         usageByFormat.set(format, current);
@@ -692,7 +687,7 @@ const SettingsScreen = () => {
               style={styles.avatarButton}>
               {avatarDataUri ? (
                 <Image
-                  source={{uri: avatarDataUri}}
+                  source={{ uri: avatarDataUri }}
                   style={styles.avatarImage}
                 />
               ) : (
@@ -841,7 +836,7 @@ const SettingsScreen = () => {
             rightElement={
               <ToggleSwitch
                 value={darkModeEnabled}
-                onValueChange={() => {}}
+                onValueChange={() => { }}
                 disabled
               />
             }
@@ -890,41 +885,41 @@ const SettingsScreen = () => {
                 </Text>
               ) : null}
               {!storageUsageLoading &&
-              !storageUsageError &&
-              storageUsageBreakdown.length === 0 ? (
+                !storageUsageError &&
+                storageUsageBreakdown.length === 0 ? (
                 <Text style={styles.storageUsageEmptyText}>
                   No indexed audio files available.
                 </Text>
               ) : null}
               {!storageUsageLoading && !storageUsageError
                 ? storageUsageBreakdown.map(item => {
-                    const itemMeta = `${formatStorageBytes(
-                      item.bytes,
-                    )} \u2022 ${formatFileCount(item.count)}`;
-                    return (
-                      <View key={item.format} style={styles.storageUsageItem}>
-                        <View style={styles.storageUsageItemHeader}>
-                          <Text style={styles.storageUsageFormatText}>
-                            {item.format}
-                          </Text>
-                          <Text style={styles.storageUsageItemMetaText}>
-                            {itemMeta}
-                          </Text>
-                        </View>
-                        <View style={styles.storageUsageBarTrack}>
-                          <View
-                            style={[
-                              styles.storageUsageBarFill,
-                              {
-                                width: `${toBarWidthPercent(item.percent)}%`,
-                                backgroundColor: item.color,
-                              },
-                            ]}
-                          />
-                        </View>
+                  const itemMeta = `${formatStorageBytes(
+                    item.bytes,
+                  )} \u2022 ${formatFileCount(item.count)}`;
+                  return (
+                    <View key={item.format} style={styles.storageUsageItem}>
+                      <View style={styles.storageUsageItemHeader}>
+                        <Text style={styles.storageUsageFormatText}>
+                          {item.format}
+                        </Text>
+                        <Text style={styles.storageUsageItemMetaText}>
+                          {itemMeta}
+                        </Text>
                       </View>
-                    );
-                  })
+                      <View style={styles.storageUsageBarTrack}>
+                        <View
+                          style={[
+                            styles.storageUsageBarFill,
+                            {
+                              width: `${toBarWidthPercent(item.percent)}%`,
+                              backgroundColor: item.color,
+                            },
+                          ]}
+                        />
+                      </View>
+                    </View>
+                  );
+                })
                 : null}
             </View>
           ) : null}

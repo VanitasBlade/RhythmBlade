@@ -1,14 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {AppState} from 'react-native';
+import { AppState } from 'react-native';
 import RNFS from 'react-native-fs';
 import LibraryStore from './LibraryStore';
-import {STORAGE_KEYS} from './storage.constants';
-import {artworkMethods} from './modules/artwork.methods';
-import {filesystemMethods} from './modules/filesystem.methods';
-import {libraryMethods} from './modules/library.methods';
-import {mediaStoreMethods} from './modules/mediastore.methods';
-import {playlistMethods} from './modules/playlist.methods';
-import {settingsMethods} from './modules/settings.methods';
+import { artworkMethods } from './modules/artwork.methods';
+import { filesystemMethods } from './modules/filesystem.methods';
+import { libraryMethods } from './modules/library.methods';
+import { mediaStoreMethods } from './modules/mediastore.methods';
+import { playlistMethods } from './modules/playlist.methods';
+import { settingsMethods } from './modules/settings.methods';
+import { statsMethods } from './modules/stats.methods';
+import { STORAGE_KEYS } from './storage.constants';
 
 class StorageService {
   constructor() {
@@ -25,7 +26,7 @@ class StorageService {
           STORAGE_KEYS.LIBRARY,
           JSON.stringify(Array.isArray(snapshot) ? snapshot : []),
         );
-        this.setLibraryCache(snapshot, {syncStore: false});
+        this.setLibraryCache(snapshot, { syncStore: false });
       },
       onError: error => {
         console.error('LibraryStore flush failed:', error);
@@ -55,10 +56,10 @@ class StorageService {
     this.mediaStoreObserverDebounceTimer = null;
     this.appStateSubscription = AppState?.addEventListener
       ? AppState.addEventListener('change', nextState => {
-          if (nextState !== 'active') {
-            this.flushLibraryStoreNow('app-state').catch(() => {});
-          }
-        })
+        if (nextState !== 'active') {
+          this.flushLibraryStoreNow('app-state').catch(() => { });
+        }
+      })
       : null;
     this.initializeDirectories();
   }
@@ -70,7 +71,7 @@ class StorageService {
       : [];
     this.libraryCacheUpdatedAt = Date.now();
     if (syncStore && this.libraryStore) {
-      this.libraryStore.hydrateFromSnapshot(this.libraryCache, {emit: false});
+      this.libraryStore.hydrateFromSnapshot(this.libraryCache, { emit: false });
       this.libraryStoreHydrated = true;
     }
     return this.libraryCache;
@@ -112,15 +113,15 @@ class StorageService {
         const normalized = Array.isArray(parsedLibrary)
           ? parsedLibrary.filter(Boolean)
           : [];
-        this.libraryStore.hydrateFromSnapshot(normalized, {emit: false});
+        this.libraryStore.hydrateFromSnapshot(normalized, { emit: false });
         this.libraryStoreHydrated = true;
-        this.setLibraryCache(normalized, {syncStore: false});
+        this.setLibraryCache(normalized, { syncStore: false });
         return normalized;
       } catch (error) {
         console.error('Failed to hydrate library store:', error);
-        this.libraryStore.hydrateFromSnapshot([], {emit: false});
+        this.libraryStore.hydrateFromSnapshot([], { emit: false });
         this.libraryStoreHydrated = true;
-        this.setLibraryCache([], {syncStore: false});
+        this.setLibraryCache([], { syncStore: false });
         return [];
       }
     })();
@@ -170,12 +171,12 @@ class StorageService {
   }
 
   getLibrarySyncState() {
-    return {...this.librarySyncState};
+    return { ...this.librarySyncState };
   }
 
   subscribeToLibrarySync(listener) {
     if (typeof listener !== 'function') {
-      return () => {};
+      return () => { };
     }
 
     this.librarySyncListeners.add(listener);
@@ -225,7 +226,7 @@ class StorageService {
         const provider = await this.getLibraryProvider();
         const canUseMediaStore =
           this.isMediaStoreProvider(provider) &&
-          (await this.shouldUseMediaStoreProvider({provider}));
+          (await this.shouldUseMediaStoreProvider({ provider }));
         let summary = null;
 
         if (!canUseMediaStore) {
@@ -297,6 +298,7 @@ Object.assign(
   mediaStoreMethods,
   playlistMethods,
   settingsMethods,
+  statsMethods,
 );
 
 export default new StorageService();
