@@ -17,7 +17,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import PlaylistArtwork from '../../components/PlaylistArtwork';
 import playbackService from '../../services/playback/PlaybackService';
 import storageService from '../../services/storage/StorageService';
-import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
+import { MUSIC_HOME_THEME as C } from '../../theme/musicHomeTheme';
 import SongCard from './SongCard';
 import styles from './home.styles';
 
@@ -112,7 +112,7 @@ const arePlaylistsEquivalent = (left = [], right = []) => {
         String(previous?.name || '') !== String(next?.name || '') ||
         String(previous?.description || '') !== String(next?.description || '') ||
         getPlaylistArtworkSignature(previous) !==
-          getPlaylistArtworkSignature(next) ||
+        getPlaylistArtworkSignature(next) ||
         ((Array.isArray(previous?.songs) ? previous.songs.length : 0) !==
           (Array.isArray(next?.songs) ? next.songs.length : 0)) ||
         (Number(previous?.updatedAt) || 0) !== (Number(next?.updatedAt) || 0))
@@ -428,7 +428,7 @@ const HomeScreen = ({ navigation }) => {
   }, [navigation]);
 
   const renderPlaylistCard = useCallback(
-    ({item}) => {
+    ({ item }) => {
       const isFavorites = storageService.isFavoritesPlaylist(item);
       return (
         <TouchableOpacity
@@ -514,7 +514,7 @@ const HomeScreen = ({ navigation }) => {
     return (
       <View style={styles.emptyContainer}>
         <Icon
-          name={hasSearch ? 'music-note-search' : 'music-off'}
+          name={hasSearch ? 'text-search' : 'music-off'}
           size={58}
           color={C.textMute}
         />

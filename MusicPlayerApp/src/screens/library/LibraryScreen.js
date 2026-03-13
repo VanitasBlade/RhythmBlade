@@ -122,7 +122,7 @@ const arePlaylistsEquivalent = (left = [], right = []) => {
         String(previous?.name || '') !== String(next?.name || '') ||
         String(previous?.description || '') !== String(next?.description || '') ||
         getPlaylistArtworkSignature(previous) !==
-          getPlaylistArtworkSignature(next) ||
+        getPlaylistArtworkSignature(next) ||
         ((Array.isArray(previous?.songs) ? previous.songs.length : 0) !==
           (Array.isArray(next?.songs) ? next.songs.length : 0)) ||
         (Number(previous?.updatedAt) || 0) !== (Number(next?.updatedAt) || 0)
@@ -1003,7 +1003,7 @@ const LibraryScreen = ({ navigation, route }) => {
             <>
               <View style={styles.trackSearchRow}>
                 <View style={styles.searchBox}>
-                  <Icon name="magnify" size={18} color={C.textMute} />
+                  <Icon name="magnify" size={14} color={C.textMute} />
                   <TextInput
                     style={styles.searchInput}
                     placeholder="Search tracks..."
@@ -1014,12 +1014,13 @@ const LibraryScreen = ({ navigation, route }) => {
                     autoCapitalize="none"
                     autoFocus
                   />
+                  <TouchableOpacity
+                    style={styles.trackSearchInlineClose}
+                    onPress={closeTrackSearch}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Icon name="close" size={16} color={C.textDim} />
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity
-                  style={styles.trackSearchCloseBtn}
-                  onPress={closeTrackSearch}>
-                  <Icon name="close" size={18} color={C.textDim} />
-                </TouchableOpacity>
               </View>
 
               <Text style={styles.metaText}>{filteredTracks.length} tracks</Text>
@@ -1056,8 +1057,8 @@ const LibraryScreen = ({ navigation, route }) => {
                   <Icon
                     name={
                       trackSearchOpen && trackQuery.trim().length
-                        ? 'music-note-search'
-                        : 'music-note-off'
+                        ? 'text-search'
+                        : 'music-off'
                     }
                     size={56}
                     color={C.textMute}

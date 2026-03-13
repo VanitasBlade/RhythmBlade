@@ -1,6 +1,6 @@
-import {useFocusEffect} from '@react-navigation/native';
-import {FlashList} from '@shopify/flash-list';
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { FlashList } from '@shopify/flash-list';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,10 +13,10 @@ import {
   View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import {WebView} from 'react-native-webview';
+import { WebView } from 'react-native-webview';
 
 import storageService from '../../services/storage/StorageService';
-import {MUSIC_HOME_THEME as C} from '../../theme/musicHomeTheme';
+import { MUSIC_HOME_THEME as C } from '../../theme/musicHomeTheme';
 import QueueItemCard from './components/QueueItemCard';
 import SearchResultCard from './components/SearchResultCard';
 import {
@@ -29,7 +29,7 @@ import {
   SEARCH_TYPES,
 } from './search.constants';
 import styles from './search.styles';
-import {toTrackKey} from './search.utils';
+import { toTrackKey } from './search.utils';
 import useSpotdownWebViewDownloader from './useSpotdownWebViewDownloader';
 import useSquidWebViewDownloader from './useSquidWebViewDownloader';
 
@@ -41,8 +41,8 @@ const SEARCH_RESULT_ESTIMATED_ITEM_SIZE = 88;
 const QUEUE_ESTIMATED_ITEM_SIZE = 90;
 const IDLE_TIMEOUT_MS = 30000;
 const BACKGROUND_TIMEOUT_MS = 120000;
-const WEBVIEW_DISPLAY_FLEX = {display: 'flex'};
-const WEBVIEW_DISPLAY_NONE = {display: 'none'};
+const WEBVIEW_DISPLAY_FLEX = { display: 'flex' };
+const WEBVIEW_DISPLAY_NONE = { display: 'none' };
 const SOURCE_OPTIONS = [
   {
     value: 'Tidal',
@@ -83,7 +83,7 @@ const areQueueItemsEquivalent = (left, right) => {
     String(left.status || '') === String(right.status || '') &&
     toComparableNumber(left.progress) === toComparableNumber(right.progress) &&
     toComparableNumber(left.updatedAt) ===
-      toComparableNumber(right.updatedAt) &&
+    toComparableNumber(right.updatedAt) &&
     toComparableNumber(left.createdAt) === toComparableNumber(right.createdAt)
   );
 };
@@ -180,7 +180,7 @@ const SearchScreen = () => {
   const spotdownBatchRequestHandlerRef = useRef(null);
   const activeDownloaderTabRef = useRef('Search');
   const activeQueueCountRef = useRef(0);
-  const sourceActiveCountsRef = useRef({tidal: 0, spotdown: 0});
+  const sourceActiveCountsRef = useRef({ tidal: 0, spotdown: 0 });
   const activeSourceRef = useRef('tidal');
   const clearIdleTimer = useCallback(() => {
     if (idleTimerRef.current) {
@@ -219,7 +219,7 @@ const SearchScreen = () => {
       clearAllBridgeTimers();
       hasInteractedSinceEnableRef.current = false;
       if (__DEV__) {
-        console.log('[DownloaderBridge] Auto-disabled bridge.', {reason});
+        console.log('[DownloaderBridge] Auto-disabled bridge.', { reason });
       }
       setBridgeEnabled(false);
       return true;
@@ -346,7 +346,7 @@ const SearchScreen = () => {
   const onTidalBridgeActivity = useCallback(
     event => {
       if (activeSourceRef.current === 'tidal') {
-        handleBridgeActivity({...event, source: 'tidal'});
+        handleBridgeActivity({ ...event, source: 'tidal' });
       }
     },
     [handleBridgeActivity],
@@ -355,7 +355,7 @@ const SearchScreen = () => {
   const onSpotdownBridgeActivity = useCallback(
     event => {
       if (activeSourceRef.current === 'spotdown') {
-        handleBridgeActivity({...event, source: 'spotdown'});
+        handleBridgeActivity({ ...event, source: 'spotdown' });
       }
     },
     [handleBridgeActivity],
@@ -638,7 +638,7 @@ const SearchScreen = () => {
         if (!current?.tidal && !current?.spotdown) {
           return current;
         }
-        return {tidal: false, spotdown: false};
+        return { tidal: false, spotdown: false };
       });
       return;
     }
@@ -699,10 +699,10 @@ const SearchScreen = () => {
         getDownloadJobsFromSpotdownWebView(220).catch(() => []),
       ]);
       const tidalJobs = Array.isArray(tidalJobsRaw)
-        ? tidalJobsRaw.map(job => ({...job, source: 'tidal'}))
+        ? tidalJobsRaw.map(job => ({ ...job, source: 'tidal' }))
         : [];
       const spotdownJobs = Array.isArray(spotdownJobsRaw)
-        ? spotdownJobsRaw.map(job => ({...job, source: 'spotdown'}))
+        ? spotdownJobsRaw.map(job => ({ ...job, source: 'spotdown' }))
         : [];
       const merged = [...tidalJobs, ...spotdownJobs];
       const dedupedMap = new Map();
@@ -966,7 +966,7 @@ const SearchScreen = () => {
         normalizedLabel === 'Spotdown' ? 'spotdown' : 'tidal';
       const previousSourceKey = activeSourceRef.current;
       if (previousSourceKey !== nextSourceKey) {
-        cancelPendingJobsForSource(previousSourceKey).catch(() => {});
+        cancelPendingJobsForSource(previousSourceKey).catch(() => { });
       }
       setDownloadSource(normalizedLabel);
       setResults([]);
@@ -990,7 +990,7 @@ const SearchScreen = () => {
       resetIdleTimerFromInteraction('convert-toggle');
       const enabled = Boolean(nextValue);
       setConvertAacToMp3(enabled);
-      activeSyncConvertToMp3FromWebView(enabled).catch(() => {});
+      activeSyncConvertToMp3FromWebView(enabled).catch(() => { });
     },
     [activeSyncConvertToMp3FromWebView, resetIdleTimerFromInteraction],
   );
@@ -1000,7 +1000,7 @@ const SearchScreen = () => {
       clearBackgroundTimer();
       pendingBackgroundAfterDownloadRef.current = false;
       hasInteractedSinceEnableRef.current = false;
-      setBridgeReadyBySource({tidal: false, spotdown: false});
+      setBridgeReadyBySource({ tidal: false, spotdown: false });
       setBridgeEnabled(true);
       return;
     }
@@ -1062,8 +1062,7 @@ const SearchScreen = () => {
     if (!bridgeEnabled) {
       Alert.alert(
         'Bridge Disabled',
-        `Enable the bridge button in the top bar to search from ${
-          activeSource === 'spotdown' ? 'Spotdown' : 'Tidal'
+        `Enable the bridge button in the top bar to search from ${activeSource === 'spotdown' ? 'Spotdown' : 'Tidal'
         }.`,
       );
       return;
@@ -1093,7 +1092,7 @@ const SearchScreen = () => {
         activeSearchType.toLowerCase(),
       );
       const nextResults = Array.isArray(songs)
-        ? songs.map(song => ({...song, source: activeSource}))
+        ? songs.map(song => ({ ...song, source: activeSource }))
         : [];
       setResults(nextResults);
 
@@ -1149,7 +1148,7 @@ const SearchScreen = () => {
         : null;
 
       if (!item.downloadable) {
-        return {status: 'not-downloadable'};
+        return { status: 'not-downloadable' };
       }
 
       resetIdleTimerFromInteraction('queue-download');
@@ -1161,16 +1160,16 @@ const SearchScreen = () => {
             'Enable the bridge button in the top bar to start downloads.',
           );
         }
-        return {status: 'bridge-disabled'};
+        return { status: 'bridge-disabled' };
       }
 
       const resolvedIndex = Number.isInteger(item?.requestIndex)
         ? item.requestIndex
         : Number.isInteger(item?.index)
-        ? item.index
-        : Number.isInteger(index)
-        ? index
-        : null;
+          ? item.index
+          : Number.isInteger(index)
+            ? index
+            : null;
 
       const key = getTrackKeyForSource(item, activeSource);
       const existingJob = queueByTrackKey.get(key);
@@ -1178,11 +1177,11 @@ const SearchScreen = () => {
         if (switchToQueue) {
           setActiveDownloaderTab('Queue');
         }
-        return {status: 'exists', job: existingJob};
+        return { status: 'exists', job: existingJob };
       }
 
       try {
-        setQueuingKeys(prev => ({...prev, [key]: true}));
+        setQueuingKeys(prev => ({ ...prev, [key]: true }));
         const selectedSetting = normalizeDownloadSetting(
           downloadSettingRef.current,
         );
@@ -1204,13 +1203,13 @@ const SearchScreen = () => {
                 toJobScopeKey(existing) !==
                 `${activeSource}:${String(job?.id || '')}`,
             );
-            return [...withoutDup, {...job, source: activeSource}];
+            return [...withoutDup, { ...job, source: activeSource }];
           });
           if (switchToQueue) {
             setActiveDownloaderTab('Queue');
           }
         }
-        return {status: 'queued', job};
+        return { status: 'queued', job };
       } catch (error) {
         if (!suppressAlert) {
           Alert.alert(
@@ -1218,11 +1217,11 @@ const SearchScreen = () => {
             error.message || 'Failed to queue download. Please try again.',
           );
         }
-        return {status: 'failed', error};
+        return { status: 'failed', error };
       } finally {
         if (mountedRef.current) {
           setQueuingKeys(prev => {
-            const next = {...prev};
+            const next = { ...prev };
             delete next[key];
             return next;
           });
@@ -1269,7 +1268,7 @@ const SearchScreen = () => {
           return;
         }
         const nextTracks = Array.isArray(tracks)
-          ? tracks.map(track => ({...track, source: activeSource}))
+          ? tracks.map(track => ({ ...track, source: activeSource }))
           : [];
         setAlbumTracks(nextTracks);
         if (nextTracks.length === 0) {
@@ -1418,11 +1417,10 @@ const SearchScreen = () => {
 
     Alert.alert(
       'Batch Queued',
-      `Queued ${queued} tracks${skipped > 0 ? `, skipped ${skipped}` : ''}${
-        failed > 0 ? `, failed ${failed}` : ''
+      `Queued ${queued} tracks${skipped > 0 ? `, skipped ${skipped}` : ''}${failed > 0 ? `, failed ${failed}` : ''
       }.`,
       [
-        {text: 'Stay', style: 'cancel'},
+        { text: 'Stay', style: 'cancel' },
         {
           text: 'View Queue',
           onPress: () => {
@@ -1449,18 +1447,18 @@ const SearchScreen = () => {
         'Large Batch',
         `Downloading ${results.length} tracks. This may take a while.`,
         [
-          {text: 'Cancel', style: 'cancel'},
+          { text: 'Cancel', style: 'cancel' },
           {
             text: 'Continue',
             onPress: () => {
-              queueSpotdownResultsAllInternal().catch(() => {});
+              queueSpotdownResultsAllInternal().catch(() => { });
             },
           },
         ],
       );
       return;
     }
-    queueSpotdownResultsAllInternal().catch(() => {});
+    queueSpotdownResultsAllInternal().catch(() => { });
   }, [
     loading,
     queueSpotdownResultsAllInternal,
@@ -1487,7 +1485,7 @@ const SearchScreen = () => {
         );
         return;
       }
-      queueSpotdownResultsAllInternal().catch(() => {});
+      queueSpotdownResultsAllInternal().catch(() => { });
     };
     return () => {
       spotdownBatchRequestHandlerRef.current = null;
@@ -1549,7 +1547,7 @@ const SearchScreen = () => {
 
       resetIdleTimerFromInteraction('retry-download');
       try {
-        setRetryingJobs(prev => ({...prev, [scopedKey]: true}));
+        setRetryingJobs(prev => ({ ...prev, [scopedKey]: true }));
         const sourceKey = getSourceKey(job?.source || activeSource);
         const retryHandler = getRetryHandlerForSource(sourceKey);
         const fallbackSong = {
@@ -1579,7 +1577,7 @@ const SearchScreen = () => {
                 scoped !== `${sourceKey}:${String(retriedJob?.id || '')}`
               );
             });
-            return [...filtered, {...retriedJob, source: sourceKey}];
+            return [...filtered, { ...retriedJob, source: sourceKey }];
           });
         }
       } catch (error) {
@@ -1590,7 +1588,7 @@ const SearchScreen = () => {
       } finally {
         if (mountedRef.current) {
           setRetryingJobs(prev => {
-            const next = {...prev};
+            const next = { ...prev };
             delete next[scopedKey];
             return next;
           });
@@ -1616,7 +1614,7 @@ const SearchScreen = () => {
 
       resetIdleTimerFromInteraction('cancel-download');
       try {
-        setCancelingJobs(prev => ({...prev, [scopedKey]: true}));
+        setCancelingJobs(prev => ({ ...prev, [scopedKey]: true }));
         const sourceKey = getSourceKey(job?.source || activeSource);
         const cancelHandler = getCancelHandlerForSource(sourceKey);
         await cancelHandler(job.id);
@@ -1637,7 +1635,7 @@ const SearchScreen = () => {
       } finally {
         if (mountedRef.current) {
           setCancelingJobs(prev => {
-            const next = {...prev};
+            const next = { ...prev };
             delete next[scopedKey];
             return next;
           });
@@ -1673,7 +1671,7 @@ const SearchScreen = () => {
   );
 
   const renderSearchResult = useCallback(
-    ({item, index}) => {
+    ({ item, index }) => {
       const sourceKey = getSourceKey(item?.source || activeSource);
       const key = getTrackKeyForSource(item, sourceKey);
       const canOpenAlbum =
@@ -1704,7 +1702,7 @@ const SearchScreen = () => {
   );
 
   const renderAlbumTrack = useCallback(
-    ({item, index}) => {
+    ({ item, index }) => {
       const sourceKey = getSourceKey(item?.source || activeSource);
       const key = getTrackKeyForSource(item, sourceKey);
       return (
@@ -1723,7 +1721,7 @@ const SearchScreen = () => {
   );
 
   const renderQueueItem = useCallback(
-    ({item}) => (
+    ({ item }) => (
       <QueueItemCard
         item={item}
         retrying={Boolean(retryingJobs[toJobScopeKey(item)])}
@@ -1782,7 +1780,7 @@ const SearchScreen = () => {
               (albumQueueingAll ||
                 albumTracksLoading ||
                 albumTracks.length === 0) &&
-                styles.albumQueueAllButtonDisabled,
+              styles.albumQueueAllButtonDisabled,
             ]}
             onPress={queueAlbumTracksAll}
             disabled={
@@ -1828,7 +1826,7 @@ const SearchScreen = () => {
         ) : (
           <>
             <Icon
-              name="music-note-off-outline"
+              name="music-off"
               size={20}
               color={C.textDeep}
               style={styles.emptyIcon}
@@ -1858,7 +1856,7 @@ const SearchScreen = () => {
             style={[
               styles.albumQueueAllButton,
               (loading || results.length === 0) &&
-                styles.albumQueueAllButtonDisabled,
+              styles.albumQueueAllButtonDisabled,
             ]}
             onPress={
               batchRunning ? cancelSpotdownBatch : queueSpotdownResultsAll
@@ -1911,8 +1909,8 @@ const SearchScreen = () => {
     () =>
       activeAlbum
         ? `${activeSource}-album-${String(
-            activeAlbum?.url || activeAlbum?.title || 'current',
-          )}`
+          activeAlbum?.url || activeAlbum?.title || 'current',
+        )}`
         : `${activeSource}-search-${activeSearchType.toLowerCase()}`,
     [activeAlbum, activeSearchType, activeSource],
   );
@@ -1948,7 +1946,7 @@ const SearchScreen = () => {
             <TouchableOpacity
               style={[
                 styles.qualitySelectorSegment,
-                {borderColor: qualityOutlineColor},
+                { borderColor: qualityOutlineColor },
                 isSpotdownSource && styles.qualitySelectorSegmentLocked,
               ]}
               onPress={() => {
@@ -2023,7 +2021,7 @@ const SearchScreen = () => {
                 <TouchableOpacity
                   style={[
                     styles.searchSourceButton,
-                    {borderColor: sourceOutlineColor},
+                    { borderColor: sourceOutlineColor },
                   ]}
                   onPress={openSourceMenu}
                   activeOpacity={0.8}>
@@ -2034,7 +2032,7 @@ const SearchScreen = () => {
                   style={[
                     styles.searchActionButton,
                     (!query.trim() || loading || !activeBridgeReady) &&
-                      styles.searchActionButtonDisabled,
+                    styles.searchActionButtonDisabled,
                   ]}
                   onPress={searchSongs}
                   disabled={!query.trim() || loading || !activeBridgeReady}>
@@ -2055,7 +2053,7 @@ const SearchScreen = () => {
                       style={[
                         styles.searchTypeButton,
                         index < SEARCH_TYPES.length - 1 &&
-                          styles.searchTypeButtonGap,
+                        styles.searchTypeButtonGap,
                         active && styles.searchTypeButtonActive,
                       ]}
                       onPress={() => {
@@ -2092,8 +2090,8 @@ const SearchScreen = () => {
                   : activeSource === 'spotdown' &&
                     (showSpotdownDownloadAll ||
                       spotdownBatchActiveJobs.length > 0)
-                  ? renderSpotdownBatchHeader
-                  : null
+                    ? renderSpotdownBatchHeader
+                    : null
               }
               ListEmptyComponent={
                 activeAlbum ? renderAlbumTracksEmpty : renderSearchEmpty
@@ -2124,7 +2122,7 @@ const SearchScreen = () => {
         transparent
         visible={showBridgeLoadingModal}
         animationType="fade"
-        onRequestClose={() => {}}>
+        onRequestClose={() => { }}>
         <View style={styles.bridgeLoadingBackdrop}>
           <View style={styles.bridgeLoadingCard}>
             <ActivityIndicator size="small" color={C.accentFg} />
@@ -2165,7 +2163,7 @@ const SearchScreen = () => {
                   <View
                     style={[
                       styles.sourceOptionIndicator,
-                      {borderColor: option.borderColor},
+                      { borderColor: option.borderColor },
                     ]}>
                     {selected ? (
                       <Icon name="check" size={11} color={option.borderColor} />

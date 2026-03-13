@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useRef, useState} from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -8,17 +8,17 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Svg, { Rect } from 'react-native-svg';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import Svg, {Rect} from 'react-native-svg';
 
-import {ACTIVE_QUEUE_STATUSES} from '../search.constants';
+import { MUSIC_HOME_THEME as C } from '../../../theme/musicHomeTheme';
+import { ACTIVE_QUEUE_STATUSES } from '../search.constants';
+import styles from '../search.styles';
 import {
   getFallbackArtColor,
   getQueueStatusLabel,
   getQueueSubtitle,
 } from '../search.utils';
-import styles from '../search.styles';
-import {MUSIC_HOME_THEME as C} from '../../../theme/musicHomeTheme';
 
 const COMPLETION_LOOP_MS = 4000;
 const COMPLETION_FADE_MS = 240;
@@ -43,7 +43,7 @@ const QueueItemCard = ({
   const done = item.status === 'done';
   const failed = item.status === 'failed';
 
-  const [cardSize, setCardSize] = useState({width: 0, height: 0});
+  const [cardSize, setCardSize] = useState({ width: 0, height: 0 });
   const animatedProgress = useRef(new Animated.Value(targetProgress)).current;
   const doneOutlineProgress = useRef(new Animated.Value(0)).current;
   const doneOutlineOpacity = useRef(new Animated.Value(1)).current;
@@ -103,12 +103,13 @@ const QueueItemCard = ({
   );
 
   const handleCardLayout = event => {
-    const {width, height} = event.nativeEvent.layout;
+    const width = Math.round(event.nativeEvent.layout.width);
+    const height = Math.round(event.nativeEvent.layout.height);
     setCardSize(prev => {
       if (prev.width === width && prev.height === height) {
         return prev;
       }
-      return {width, height};
+      return { width, height };
     });
   };
 
@@ -135,7 +136,7 @@ const QueueItemCard = ({
       Animated.timing(animatedProgress, {
         toValue: next,
         duration,
-        easing: Easing.out(Easing.cubic),
+        easing: Easing.linear,
         useNativeDriver: false,
       }).start();
     });
@@ -195,7 +196,7 @@ const QueueItemCard = ({
 
     let finishedNaturally = false;
     doneOutlineAnimationRef.current = animation;
-    animation.start(({finished}) => {
+    animation.start(({ finished }) => {
       if (!finished) {
         doneOutlineStartedRef.current = false;
         return;
@@ -229,11 +230,11 @@ const QueueItemCard = ({
       <View
         style={[styles.queueCard, failed && styles.queueCardFailed]}
         onLayout={handleCardLayout}>
-        <View style={[styles.queueAccent, {backgroundColor: barColor}]} />
+        <View style={[styles.queueAccent, { backgroundColor: barColor }]} />
         <View
-          style={[styles.queueArtworkWrap, {backgroundColor: fallbackColor}]}>
+          style={[styles.queueArtworkWrap, { backgroundColor: fallbackColor }]}>
           {item.artwork ? (
-            <Image source={{uri: item.artwork}} style={styles.queueArtwork} />
+            <Image source={{ uri: item.artwork }} style={styles.queueArtwork} />
           ) : (
             <Icon name="music-note" size={22} color={C.accentFg} />
           )}
@@ -243,7 +244,7 @@ const QueueItemCard = ({
             <Text style={styles.queueTitle} numberOfLines={1}>
               {item.title}
             </Text>
-            <Text style={[styles.queueStatus, {color: statusColor}]}>
+            <Text style={[styles.queueStatus, { color: statusColor }]}>
               {getQueueStatusLabel(item)}
             </Text>
           </View>
@@ -251,7 +252,7 @@ const QueueItemCard = ({
             <Animated.View
               style={[
                 styles.queueProgressFill,
-                {width: progressWidth, backgroundColor: barColor},
+                { width: progressWidth, backgroundColor: barColor },
               ]}
             />
           </View>
@@ -303,7 +304,7 @@ const QueueItemCard = ({
           pointerEvents="none"
           style={[
             styles.queueDoneOutlineOverlay,
-            {opacity: doneOutlineOpacity},
+            { opacity: doneOutlineOpacity },
           ]}>
           {outlineGeometry.perimeter > 0 ? (
             <Svg width={outlineGeometry.width} height={outlineGeometry.height}>

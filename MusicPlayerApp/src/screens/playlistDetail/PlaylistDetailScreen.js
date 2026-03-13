@@ -17,7 +17,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import PlaylistArtwork from '../../components/PlaylistArtwork';
 import playbackService from '../../services/playback/PlaybackService';
 import storageService from '../../services/storage/StorageService';
-import {toFileUriFromPath, toPathFromUri} from '../../services/storage/storage.helpers';
+import { toFileUriFromPath, toPathFromUri } from '../../services/storage/storage.helpers';
 import { MUSIC_HOME_THEME as C } from '../../theme/musicHomeTheme';
 import styles from './playlistDetail.styles';
 
@@ -185,7 +185,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       'Remove Custom Cover',
       'Use the first four song artworks for this playlist thumbnail instead?',
       [
-        {text: 'Cancel', style: 'cancel'},
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Remove',
           style: 'destructive',
@@ -212,7 +212,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       return;
     }
     Alert.alert('Playlist Cover', 'Update or remove the custom cover image.', [
-      {text: 'Cancel', style: 'cancel'},
+      { text: 'Cancel', style: 'cancel' },
       {
         text: 'Change Image',
         onPress: () => {
@@ -355,8 +355,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       setSelectedSongKeys(new Set());
       Alert.alert(
         'Tracks Added',
-        `${Number(result?.addedCount) || chosenSongs.length} track${
-          (Number(result?.addedCount) || chosenSongs.length) === 1 ? '' : 's'
+        `${Number(result?.addedCount) || chosenSongs.length} track${(Number(result?.addedCount) || chosenSongs.length) === 1 ? '' : 's'
         } added to "${playlist.name}".`,
       );
     } catch (error) {
@@ -504,7 +503,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   const renderEmpty = useCallback(
     () => (
       <View style={styles.emptyContainer}>
-        <Icon name="music-note-off" size={62} color={C.textMute} />
+        <Icon name="music-off" size={62} color={C.textMute} />
         <Text style={styles.emptyTitle}>This playlist is empty</Text>
         <Text style={styles.emptySubtitle}>Add songs from your library.</Text>
       </View>
@@ -524,7 +523,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   const selectedTrackCount = selectedSongKeys.size;
 
   const renderLibrarySongItem = useCallback(
-    ({item}) => {
+    ({ item }) => {
       const key = songKey(item);
       const selected = selectedSongKeys.has(key);
       return (
@@ -577,7 +576,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
         <Pressable
           style={styles.modalOverlay}
           onPress={() => setAddTracksOpen(false)}>
-          <Pressable style={styles.modalCard} onPress={() => {}}>
+          <Pressable style={styles.modalCard} onPress={() => { }}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add Tracks</Text>
               <TouchableOpacity onPress={() => setAddTracksOpen(false)}>
