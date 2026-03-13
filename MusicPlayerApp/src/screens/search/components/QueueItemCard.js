@@ -50,6 +50,8 @@ const QueueItemCard = ({
   const doneOutlineStartedRef = useRef(false);
   const doneOutlineCompletedRef = useRef(false);
   const doneOutlineAnimationRef = useRef(null);
+  const onDoneAnimationCompleteRef = useRef(onDoneAnimationComplete);
+  const lastAnimatedJobIdRef = useRef(String(item?.id || ''));
 
   const fallbackColor = getFallbackArtColor(item);
   const barColor = failed ? '#9b1c1c' : done ? C.textDeep : C.accent;
@@ -111,6 +113,10 @@ const QueueItemCard = ({
   };
 
   useEffect(() => {
+    onDoneAnimationCompleteRef.current = onDoneAnimationComplete;
+  }, [onDoneAnimationComplete]);
+
+  useEffect(() => {
     animatedProgress.stopAnimation(currentValue => {
       const current = Number(currentValue) || 0;
       const next = targetProgress;
@@ -141,6 +147,19 @@ const QueueItemCard = ({
     },
     [animatedProgress],
   );
+
+  useEffect(() => {
+    const currentJobId = String(item?.id || '');
+    if (lastAnimatedJobIdRef.current === currentJobId) {
+      return;
+    }
+    doneOutlineAnimationRef.current?.stop?.();
+    doneOutlineStartedRef.current = false;
+    doneOutlineCompletedRef.current = false;
+    doneOutlineProgress.setValue(0);
+    doneOutlineOpacity.setValue(1);
+    lastAnimatedJobIdRef.current = currentJobId;
+  }, [doneOutlineOpacity, doneOutlineProgress, item?.id]);
 
   useEffect(() => {
     if (!done) {
@@ -174,16 +193,25 @@ const QueueItemCard = ({
       }),
     ]);
 
+    let finishedNaturally = false;
     doneOutlineAnimationRef.current = animation;
     animation.start(({finished}) => {
-      if (!finished || doneOutlineCompletedRef.current) {
+      if (!finished) {
+        doneOutlineStartedRef.current = false;
         return;
       }
+      if (doneOutlineCompletedRef.current) {
+        return;
+      }
+      finishedNaturally = true;
       doneOutlineCompletedRef.current = true;
-      onDoneAnimationComplete?.(item.id);
+      onDoneAnimationCompleteRef.current?.(item.id, item?.source || 'tidal');
     });
 
     return () => {
+      if (!finishedNaturally && !doneOutlineCompletedRef.current) {
+        doneOutlineStartedRef.current = false;
+      }
       doneOutlineAnimationRef.current?.stop?.();
     };
   }, [
@@ -193,7 +221,7 @@ const QueueItemCard = ({
     doneOutlineOpacity,
     doneOutlineProgress,
     item.id,
-    onDoneAnimationComplete,
+    item?.source,
   ]);
 
   return (
@@ -326,7 +354,6 @@ export default React.memo(QueueItemCard, (prevProps, nextProps) => {
     prevProps.canceling === nextProps.canceling &&
     prevProps.onRetry === nextProps.onRetry &&
     prevProps.onCancel === nextProps.onCancel &&
-    prevProps.onDoneAnimationComplete === nextProps.onDoneAnimationComplete &&
     areQueueItemsEquivalent(prevProps.item, nextProps.item)
   );
 });

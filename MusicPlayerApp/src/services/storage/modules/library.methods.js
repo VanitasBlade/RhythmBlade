@@ -14,6 +14,7 @@ import {
   parseMetadataFromFilename,
   sanitizeFileSegment,
   toFileUriFromPath,
+  toPathFromUri,
 } from '../storage.helpers';
 
 const LIBRARY_CACHE_TTL_MS = 30000;
@@ -26,6 +27,94 @@ function resolveMetadataField(candidate, fallback) {
   return text;
 }
 export const libraryMethods = {
+  normalizeStoragePathForComparison(pathValue) {
+    const normalized = String(toPathFromUri(pathValue) || pathValue || '')
+      .replace(/\\/g, '/')
+      .replace(/\/+/g, '/')
+      .trim();
+    if (!normalized) {
+      return '';
+    }
+    return normalized.toLowerCase();
+  },
+
+  isSpotdownAlbumCoverPath(pathValue) {
+    const normalizedPath = this.normalizeStoragePathForComparison(pathValue);
+    if (!normalizedPath) {
+      return false;
+    }
+
+    const coversDir = `${String(this.musicDir || '').trim()}/AlbumCovers`;
+    const normalizedCoversDir =
+      this.normalizeStoragePathForComparison(coversDir);
+    if (!normalizedCoversDir) {
+      return false;
+    }
+
+    return (
+      normalizedPath === normalizedCoversDir ||
+      normalizedPath.startsWith(`${normalizedCoversDir}/`)
+    );
+  },
+
+  async cleanupSpotdownCoverIfOrphaned(artworkUri, options = {}) {
+    const artworkPath = String(toPathFromUri(artworkUri) || '').trim();
+    if (!artworkPath || !this.isSpotdownAlbumCoverPath(artworkPath)) {
+      return {
+        cleaned: false,
+        reason: 'non-spotdown-cover-path',
+        artworkPath: artworkPath || null,
+      };
+    }
+
+    const normalizedArtworkPath =
+      this.normalizeStoragePathForComparison(artworkPath);
+    if (!normalizedArtworkPath) {
+      return {
+        cleaned: false,
+        reason: 'invalid-cover-path',
+        artworkPath: artworkPath || null,
+      };
+    }
+
+    const removedSongId = String(options?.removedSongId || '').trim();
+    const library = await this.getLocalLibrary();
+    const stillReferenced = library.some(entry => {
+      const entryId = String(entry?.id || '').trim();
+      if (removedSongId && entryId && removedSongId === entryId) {
+        return false;
+      }
+      const entryArtworkPath = this.normalizeStoragePathForComparison(
+        entry?.artwork,
+      );
+      return entryArtworkPath === normalizedArtworkPath;
+    });
+
+    if (stillReferenced) {
+      return {
+        cleaned: false,
+        reason: 'still-referenced',
+        artworkPath,
+      };
+    }
+
+    const exists = await RNFS.exists(artworkPath).catch(() => false);
+    if (!exists) {
+      return {
+        cleaned: false,
+        reason: 'cover-missing',
+        artworkPath,
+      };
+    }
+
+    await RNFS.unlink(artworkPath);
+    return {
+      cleaned: true,
+      reason: null,
+      artworkPath,
+    };
+  },
+
   async getLocalLibrary(options = {}) {
     const forceRefresh = Boolean(options?.forceRefresh);
     const canUseCache =
@@ -600,6 +689,11 @@ export const libraryMethods = {
       }
 
       const localPath = this.resolveSongLocalPath(song);
+      const library = await this.getLocalLibrary();
+      const existing = this.findMatchingLibrarySong(library, song);
+      const targetSongId = String(song?.id || existing?.id || '').trim();
+      const artworkUri = String(song?.artwork || existing?.artwork || '').trim();
+
       if (localPath) {
         const exists = await RNFS.exists(localPath);
         if (exists) {
@@ -607,7 +701,22 @@ export const libraryMethods = {
           console.log('Song file deleted');
         }
       }
-      await this.removeFromLibrary(song.id);
+      await this.removeFromLibrary(targetSongId);
+      if (artworkUri) {
+        const cleanupResult = await this.cleanupSpotdownCoverIfOrphaned(
+          artworkUri,
+          {
+            removedSongId: targetSongId,
+          },
+        ).catch(error => ({
+          cleaned: false,
+          reason: error?.message || 'cover-cleanup-error',
+          artworkPath: String(toPathFromUri(artworkUri) || '').trim() || null,
+        }));
+        if (cleanupResult?.cleaned) {
+          console.log('Spotdown cover file deleted');
+        }
+      }
       if (this.isLikelyMediaStoreSong(song)) {
         this.runLibrarySyncInBackground({
           launchSync: false,

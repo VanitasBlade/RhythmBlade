@@ -106,10 +106,30 @@ function toCanonicalSpotifyArtworkUrl(url) {
   return `https://${SPOTIFY_CANONICAL_ARTWORK_HOST}/image/${artworkHash}${query}`;
 }
 
-function resolveCoverFileName(artist, title) {
+function extractSpotifyArtworkHash(url) {
+  const normalized = toCanonicalSpotifyArtworkUrl(url);
+  if (!normalized) {
+    return '';
+  }
+  const pathMatch = normalized.match(/^https?:\/\/[^/?#]+([^?#]*)/i);
+  const pathname = String(pathMatch?.[1] || '/');
+  const pathSegments = pathname.split('/').filter(Boolean);
+  if (
+    pathSegments.length < 2 ||
+    String(pathSegments[0] || '').toLowerCase() !== 'image'
+  ) {
+    return '';
+  }
+  return String(pathSegments[1] || '')
+    .trim()
+    .toLowerCase();
+}
+
+function resolveCoverFileName(artist, title, artworkUrl) {
+  const artworkHash = extractSpotifyArtworkHash(artworkUrl);
   const rawBase = `${String(artist || '').trim()}_${String(
     title || '',
-  ).trim()}`;
+  ).trim()}${artworkHash ? `_${artworkHash}` : ''}`;
   const sanitized = sanitizeFileSegment(rawBase) || `Spotidown_${Date.now()}`;
   return `${sanitized}.jpg`;
 }
@@ -261,7 +281,7 @@ export async function ensureSpotidownCover({artworkUrl, artist, title} = {}) {
       };
     }
 
-    const filename = resolveCoverFileName(artist, title);
+    const filename = resolveCoverFileName(artist, title, normalizedUrl);
     await storageService.ensureDirectory(coversDir);
     const coverPath = `${coversDir}/${filename}`;
     const coverUri = toFileUriFromPath(coverPath);

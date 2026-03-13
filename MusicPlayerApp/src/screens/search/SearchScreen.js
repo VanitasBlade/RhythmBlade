@@ -1665,6 +1665,13 @@ const SearchScreen = () => {
     }
   }, []);
 
+  const handleDoneAnimationComplete = useCallback(
+    (jobId, source = 'tidal') => {
+      dismissDoneQueueItem(jobId, source);
+    },
+    [dismissDoneQueueItem],
+  );
+
   const renderSearchResult = useCallback(
     ({item, index}) => {
       const sourceKey = getSourceKey(item?.source || activeSource);
@@ -1723,15 +1730,13 @@ const SearchScreen = () => {
         canceling={Boolean(cancelingJobs[toJobScopeKey(item)])}
         onRetry={retryQueueItem}
         onCancel={cancelQueueItem}
-        onDoneAnimationComplete={() =>
-          dismissDoneQueueItem(item?.id, item?.source || 'tidal')
-        }
+        onDoneAnimationComplete={handleDoneAnimationComplete}
       />
     ),
     [
       cancelQueueItem,
       cancelingJobs,
-      dismissDoneQueueItem,
+      handleDoneAnimationComplete,
       retryQueueItem,
       retryingJobs,
     ],
